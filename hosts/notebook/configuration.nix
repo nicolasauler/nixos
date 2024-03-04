@@ -55,7 +55,7 @@
     alsa.enable = true;
     alsa.support32Bit = true;
     pulse.enable = true;
-  }
+  };
 
   # Configure console keymap
   console.keyMap = "br-abnt2";
@@ -82,7 +82,7 @@
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
-    nvim
+    neovim
     wget
     git
     waybar
