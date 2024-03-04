@@ -44,10 +44,10 @@
   };
 
   # Configure keymap in X11
-  services.xserver = {
-    xkb.layout = "br";
-    xkb.variant = "";
-  };
+  # services.xserver = {
+  #   xkb.layout = "br";
+  #   xkb.variant = "";
+  # };
 
   security.rtkit.enable = true;
   services.pipewire = {
@@ -82,13 +82,23 @@
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
-    neovim
-    wget
-    git
-    waybar
-    mako
     alacritty
+    firefox-wayland
+    flameshot
+    hyprland
+    git
+    lxappearance
+    mako
+    neovim
+    nm-applet
+    pavucontrol
+    pipewire
+    ripgrep
     rofi-wayland
+    rustup
+    waybar
+    wget
+    xwayland
   ];
 
   # Flakes
