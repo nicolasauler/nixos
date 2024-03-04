@@ -94,7 +94,7 @@
     lxappearance
     mako
     neovim
-    nm-applet
+    networkmanagerapplet
     pavucontrol
     pipewire
     ripgrep
