@@ -70,7 +70,6 @@
     # EDITOR = "emacs";
   };
 
-  programs.firefox.enable = true;
   programs.git = {
     enable = true;
     userName = "Nicolas Auler";

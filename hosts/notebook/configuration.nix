@@ -83,8 +83,12 @@
   # $ nix search wget
   environment.systemPackages = with pkgs; [
     alacritty
+    bat
+    du-dust
+    eza
     firefox-wayland
     flameshot
+    htop
     hyprland
     git
     lxappearance
