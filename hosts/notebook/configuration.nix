@@ -45,26 +45,17 @@
 
   # Configure keymap in X11
   services.xserver = {
-    enable = true;
-
-    desktopManager = {
-      xterm.enable = false;
-    };
-
-    displayManager = {
-      defaultSession = "none+i3";
-    };
-
-    windowManager.i3 = {
-      enable = true;
-      extraPackages = with pkgs; [
-        i3lock
-      ];
-    };
-
     xkb.layout = "br";
     xkb.variant = "";
   };
+
+  security.rtkit.enable = true;
+  services.pipewire = {
+    enable = true;
+    alsa.enable = true;
+    alsa.support32Bit = true;
+    pulse.enable = true;
+  }
 
   # Configure console keymap
   console.keyMap = "br-abnt2";
@@ -88,14 +79,16 @@
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
-  environment.pathsToLink = [ "/libexec" ];
-
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
-    vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
+    nvim
     wget
     git
+    waybar
+    mako
+    alacritty
+    rofi-wayland
   ];
 
   # Flakes
@@ -128,4 +121,5 @@
   # (e.g. man configuration.nix or on https://nixos.org/nixos/options.html).
   system.stateVersion = "23.11"; # Did you read the comment?
 
+  programs.hyprland.enable = true;
 }
