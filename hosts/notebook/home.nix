@@ -80,7 +80,7 @@
     userEmail = "nicolasauler@usp.br";
 
     extraConfig = {
-      commit = { template = ../../config/git/commit_template; };
+      commit = { template = "../../config/git/commit_template"; };
       merge = { tool = "nvimdiff4"; prompt = false; };
       mergeTool = {
         nvimdiff4 = {
@@ -97,7 +97,7 @@
     enable = true;
 
     settings = {
-      monitor = ",preferred,auto,1";
+      monitor = ",highres,auto,1";
 
       exec-once = [
         "waybar"
