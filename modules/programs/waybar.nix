@@ -21,6 +21,7 @@ let
       "hyprland/language"
       "disk"
       "cpu"
+      "cpu#cores"
       "custom/gpu-usage"
       "memory"
       "temperature"
@@ -73,6 +74,11 @@ let
     cpu = {
       interval = 10;
       format = "󰍛 {usage}%";
+    };
+
+    "cpu#cores" = {
+      interval = 10;
+      format = "󰍛 {usage0}% {usage1}% {usage2}% {usage3}% {usage4}% {usage5}% {usage6}% {usage7}%";
     };
 
     battery = {
