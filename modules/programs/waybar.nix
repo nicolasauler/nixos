@@ -121,12 +121,14 @@ let
 
     "hyprland/language" = {
       format = " {}";
+      format-br = "br";
+      format-pt = "pt";
       format-en = "english";
     };
 
     memory = {
       interval = 30;
-      format = "󰾆 {used:0.1f} GiB%";
+      format = " {used:0.1f} GiB%";
       max-length = 10;
     };
 
@@ -135,8 +137,8 @@ let
       interval = 10;
       format = "{ifname}";
       format-disconnected = " Disconnected󰤭 ";
-      format-ethernet = "󰈀 {ipaddr}/{cidr}";
-      format-wifi = "󰤨 {essid} {icon}";
+      format-ethernet = "{ifname} 󰈀 {ipaddr}/{cidr}";
+      format-wifi = "{ifname} {icon} {essid}";
       tooltip-format = "󱘖 {ipaddr}  {bandwidthUpBytes}  {bandwidthDownBytes}";
       format-icons = [ "󰤯" "󰤟" "󰤢" "󰤥" "󰤨" ];
     };
@@ -155,7 +157,9 @@ let
         default = [ "" "" "" ];
       };
       scroll-step = 5;
-      on-click = "pavucontrol";
+      #on-click = "mute";
+      #on-click-right = "pavucontrol";
+      max-volume = 150;
     };
 
     tray = {
@@ -214,26 +218,17 @@ let
 
     #cpu,
     #memory,
-    #custom-power,
     #clock,
     #workspaces,
     #window,
-    #custom-updates,
     #network,
-    #bluetooth,
     #pulseaudio,
-    #custom-wallchange,
-    #custom-mode,
     #tray {
         color: @theme_text_color;
         background: shade(alpha(@theme_text_colors, 0.9), 1.25);
         opacity: 1;
         padding: 0px;
         margin: 3px 3px 3px 3px;
-    }
-
-    #custom-battery {
-        color: @green_1
     }
 
     /* resource monitor block */
@@ -273,15 +268,6 @@ let
         /* padding-right: 12px; */
     }
 
-
-    /* control center block */
-    #custom-updates {
-        border-radius: 10px 0px 0px 10px;
-        margin-left: 6px;
-        padding-left: 12px;
-        padding-right: 4px;
-    }
-
     #network {
         color: @purple_1;
         padding-left: 4px;
@@ -304,29 +290,6 @@ let
         color: @purple_1;
         padding-left: 4px;
         padding-right: 4px;
-    }
-
-    #pulseaudio.microphone {
-        color: @red_1;
-        padding-left: 0px;
-        padding-right: 4px;
-    }
-
-
-    /* system tray block */
-    #custom-mode {
-        border-radius: 10px 0px 0px 10px;
-        margin-left: 6px;
-        padding-left: 12px;
-        padding-right: 4px;
-    }
-
-    #custom-logo {
-        margin-left: 6px;
-        padding-right: 4px;
-        color: @blue_1;
-        font-size: 16px;
-
     }
 
     #tray {
