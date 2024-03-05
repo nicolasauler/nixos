@@ -102,7 +102,6 @@
     ripgrep
     rofi-wayland
     rustup
-    waybar
     wget
     xwayland
     zathura

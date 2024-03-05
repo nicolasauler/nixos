@@ -32,10 +32,6 @@
       }
     )
 
-    (pkgs.waybar.overrideAttrs (oldAttrs: {
-      mesonFlags = oldAttrs.mesonFlags ++ [ "-Dexperimental=true" ];
-    }))
-
     # # You can also create simple shell scripts directly inside your
     # # configuration. For example, this adds a command 'my-hello' to your
     # # environment:
@@ -82,6 +78,18 @@
     enable = true;
     userName = "Nicolas Auler";
     userEmail = "nicolasauler@usp.br";
+
+    extraConfig = {
+      commit = { template = ../../config/git/commit_template; };
+      merge = { tool = "nvimdiff4"; prompt = false; };
+      mergeTool = {
+        nvimdiff4 = {
+          cmd = "nvim -d $LOCAL $BASE $REMOTE $MERGED -c '$wincmd w' -c 'wincmd J'";
+        };
+      };
+      core = { editor = "nvim"; };
+      init = { defaultBranch = "main"; };
+    };
   };
   programs.home-manager.enable = true;
 
@@ -202,6 +210,9 @@
           "$mainMod, D, exec, rofi -modi drun,run -show drun"
           "$mainMod, P, pseudo," # dwindle
           "$mainMod, J, togglesplit," # dwindle
+
+          "$mainMod SHIFT, Print, exec, flameshot gui"
+          "$mainMod, Print, exec, flameshot full -p /home/nic/screenshots"
 
           "$mainMod, left, movefocus, l"
           "$mainMod, right, movefocus, r"
