@@ -4,9 +4,13 @@
     enable = true;
 
     settings = {
-      font = "InconsolataGo Nerd Font";
-      style = "Bold";
-      fontSize = 11;
+      font = {
+        size = 11;
+        normal = {
+          family = "InconsolataGo Nerd Font";
+          style = "Bold";
+        };
+      };
     };
   };
 }
