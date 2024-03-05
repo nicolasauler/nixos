@@ -6,7 +6,8 @@
 
 {
   imports =
-    [ # Include the results of the hardware scan.
+    [
+      # Include the results of the hardware scan.
       ./hardware-configuration.nix
       inputs.home-manager.nixosModules.default
     ];
@@ -65,7 +66,7 @@
     isNormalUser = true;
     description = "nicolas";
     extraGroups = [ "networkmanager" "wheel" ];
-    packages = with pkgs; [];
+    packages = with pkgs; [ ];
   };
 
   # home man
@@ -97,12 +98,16 @@
     networkmanagerapplet
     pavucontrol
     pipewire
+    sxiv
     ripgrep
     rofi-wayland
     rustup
     waybar
     wget
     xwayland
+    zathura
+    zellij
+    zoxide
   ];
 
   # Flakes
@@ -139,6 +144,7 @@
     enable = true;
     xwayland.enable = true;
   };
+  programs.hyprland.package = inputs.hyprland.packages."${pkgs.system}".hyprland;
 
   hardware = {
     opengl.enable = true;

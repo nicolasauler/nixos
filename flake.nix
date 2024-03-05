@@ -8,6 +8,9 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    hyprland.url = "github:hyprwm/Hyprland";
+
   };
 
   outputs = { self, nixpkgs, ... }@inputs:
@@ -16,17 +19,16 @@
       pkgs = nixpkgs.legacyPackages.${system};
     in
     {
-    
       nixosConfigurations = {
-	notebook = nixpkgs.lib.nixosSystem {
-          specialArgs = {inherit inputs;};
-          modules = [ 
+        notebook = nixpkgs.lib.nixosSystem {
+          specialArgs = { inherit inputs; };
+          modules = [
             ./hosts/notebook/configuration.nix
           ];
         };
-	desktop = nixpkgs.lib.nixosSystem {
-          specialArgs = {inherit inputs;};
-          modules = [ 
+        desktop = nixpkgs.lib.nixosSystem {
+          specialArgs = { inherit inputs; };
+          modules = [
             ./hosts/desktop/configuration.nix
           ];
         };
