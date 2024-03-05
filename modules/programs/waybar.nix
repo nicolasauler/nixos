@@ -82,7 +82,7 @@ let
       };
       max-length = 20;
       format = "{capacity}% {icon}";
-      format-icons = [ "", "", "", "", "" ];
+      format-icons = [ "" "" "" "" "" ];
       #format-charging = "<span font-family='Font Awesome 6 Free'></span>";
       format-plugged = "󰚥";
       format-notcharging = "󰚥";
