@@ -209,7 +209,7 @@
         [
           "$mainMod, return, exec, alacritty"
           "$mainMod, C, killactive,"
-          "$mainMod  Q, exit,"
+          "$mainMod, Q, exit,"
           "$mainMod, F, fullscreen,"
           "$mainMod SHIFT, F, togglefloating,"
           "$mainMod, D, exec, rofi -modi drun,run -show drun"
