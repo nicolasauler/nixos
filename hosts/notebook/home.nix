@@ -1,6 +1,10 @@
 { config, pkgs, ... }:
 
 {
+  imports = [
+    ../../modules/programs/waybar.nix
+  ];
+
   # Home Manager needs a bit of information about you and the paths it should
   # manage.
   home.username = "nic";
@@ -97,7 +101,7 @@
     enable = true;
 
     settings = {
-      monitor = ",highres,auto,1";
+      monitor = ",1920x1080@60,auto,1";
 
       exec-once = [
         "waybar"

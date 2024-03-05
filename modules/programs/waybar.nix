@@ -3,8 +3,6 @@
 , ...
 }:
 let
-  scripts = import ./scripts.nix { inherit pkgs; };
-
   workspaces = {
     format = "{id}"; # add urgent in CSS
     on-click = "activate";
