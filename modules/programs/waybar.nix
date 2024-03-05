@@ -15,7 +15,7 @@ let
     height = 14;
     position = "top";
 
-    modules-left = [ "hyprland/workspaces", "hyprland/window" ];
+    modules-left = [ "hyprland/workspaces" "hyprland/window" ];
     modules-right = [
       "clock"
       "hyprland/language"
