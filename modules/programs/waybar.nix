@@ -134,7 +134,7 @@ let
 
     memory = {
       interval = 30;
-      format = " {used:0.1f} GiB%";
+      format = " {used:0.1f} GiB";
       max-length = 10;
     };
 

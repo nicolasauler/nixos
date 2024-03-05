@@ -98,10 +98,12 @@
     networkmanagerapplet
     pavucontrol
     pipewire
+    starship
     sxiv
     ripgrep
     rofi-wayland
     rustup
+    wl-clipboard
     wget
     xwayland
     zathura
