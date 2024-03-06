@@ -10,7 +10,7 @@
         "waybar"
         "mako"
         "nm-applet"
-        "alacritty -e bash -c 'curl wttr.in | less'"
+        "alacritty -e bash -c 'curl wttr.in | less && zellij'"
       ];
 
       env = [
