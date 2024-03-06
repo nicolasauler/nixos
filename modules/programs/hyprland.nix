@@ -4,7 +4,7 @@
     enable = true;
 
     settings = {
-      monitor = ",1920x1080@60,auto,1";
+      monitor = ",preferred,auto,1";
 
       exec-once = [
         "waybar"
@@ -51,7 +51,11 @@
         follow_mouse = 1;
 
         touchpad = {
-          natural_scroll = false;
+          clickfinger_behavior = true;
+          disable_while_typing = true;
+          middle_button_emulation = false;
+          natural_scroll = true;
+          tap-to-click = true;
         };
 
         sensitivity = 0.0;
