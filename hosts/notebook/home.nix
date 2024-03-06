@@ -2,13 +2,14 @@
 
 {
   imports = [
-    ../../modules/programs/hyprland.nix
-    ../../modules/programs/waybar.nix
     ../../modules/programs/alacritty.nix
     ../../modules/programs/git.nix
+    ../../modules/programs/hyprland.nix
+    ../../modules/programs/rofi.nix
+    ../../modules/programs/starship.nix
+    ../../modules/programs/waybar.nix
     ../../modules/programs/zathura.nix
     ../../modules/programs/zellij.nix
-    ../../modules/programs/starship.nix
   ];
 
   # Home Manager needs a bit of information about you and the paths it should
