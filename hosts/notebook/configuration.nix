@@ -93,6 +93,7 @@
     htop
     hyprland
     git
+    keepassxc
     lxappearance
     mako
     neovim
