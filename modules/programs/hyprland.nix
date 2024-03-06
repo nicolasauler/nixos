@@ -54,7 +54,7 @@
           clickfinger_behavior = true;
           disable_while_typing = true;
           middle_button_emulation = false;
-          natural_scroll = true;
+          natural_scroll = false;
           tap-to-click = true;
         };
 

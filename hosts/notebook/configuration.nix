@@ -105,7 +105,6 @@
     sxiv
     ripgrep
     rofi-wayland
-    rustup
     tree-sitter
     wl-clipboard
     wget
