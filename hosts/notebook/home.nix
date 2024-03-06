@@ -84,5 +84,26 @@
     # EDITOR = "emacs";
   };
 
+  home.shellAliases = {
+    cd = "z";
+    ls = "eza";
+    g = "git";
+    n = "nvim";
+    vi = "nvim .";
+    cat = "bat";
+    ps = "procs";
+  };
+
   programs.home-manager.enable = true;
+
+  programs.bash = {
+    enable = true;
+    enableCompletion = true;
+    bashrcExtra = ''
+      export PATH="$HOME/.local/bin:$PATH"
+      eval "$(zoxide init bash)"
+      eval "$(zellij setup --generate-auto-start bash)"
+      eval "$(starship init bash)"
+    '';
+  };
 }

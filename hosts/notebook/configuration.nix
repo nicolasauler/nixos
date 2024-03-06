@@ -89,6 +89,7 @@
     eza
     firefox-wayland
     flameshot
+    fzf
     htop
     hyprland
     git
@@ -103,6 +104,7 @@
     ripgrep
     rofi-wayland
     rustup
+    tree-sitter
     wl-clipboard
     wget
     xwayland
