@@ -99,6 +99,7 @@
     networkmanagerapplet
     pavucontrol
     pipewire
+    procs
     starship
     sxiv
     ripgrep
