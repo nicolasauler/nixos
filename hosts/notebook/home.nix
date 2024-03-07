@@ -8,6 +8,7 @@
     ../../modules/programs/gtk.nix
     ../../modules/programs/hyprland.nix
     ../../modules/programs/mako.nix
+    ../../modules/programs/qutebrowser.nix
     ../../modules/programs/rofi.nix
     ../../modules/programs/starship.nix
     ../../modules/programs/waybar.nix
