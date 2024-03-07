@@ -101,6 +101,7 @@
     pavucontrol
     pipewire
     procs
+    qutebrowser
     starship
     sxiv
     ripgrep
@@ -152,5 +153,6 @@
 
   hardware = {
     opengl.enable = true;
+    hardware.cpu.intel.updateMicrocode = true;
   };
 }

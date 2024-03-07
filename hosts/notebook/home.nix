@@ -1,16 +1,26 @@
-{ config, pkgs, ... }:
+{ config, pkgs, inputs, ... }:
 
 {
   imports = [
+    inputs.nix-colors.homeManagerModules.default
     ../../modules/programs/alacritty.nix
     ../../modules/programs/git.nix
+    ../../modules/programs/gtk.nix
     ../../modules/programs/hyprland.nix
+    ../../modules/programs/laptop.nix
+    ../../modules/programs/mako.nix
     ../../modules/programs/rofi.nix
     ../../modules/programs/starship.nix
     ../../modules/programs/waybar.nix
     ../../modules/programs/zathura.nix
     ../../modules/programs/zellij.nix
   ];
+
+  colorScheme = inputs.nix-colors.colorSchemes.gruvbox-dark-medium;
+
+  qt.enable = true;
+  qt.platformtheme = "gtk";
+  qt.style.name = "adwaita-dark";
 
   # Home Manager needs a bit of information about you and the paths it should
   # manage.
@@ -32,6 +42,7 @@
     # # Adds the 'hello' command to your environment. It prints a friendly
     # # "Hello, world!" when run.
     # pkgs.hello
+    adwaita-qt
 
     # # It is sometimes useful to fine-tune packages, for example, by applying
     # # overrides. You can do that directly here, just don't forget the
