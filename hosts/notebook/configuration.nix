@@ -153,6 +153,6 @@
 
   hardware = {
     opengl.enable = true;
-    hardware.cpu.intel.updateMicrocode = true;
+    cpu.intel.updateMicrocode = true;
   };
 }
