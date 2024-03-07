@@ -125,8 +125,9 @@
           "$mainMod, P, pseudo," # dwindle
           "$mainMod, J, togglesplit," # dwindle
 
-          "$mainMod SHIFT, Print, exec, grim -g \"$(slurp -d)\" - | wl-copy"
-          "$mainMod, Print, exec, grim -g \"$(slurp)\""
+          "$mainMod SHIFT, Print, exec, grim -g \"$(slurp -d)\" - | wl-copy -t image/png"
+          "$mainMod CTRL, Print, exec, grim -g \"$(slurp)\" $HOME/Pictures/$(date +'%s_grim.png')"
+          "$mainMod, Print, exec, grim $HOME/Pictures/$(date +'%s_grim.png')"
 
           "$mainMod, left, movefocus, l"
           "$mainMod, right, movefocus, r"
