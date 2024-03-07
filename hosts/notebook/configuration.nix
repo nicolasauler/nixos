@@ -92,6 +92,7 @@
     htop
     hyprland
     git
+    grim
     keepassxc
     mako
     neovim
@@ -100,11 +101,13 @@
     pipewire
     procs
     qutebrowser
+    slurp
     starship
     sxiv
     ripgrep
     rofi-wayland
     tree-sitter
+    wireplumber
     wl-clipboard
     wget
     xwayland
@@ -142,6 +145,12 @@
   # Before changing this value read the documentation for this option
   # (e.g. man configuration.nix or on https://nixos.org/nixos/options.html).
   system.stateVersion = "23.11"; # Did you read the comment?
+
+  xdg.portal = {
+    enable = true;
+    extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
+    wlr.enable = true;
+  };
 
   programs.hyprland = {
     enable = true;

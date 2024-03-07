@@ -10,12 +10,13 @@
         "waybar"
         "mako"
         "nm-applet"
+        "dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP"
         "alacritty -e bash -c 'curl wttr.in | less && zellij'"
       ];
 
       env = [
         "XCURSOR_SIZE,24"
-        "QT_QPA_PLATFORMTHEME,qt5ct"
+        #"QT_QPA_PLATFORMTHEME,gtk"
         # "GDK_BACKEND,wayland,x11"
         # "SDL_VIDEODRIVER,wayland"
         # "CLUTTER_BACKEND,wayland"
@@ -124,8 +125,8 @@
           "$mainMod, P, pseudo," # dwindle
           "$mainMod, J, togglesplit," # dwindle
 
-          "$mainMod SHIFT, Print, exec, flameshot gui"
-          "$mainMod, Print, exec, flameshot full -p /home/nic/screenshots"
+          "$mainMod SHIFT, Print, exec, grim -g \"$(slurp -d)\" - | wl-copy"
+          "$mainMod, Print, exec, grim -g \"$(slurp)\""
 
           "$mainMod, left, movefocus, l"
           "$mainMod, right, movefocus, r"
