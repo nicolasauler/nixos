@@ -88,13 +88,11 @@
     du-dust
     eza
     firefox-wayland
-    flameshot
     fzf
     htop
     hyprland
     git
     keepassxc
-    lxappearance
     mako
     neovim
     networkmanagerapplet
