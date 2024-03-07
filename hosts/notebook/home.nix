@@ -7,7 +7,6 @@
     ../../modules/programs/git.nix
     ../../modules/programs/gtk.nix
     ../../modules/programs/hyprland.nix
-    ../../modules/programs/laptop.nix
     ../../modules/programs/mako.nix
     ../../modules/programs/rofi.nix
     ../../modules/programs/starship.nix
@@ -17,10 +16,6 @@
   ];
 
   colorScheme = inputs.nix-colors.colorSchemes.gruvbox-dark-medium;
-
-  qt.enable = true;
-  qt.platformtheme = "gtk";
-  qt.style.name = "adwaita-dark";
 
   # Home Manager needs a bit of information about you and the paths it should
   # manage.
@@ -118,4 +113,9 @@
       eval "$(starship init bash)"
     '';
   };
+
+  qt.enable = true;
+  qt.platformTheme = "gtk";
+  qt.style.name = "adwaita-dark";
+
 }

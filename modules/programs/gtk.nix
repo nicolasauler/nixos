@@ -3,7 +3,7 @@
 , ...
 }:
 let
-  gruvboxPlus = import ./gruvbox-plus.nix { inherit pkgs; };
+  gruvboxPlus = import ./gruvboxplus.nix { inherit pkgs; };
 in
 let
   cssContent = with config.colorScheme.colors; ''
