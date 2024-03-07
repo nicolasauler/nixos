@@ -6,7 +6,7 @@ let
   gruvboxPlus = import ./gruvboxplus.nix { inherit pkgs; };
 in
 let
-  cssContent = with config.colorScheme.colors; ''
+  cssContent = with config.colorScheme.palette; ''
     @define-color accent_color #${base0D};
     @define-color accent_bg_color mix(#${base0D}, #${base00},0.3);
     @define-color accent_fg_color #${base00};
@@ -96,9 +96,6 @@ in
 
   gtk.theme.package = pkgs.adw-gtk3;
   gtk.theme.name = "adw-gtk3";
-
-  gtk.cursorTheme.package = pkgs.bibata-cursors;
-  gtk.cursorTheme.name = "Bibata-Modern-Ice";
 
   gtk.iconTheme.package = gruvboxPlus;
   gtk.iconTheme.name = "GruvboxPlus";

@@ -5,7 +5,7 @@
 
     settings = {
       font = {
-        size = 13;
+        size = 16.0;
         normal = {
           family = "InconsolataGo Nerd Font";
           style = "Bold";
