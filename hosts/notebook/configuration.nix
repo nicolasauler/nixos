@@ -110,6 +110,7 @@
     wireplumber
     wl-clipboard
     wget
+    xournalpp
     xwayland
     zathura
     zellij
