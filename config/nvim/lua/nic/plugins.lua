@@ -83,6 +83,8 @@ return {
         "theHamsta/nvim-dap-virtual-text",
         "nvim-telescope/telescope-dap.nvim",
         "rcarriga/nvim-dap-ui",
+        "nvim-neotest/nvim-nio",
+        { "folke/neodev.nvim", opts = {}},
         "leoluz/nvim-dap-go",
         "mfussenegger/nvim-dap-python",
     },
@@ -96,7 +98,8 @@ return {
     "kristijanhusak/vim-dadbod-ui",
     "kristijanhusak/vim-dadbod-completion",
 
-    "rest-nvim/rest.nvim",
+    --is currently breaking everything
+    --"rest-nvim/rest.nvim",
 
     {
         "michaelrommel/nvim-silicon",

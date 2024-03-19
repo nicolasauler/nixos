@@ -1,3 +1,8 @@
+require("neodev").setup({
+  library = { plugins = { "nvim-dap-ui" }, types = true },
+  ...
+})
+
 local lsp_zero = require('lsp-zero').preset({})
 
 lsp_zero.on_attach(function(client, bufnr)
@@ -11,7 +16,7 @@ require('mason-lspconfig').setup({
         'bashls',
         'clangd',
         'lua_ls',
-        'nil_ls',
+        --'nil_ls',
         'pyright',
         'rust_analyzer',
         'yamlls',
