@@ -5,13 +5,15 @@ require("mason-nvim-dap").setup({
         "codelldb",
         "debugpy",
         "delve",
-        'shellcheck',
-        'shfmt'
+        "shellcheck",
+        "shfmt",
     }
 })
 
 local dap, dapui = require("dap"), require("dapui")
 dapui.setup()
+vim.keymap.set('n', '<leader>no', function() require('dap').step_over() end)
+vim.keymap.set('n', '<leader>ni', function() require('dap').step_into() end)
 
 dap.listeners.after.event_initialized["dapui_config"] = function()
     dapui.open()
