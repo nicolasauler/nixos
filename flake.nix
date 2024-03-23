@@ -13,6 +13,8 @@
 
     hyprland.url = "github:hyprwm/Hyprland";
 
+    neovim-nightly-overlay.url = "github:nix-community/neovim-nightly-overlay";
+
   };
 
   outputs = { self, nixpkgs, ... }@inputs:
