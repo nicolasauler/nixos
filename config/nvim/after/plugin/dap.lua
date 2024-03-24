@@ -2,7 +2,7 @@ require("nvim-dap-virtual-text").setup()
 
 require("mason-nvim-dap").setup({
     ensure_installed = {
-        "codelldb",
+        --"codelldb",
         "debugpy",
         "delve",
         "shellcheck",

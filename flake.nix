@@ -17,14 +17,19 @@
 
   };
 
-  outputs = { self, nixpkgs, ... }@inputs:
+  outputs = { self, nixpkgs, neovim-nightly-overlay, ... }@inputs:
     let
       system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ neovim-nightly-overlay.overlay ];
+        config.allowUnfree = true;
+      };
     in
     {
       nixosConfigurations = {
         notebook = nixpkgs.lib.nixosSystem {
+          inherit pkgs;
           specialArgs = { inherit inputs; };
           modules = [
             ./hosts/notebook/configuration.nix
