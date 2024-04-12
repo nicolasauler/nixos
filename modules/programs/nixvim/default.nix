@@ -4,7 +4,6 @@
     inputs.nixvim.homeManagerModules.nixvim
     ./plugins
     ./options.nix
-    ./colourscheme.nix
   ];
 
   programs.nixvim = {
@@ -13,6 +12,8 @@
     globals = {
       mapleader = " ";
     };
+
+    colorschemes.gruvbox.enable = true;
 
     # ... and even highlights and autocommands !
     highlight.ExtraWhitespace.bg = "red";
@@ -35,4 +36,4 @@
       telescope-dap-nvim
     ];
   };
-};
+}

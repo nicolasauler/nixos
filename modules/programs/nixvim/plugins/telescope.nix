@@ -1,55 +1,54 @@
 {
-  plugins.yanky = {
-    enable = true;
-    picker.telescope = {
+  programs.nixvim = {
+    plugins.yanky = {
       enable = true;
-      useDefaultMappings = true;
-    };
-  };
-
-  plugins.telescope = {
-    enable = true;
-
-    keymaps = {
-      "<leader>pf" = "find_files";
-      #vim.keymap.set('n', '<leader>pt', function()
-      #	builtin.grep_string({ search = vim.fn.input("Grep > ") });
-      #end)
-      "<C-p>" = {
-        action = "git_files";
-        desc = "Telescope Git Files";
+      picker.telescope = {
+        enable = true;
+        useDefaultMappings = true;
       };
-      "<leader>pg" = "live_grep";
-      "<leader>ph" = "help_tags";
-      "<leader>pb" = "git_branches";
-      "<leader>pc" = "git_commits";
-      "<leader>ps" = "git_status";
-      #"<leader>py" = "yank_history";
     };
 
-    extraOptions = {
-      pickers = {
-        find_files = {
-          hidden = true;
-          file_ignore_patterns = [ "%.git/.*" ];
+    plugins.telescope = {
+      enable = true;
+
+      keymaps = {
+        "<leader>pf" = "find_files";
+        #vim.keymap.set('n', '<leader>pt', function()
+        #	builtin.grep_string({ search = vim.fn.input("Grep > ") });
+        #end)
+        "<C-p>" = "git_files";
+        "<leader>pg" = "live_grep";
+        "<leader>ph" = "help_tags";
+        "<leader>pb" = "git_branches";
+        "<leader>pc" = "git_commits";
+        "<leader>ps" = "git_status";
+        #"<leader>py" = "yank_history";
+      };
+
+      extraOptions = {
+        pickers = {
+          find_files = {
+            hidden = true;
+            file_ignore_patterns = [ "%.git/.*" ];
+          };
         };
       };
+
     };
 
-  };
-
-  extraConfigLua = ''
+    extraConfigLua = ''
       local noice_ext = require("telescope").load_extension("noice")
-    vim.keymap.set('n', '<leader>pn', noice_ext.noice, {})
+      vim.keymap.set('n', '<leader>pn', noice_ext.noice, {})
 
 
-    local dap_ext = telescope.load_extension('dap')
-    vim.keymap.set('n', '<leader>pd', dap_ext.commands, {})
+      local dap_ext = telescope.load_extension('dap')
+      vim.keymap.set('n', '<leader>pd', dap_ext.commands, {})
 
-    local git_worktree_ext = telescope.load_extension('git_worktree')
-    vim.keymap.set('n', '<leader>pw', git_worktree_ext.git_worktrees, {})
-    vim.keymap.set('n', '<leader>pr', git_worktree_ext.create_git_worktree, {})
-  '';
+      local git_worktree_ext = telescope.load_extension('git_worktree')
+      vim.keymap.set('n', '<leader>pw', git_worktree_ext.git_worktrees, {})
+      vim.keymap.set('n', '<leader>pr', git_worktree_ext.create_git_worktree, {})
+    '';
+  };
 }
 
 #vim.keymap.set('n', '<leader>py', yanky_ext.yank_history, {})

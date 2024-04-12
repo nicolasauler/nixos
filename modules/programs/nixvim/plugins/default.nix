@@ -1,8 +1,6 @@
 {
   imports = [
-    ./options.nix
     ./cmp.nix
-    ./colourscheme.nix
     ./copilot.nix
     ./debug.nix
     ./git.nix

@@ -99,6 +99,7 @@
     pipewire
     procs
     qutebrowser
+    slack
     slurp
     starship
     sxiv
