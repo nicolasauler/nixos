@@ -29,7 +29,7 @@ dap.adapters.codelldb = {
     type = 'server',
     port = "${port}",
     executable = {
-        command = '/home/nic/.local/share/nvim/mason/packages/codelldb/extension/adapter/codelldb',
+        command = "$(nix eval --raw nixpkgs#vscode-extensions.vadimcn.vscode-lldb.outPath)/share/vscode/extensions/vadimcn.vscode-lldb/adapter/codelldb",
         args = { "--port", "${port}" },
     }
 }

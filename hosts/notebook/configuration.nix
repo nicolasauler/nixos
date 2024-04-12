@@ -89,10 +89,10 @@
     htop
     hyprland
     git
+    godot_4
     grim
     keepassxc
     mako
-    neovim
     vscode-extensions.vadimcn.vscode-lldb
     networkmanagerapplet
     pavucontrol
