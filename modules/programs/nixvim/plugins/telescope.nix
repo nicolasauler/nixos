@@ -41,10 +41,10 @@
       vim.keymap.set('n', '<leader>pn', noice_ext.noice, {})
 
 
-      local dap_ext = telescope.load_extension('dap')
+      local dap_ext = require("telescope").load_extension('dap')
       vim.keymap.set('n', '<leader>pd', dap_ext.commands, {})
 
-      local git_worktree_ext = telescope.load_extension('git_worktree')
+      local git_worktree_ext = require("telescope").load_extension('git_worktree')
       vim.keymap.set('n', '<leader>pw', git_worktree_ext.git_worktrees, {})
       vim.keymap.set('n', '<leader>pr', git_worktree_ext.create_git_worktree, {})
     '';
