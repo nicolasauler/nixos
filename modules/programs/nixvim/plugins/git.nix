@@ -5,7 +5,7 @@
     plugins.gitsigns = {
       enable = true;
       settings.trouble = true;
-      settings.onAttach = ''
+      settings.on_attach = ''
         function(bufnr)
             local gs = package.loaded.gitsigns
 

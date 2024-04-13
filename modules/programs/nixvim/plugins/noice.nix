@@ -1,5 +1,7 @@
 {
   programs.nixvim = {
+    plugins.notify.enable = true;
+
     plugins.noice = {
       enable = true;
 
@@ -8,6 +10,8 @@
         "vim.lsp.util.stylize_markdown" = true;
         "cmp.entry.get_documentation" = true;
       };
+
+      notify.enabled = true;
 
       presets = {
         bottom_search = false; # use a classic bottom cmdline for search
