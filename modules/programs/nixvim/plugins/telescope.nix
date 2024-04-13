@@ -25,7 +25,7 @@
         #"<leader>py" = "yank_history";
       };
 
-      extraOptions = {
+      settings = {
         pickers = {
           find_files = {
             hidden = true;

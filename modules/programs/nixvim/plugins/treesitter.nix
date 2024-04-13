@@ -22,7 +22,7 @@
         "javascript"
       ];
       indent = true;
-      folding = true;
+      folding = false;
       nixGrammars = true;
     };
 

@@ -14,10 +14,7 @@
     hyprland.url = "github:hyprwm/Hyprland";
 
     neovim-nightly-overlay.url = "github:nix-community/neovim-nightly-overlay";
-    nixvim = {
-      url = "github:nix-community/nixvim";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    nixvim.url = "github:nix-community/nixvim";
   };
 
   outputs = { self, nixpkgs, neovim-nightly-overlay, nixvim, ... }@inputs:
