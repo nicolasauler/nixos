@@ -4,11 +4,14 @@
     inputs.nixvim.homeManagerModules.nixvim
     ./plugins
     ./options.nix
+    ./keymaps.nix
   ];
 
   programs.nixvim = {
     enable = true;
     defaultEditor = true;
+    package = pkgs.neovim-nightly;
+
     globals = {
       mapleader = " ";
     };
