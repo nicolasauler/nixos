@@ -32,11 +32,12 @@
     extraPlugins = with pkgs.vimPlugins; [
       harpoon2
       neodev-nvim
-      # nvim-nio
+      nvim-nio
       vim-dadbod
       vim-dadbod-ui
       vim-dadbod-completion
       telescope-dap-nvim
+      nui-nvim
     ];
   };
 }
