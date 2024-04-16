@@ -99,7 +99,7 @@
 
   home.shellAliases = {
     cd = "z";
-    ls = "eza";
+    ls = "eza --icons";
     g = "git";
     n = "nvim";
     vi = "nvim .";
