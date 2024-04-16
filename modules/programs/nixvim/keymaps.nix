@@ -5,7 +5,7 @@
         mode = "n";
         key = "<leader>ls";
         options.silent = true;
-        action = "<cmd>Ex<CR>";
+        action = "<cmd>Oil<CR>";
       }
       {
         mode = "v";
