@@ -41,6 +41,12 @@
             ./hosts/desktop/configuration.nix
           ];
         };
+        xps_bipa = nixpkgs.lib.nixosSystem {
+          specialArgs = { inherit inputs; };
+          modules = [
+            ./hosts/xps_bipa/configuration.nix
+          ];
+        };
       };
     };
 }

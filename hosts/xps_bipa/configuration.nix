@@ -77,19 +77,23 @@
     };
   };
 
+  virtualisation.docker.enable = true;
+  virtualisation.podman.enable = true;
+
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
     alacritty
     bat
+    docker-compose
     du-dust
     eza
     firefox-wayland
     fzf
     htop
     hyprland
+    gh
     git
-    godot_4
     grim
     keepassxc
     mako
@@ -109,7 +113,7 @@
     wireplumber
     wl-clipboard
     wget
-    xournalpp
+    # xournalpp
     xwayland
     zathura
     zellij
@@ -176,7 +180,18 @@
   programs.nix-ld.libraries = with pkgs; [
     # Add any missing dynamic libraries for unpackaged programs
     # here, NOT in environment.systemPackages
+    postgresql.lib
   ];
+
+  # ...
+  services.postgresql = {
+    enable = true;
+    #ensureDatabases = [ "mydatabase" ];
+    #authentication = pkgs.lib.mkOverride 10 ''
+    #  #type database  DBuser  auth-method
+    #  local all       all     trust
+    #'';
+  };
 
   nix.settings = {
     trusted-substituters = [
