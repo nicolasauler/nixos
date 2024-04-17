@@ -51,10 +51,10 @@
       ];
 
       input = {
-        kb_layout = "br";
-        kb_variant = "";
+        kb_layout = "br,us";
+        kb_variant = ",intl";
         kb_model = "";
-        kb_options = "caps:swapescape";
+        kb_options = "caps:swapescape,grp:alt_space_toggle";
         kb_rules = "";
 
         follow_mouse = 1;
