@@ -88,6 +88,7 @@
     fzf
     htop
     hyprland
+    hyprlock
     git
     godot_4
     grim
