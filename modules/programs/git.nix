@@ -6,7 +6,7 @@
     userEmail = "nicolasauler@usp.br";
 
     extraConfig = {
-      commit = { template = "home/nic/nixos/config/git/commit_template"; };
+      commit = { template = "/home/nic/nixos/config/git/commit_template"; };
       merge = { tool = "nvimdiff4"; prompt = false; };
       mergeTool = {
         nvimdiff4 = {
