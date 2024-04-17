@@ -52,7 +52,7 @@
 
       input = {
         kb_layout = "br,us";
-        kb_variant = ",intl";
+        kb_variant = ",intl_nodeadkeys";
         kb_model = "";
         kb_options = "caps:swapescape,grp:alt_space_toggle";
         kb_rules = "";
