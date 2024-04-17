@@ -166,7 +166,12 @@
   hardware = {
     opengl.enable = true;
     cpu.intel.updateMicrocode = true;
+    bluetooth = {
+      enable = true;
+      powerOnBoot = true;
+    };
   };
+  services.blueman.enable = true;
 
   services.thermald.enable = true;
   services.auto-cpufreq.enable = true;

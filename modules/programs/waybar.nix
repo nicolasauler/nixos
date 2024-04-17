@@ -27,7 +27,7 @@ let
       "temperature"
       "pulseaudio"
       "battery"
-      #"bluetooth"
+      "bluetooth"
       "network"
       "tray"
     ];
