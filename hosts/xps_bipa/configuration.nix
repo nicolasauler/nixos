@@ -91,8 +91,8 @@
     firefox-wayland
     fzf
     htop
-    hyprland
-    hyprlock
+    # hyprland
+    # hyprlock
     gh
     git
     grim
@@ -162,6 +162,13 @@
     xwayland.enable = true;
   };
   programs.hyprland.package = inputs.hyprland.packages."${pkgs.system}".hyprland;
+  programs.hyprlock = {
+    enable = true;
+    general = {
+      ignore_empty_input = true;
+      hide_cursor = true;
+    };
+  };
 
   hardware = {
     opengl.enable = true;

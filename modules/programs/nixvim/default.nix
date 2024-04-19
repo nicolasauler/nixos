@@ -27,6 +27,11 @@
         pattern = "nix";
         command = "setlocal tabstop=2 shiftwidth=2";
       }
+      {
+        event = "FileType";
+        pattern = "proto";
+        command = "setlocal tabstop=2 shiftwidth=2";
+      }
     ];
 
     extraPlugins = with pkgs.vimPlugins; [
