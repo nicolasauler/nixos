@@ -85,7 +85,7 @@
   environment.systemPackages = with pkgs; [
     alacritty
     bat
-    docker-compose
+    # docker-compose
     du-dust
     eza
     firefox-wayland
@@ -102,6 +102,7 @@
     networkmanagerapplet
     pavucontrol
     pipewire
+    playerctl
     procs
     qutebrowser
     slack

@@ -191,7 +191,8 @@
       bindl = [
         ", XF86AudioLowerVolume, exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"
         ", XF86AudioMute, exec, wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
-        #", XF86AudioPlay, exec, playerctl play-pause"
+        ", XF86AudioMicMute, exec, wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"
+        ", XF86AudioPlay, exec, playerctl play-pause"
         #", XF86AudioPrev, exec, playerctl previous"
         #", XF86AudioNext, exec, playerctl next"
       ];
