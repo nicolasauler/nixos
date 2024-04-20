@@ -129,6 +129,7 @@
           "$mainMod, E, exit,"
           "$mainMod, F, fullscreen,"
           "$mainMod SHIFT, F, togglefloating,"
+          "ALT, F11, exec, hyprlock"
           "$mainMod, D, exec, rofi -modi drun,run -show drun"
           "$mainMod, P, pseudo," # dwindle
           "$mainMod, J, togglesplit," # dwindle
@@ -183,6 +184,16 @@
         "$mainMod CTRL, h, resizeactive, -30 0"
         "$mainMod CTRL, k, resizeactive, 0 -10"
         "$mainMod CTRL, j, resizeactive, 0 10"
+
+        "XF86AudioRaiseVolume, exec, wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+"
+      ];
+
+      bindl = [
+        ", XF86AudioLowerVolume, exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"
+        ", XF86AudioMute, exec, wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
+        #", XF86AudioPlay, exec, playerctl play-pause"
+        #", XF86AudioPrev, exec, playerctl previous"
+        #", XF86AudioNext, exec, playerctl next"
       ];
 
       bindm = [

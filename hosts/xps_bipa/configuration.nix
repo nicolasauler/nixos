@@ -160,14 +160,7 @@
   programs.hyprland = {
     enable = true;
     xwayland.enable = true;
-  };
-  programs.hyprland.package = inputs.hyprland.packages."${pkgs.system}".hyprland;
-  programs.hyprlock = {
-    enable = true;
-    general = {
-      ignore_empty_input = true;
-      hide_cursor = true;
-    };
+    package = inputs.hyprland.packages."${pkgs.system}".hyprland;
   };
 
   hardware = {

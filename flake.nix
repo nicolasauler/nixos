@@ -11,13 +11,15 @@
 
     nix-colors.url = "github:misterio77/nix-colors";
 
+    hypridle.url = "github:hyprwm/hypridle";
     hyprland.url = "github:hyprwm/Hyprland";
+    hyprlock.url = "github:hyprwm/hyprlock";
 
     neovim-nightly-overlay.url = "github:nix-community/neovim-nightly-overlay";
     nixvim.url = "github:nix-community/nixvim";
   };
 
-  outputs = { self, nixpkgs, neovim-nightly-overlay, nixvim, ... }@inputs:
+  outputs = { self, nixpkgs, neovim-nightly-overlay, ... }@inputs:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
