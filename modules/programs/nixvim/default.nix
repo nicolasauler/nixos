@@ -14,6 +14,7 @@
 
     globals = {
       mapleader = " ";
+      copilot_no_tab_map = true;
     };
 
     colorschemes.gruvbox.enable = true;

@@ -121,6 +121,14 @@
         options.silent = true;
         action = "<cmd>!chmod +x %<CR>";
       }
+
+      # copilot remap accept
+      {
+        mode = "i";
+        key = "<C-j>";
+        options.silent = true;
+        action = "<Plug>(copilot-accept-next)";
+      }
     ];
   };
 }
