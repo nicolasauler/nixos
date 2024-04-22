@@ -7,6 +7,7 @@
     ./git.nix
     ./lualine.nix
     ./lsp.nix
+    ./misc.nix
     ./noice.nix
     ./oil.nix
     ./telescope.nix
