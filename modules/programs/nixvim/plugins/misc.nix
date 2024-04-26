@@ -18,13 +18,17 @@
         mode = "n";
         key = "]t";
         options.silent = true;
-        action = "require('todo-comments').jump_next()";
+        action = ''
+          function() require('todo-comments').jump_next() end
+        '';
       }
       {
         mode = "n";
         key = "[t";
         options.silent = true;
-        action = "require('todo-comments').jump_prev()";
+        action = ''
+          function() require('todo-comments').jump_prev() end
+        '';
       }
     ];
 
