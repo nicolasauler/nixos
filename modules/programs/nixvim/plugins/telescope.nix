@@ -22,7 +22,6 @@
         "<leader>pb" = "git_branches";
         "<leader>pc" = "git_commits";
         "<leader>ps" = "git_status";
-        #"<leader>py" = "yank_history";
       };
 
       settings = {
@@ -37,9 +36,11 @@
     };
 
     extraConfigLua = ''
+      local yanky_ext = require("telescope").load_extension("yank_history")
+      vim.keymap.set('n', '<leader>py', yanky_ext.yank_history, {})
+
       local noice_ext = require("telescope").load_extension("noice")
       vim.keymap.set('n', '<leader>pn', noice_ext.noice, {})
-
 
       local dap_ext = require("telescope").load_extension('dap')
       vim.keymap.set('n', '<leader>pd', dap_ext.commands, {})
@@ -50,5 +51,3 @@
     '';
   };
 }
-
-#vim.keymap.set('n', '<leader>py', yanky_ext.yank_history, {})

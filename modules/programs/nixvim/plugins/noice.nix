@@ -1,6 +1,9 @@
 {
   programs.nixvim = {
-    plugins.notify.enable = true;
+    plugins.notify = {
+      enable = true;
+      topDown = false;
+    };
 
     plugins.noice = {
       enable = true;
@@ -21,5 +24,14 @@
         lsp_doc_border = false; # add a border to hover docs and signature help
       };
     };
+
+    keymaps = [
+      {
+        mode = "n";
+        key = "<leader>nd";
+        options.silent = true;
+        action = "<cmd>NoiceDismiss<CR>";
+      }
+    ];
   };
 }
