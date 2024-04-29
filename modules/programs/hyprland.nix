@@ -129,7 +129,7 @@
           "$mainMod, E, exit,"
           "$mainMod, F, fullscreen,"
           "$mainMod SHIFT, F, togglefloating,"
-          "ALT, F11, exec, hyprlock"
+          "ALT, F11, exec, loginctl lock-session"
           "$mainMod, D, exec, rofi -modi drun,run -show drun"
           "$mainMod, P, pseudo," # dwindle
           "$mainMod, J, togglesplit," # dwindle
