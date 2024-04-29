@@ -1,12 +1,21 @@
+{ pkgs, ... }:
 {
   programs.nixvim = {
     plugins = {
-      luasnip.enable = true;
       cmp-nvim-lsp.enable = true;
       cmp-nvim-lua.enable = true;
       cmp-buffer.enable = true;
       cmp-path.enable = true;
       cmp-cmdline.enable = true;
+
+      luasnip = {
+        enable = true;
+        fromVscode = [
+          {
+            paths = "${pkgs.vimPlugins.friendly-snippets}";
+          }
+        ];
+      };
 
       lspkind = {
         enable = true;
@@ -19,7 +28,7 @@
             path = "[path]";
             luasnip = "[snip]";
             buffer = "[buffer]";
-            # vim-dadbod-completion = "[dadbod]";
+            vim-dadbod-completion = "[dadbod]";
           };
         };
       };
@@ -28,7 +37,11 @@
         enable = true;
         settings = {
           # snippet.expand = "luasnip";
-          snippet.expand = "function(args) require('luasnip').lsp_expand(args.body) end";
+          snippet.expand = ''
+            function(args)
+              require('luasnip').lsp_expand(args.body)
+            end
+          '';
           sources = [
             { name = "nvim_lsp"; }
             { name = "luasnip"; }
@@ -39,7 +52,7 @@
               # Words from other open buffers can also be suggested.
               option.get_bufnrs.__raw = "vim.api.nvim_list_bufs";
             }
-            #{ name = "vim-dadbod-completion"; }
+            { name = "vim-dadbod-completion"; }
           ];
           mapping = {
             "<C-y>" = "cmp.mapping.confirm({ select = true })";
