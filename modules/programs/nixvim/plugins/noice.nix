@@ -2,7 +2,9 @@
   programs.nixvim = {
     plugins.notify = {
       enable = true;
-      topDown = false;
+      topDown = true; # false to make notification appear in bottom
+      # however I'm going to stick with it at the top and dismiss
+      # when I want with <leader>nd (NoiceDismiss)
     };
 
     plugins.noice = {

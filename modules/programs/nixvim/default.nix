@@ -14,7 +14,7 @@
 
     globals = {
       mapleader = " ";
-      copilot_no_tab_map = true;
+      # copilot_no_tab_map = true; -> for copilot.vim
     };
 
     colorschemes.gruvbox.enable = true;
