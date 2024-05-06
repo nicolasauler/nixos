@@ -3,9 +3,9 @@
     ./cmp.nix
     ./copilot.nix
     ./debug.nix
-    ./flash.nix
+    #./flash.nix
     ./git.nix
-    ./harpoon.nix
+    #./harpoon.nix
     ./lualine.nix
     ./lsp.nix
     ./misc.nix

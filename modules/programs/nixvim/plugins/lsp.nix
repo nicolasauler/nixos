@@ -11,11 +11,11 @@
           settings.formatting.command = [ "nixpkgs-fmt" ];
         };
         pyright.enable = true;
-        #rust-analyzer = {
-        #  enable = true;
-        #  installCargo = false;
-        #  installRustc = false;
-        #};
+        # rust-analyzer = {
+        #   enable = true;
+        #   installCargo = false;
+        #   installRustc = false;
+        # };
         yamlls.enable = true;
       };
 
