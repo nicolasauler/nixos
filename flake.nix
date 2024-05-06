@@ -11,7 +11,7 @@
 
     nix-colors.url = "github:misterio77/nix-colors";
 
-    hyprland.url = "github:hyprwm/Hyprland";
+    hyprland.url = "git+https://github.com/hyprwm/Hyprland?submodules=1";
     hyprlock.url = "github:hyprwm/hyprlock";
 
     neovim-nightly-overlay.url = "github:nix-community/neovim-nightly-overlay";
