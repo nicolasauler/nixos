@@ -6,8 +6,7 @@
 
 {
   imports =
-    [
-      # Include the results of the hardware scan.
+    [ # Include the results of the hardware scan.
       ./hardware-configuration.nix
       inputs.home-manager.nixosModules.default
     ];
@@ -30,7 +29,7 @@
   time.timeZone = "America/Sao_Paulo";
 
   # Select internationalisation properties.
-  i18n.defaultLocale = "en_US.UTF-8";
+  i18n.defaultLocale = "en_GB.UTF-8";
 
   i18n.extraLocaleSettings = {
     LC_ADDRESS = "pt_BR.UTF-8";
@@ -45,23 +44,32 @@
   };
 
   # Configure keymap in X11
-  services.xserver = {
-    xkb.layout = "br";
-    xkb.variant = "";
+  # services.xserver = {
+  #   layout = "us";
+  #   xkbVariant = "altgr-intl";
+  # };
+
+  security.rtkit.enable = true;
+  services.pipewire = {
+    enable = true;
+    alsa.enable = true;
+    alsa.support32Bit = true;
+    pulse.enable = true;
   };
 
-  # Configure console keymap
-  console.keyMap = "br-abnt2";
+  console.keyMap = "us";
 
   # Define a user account. Don't forget to set a password with ‘passwd’.
   users.users.nic = {
     isNormalUser = true;
-    description = "nicolas";
-    extraGroups = [ "networkmanager" "wheel" ];
-    packages = with pkgs; [ ];
+    description = "nic";
+    extraGroups = [ "networkmanager" "wheel" "docker" ];
+    packages = with pkgs; [];
   };
 
-  # home man
+  # Allow unfree packages
+  # nixpkgs.config.allowUnfree = true;
+
   home-manager = {
     extraSpecialArgs = { inherit inputs; };
     users = {
@@ -69,24 +77,43 @@
     };
   };
 
-  # Allow unfree packages
-  nixpkgs.config.allowUnfree = true;
+  virtualisation.docker.enable = true;
+  virtualisation.podman.enable = true;
 
-  environment.sessionVariables = {
-    # invisible cursor
-    # WLR_NO_HARDWARE_CURSORS = "1";
-    # hint electron
-    NIXOS_OZONE_WL = "1";
-  };
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
-    vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
-    wget
+    alacritty
+    bat
+    du-dust
+    eza
+    firefox-wayland
+    fzf
+    htop
+    gh
     git
+    grim
+    keepassxc
+    mako
+    vscode-extensions.vadimcn.vscode-lldb
+    # networkmanagerapplet
+    pavucontrol
+    playerctl
+    procs
+    qutebrowser
+    slurp
+    starship
+    sxiv
+    ripgrep
+    rofi-wayland
+    tree-sitter
+    wireplumber
+    wl-clipboard
+    zathura
+    zellij
+    zoxide
   ];
 
-  # Flakes
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
   # Some programs need SUID wrappers, can be configured further or are
@@ -116,16 +143,32 @@
   # (e.g. man configuration.nix or on https://nixos.org/nixos/options.html).
   system.stateVersion = "23.11"; # Did you read the comment?
 
+  xdg.portal = {
+    enable = true;
+    extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
+    wlr.enable = true;
+  };
+
   programs.hyprland = {
     enable = true;
     nvidiaPatches = true;
     xwayland.enable = true;
+    package = inputs.hyprland.packages."${pkgs.system}".hyprland;
   };
 
+  services.xserver.videoDrivers = ["nvidia"];
   hardware = {
-    opengl.enable = true;
+    opengl = {
+      enable = true;
+      driSupport = true;
+      driSupport32Bit = true;
+    };
 
-    nvidia.modesetting.enable = true;
+    nvidia = {
+      modesetting.enable = true;
+      open = false;
+      nvidiaSettings = true;
+    };
   };
 
 }

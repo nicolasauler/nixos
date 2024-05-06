@@ -1,6 +1,30 @@
-{ config, pkgs, ... }:
+{ config, inputs, pkgs, ... }:
 
 {
+  imports = [
+    inputs.nix-colors.homeManagerModules.default
+    inputs.hyprlock.homeManagerModules.default
+    inputs.hypridle.homeManagerModules.default
+    ../../modules/programs/alacritty.nix
+    ../../modules/programs/git.nix
+    ../../modules/programs/gtk.nix
+    ../../modules/programs/hyprland.nix
+    ../../modules/programs/mako.nix
+    ../../modules/programs/nixvim
+    ../../modules/programs/qutebrowser.nix
+    ../../modules/programs/rofi.nix
+    ../../modules/programs/starship.nix
+    ../../modules/programs/waybar.nix
+    ../../modules/programs/zathura.nix
+    ../../modules/programs/zellij.nix
+  ];
+
+  nixpkgs.overlays = [
+    inputs.neovim-nightly-overlay.overlay
+  ];
+
+  colorScheme = inputs.nix-colors.colorSchemes.gruvbox-dark-medium;
+
   # Home Manager needs a bit of information about you and the paths it should
   # manage.
   home.username = "nic";
@@ -21,12 +45,18 @@
     # # Adds the 'hello' command to your environment. It prints a friendly
     # # "Hello, world!" when run.
     # pkgs.hello
+    pkgs.adwaita-qt
 
     # # It is sometimes useful to fine-tune packages, for example, by applying
     # # overrides. You can do that directly here, just don't forget the
     # # parentheses. Maybe you want to install Nerd Fonts with a limited number of
     # # fonts?
     # (pkgs.nerdfonts.override { fonts = [ "FantasqueSansMono" ]; })
+    (pkgs.nerdfonts.override
+      {
+        fonts = [ "Inconsolata" "InconsolataGo" "FiraCode" ];
+      }
+    )
 
     # # You can also create simple shell scripts directly inside your
     # # configuration. For example, this adds a command 'my-hello' to your
@@ -70,10 +100,39 @@
     # EDITOR = "emacs";
   };
 
-  programs.git = {
-    enable = true;
-    userName = "Nicolas Auler";
-    userEmail = "nicolasauler@usp.br";
+  home.shellAliases = {
+    cd = "z";
+    ls = "eza --icons";
+    g = "git";
+    n = "nvim";
+    vi = "nvim .";
+    cat = "bat";
+    ps = "procs";
   };
+
   programs.home-manager.enable = true;
+
+  programs.bash = {
+    enable = true;
+    enableCompletion = true;
+    bashrcExtra = ''
+      export PATH="$HOME/.local/bin:$PATH"
+      eval "$(zoxide init bash)"
+      eval "$(zellij setup --generate-auto-start bash)"
+      eval "$(starship init bash)"
+    '';
+  };
+
+  programs.hyprlock = {
+    enable = true;
+    general = {
+      ignore_empty_input = true;
+      hide_cursor = true;
+    };
+  };
+
+  qt.enable = true;
+  qt.platformTheme.name = "gtk";
+  qt.style.name = "adwaita-dark";
+
 }
