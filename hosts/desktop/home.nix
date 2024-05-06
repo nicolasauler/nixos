@@ -1,4 +1,4 @@
-{ config, inputs, pkgs, ... }:
+{ config, inputs, lib, pkgs, ... }:
 
 {
   imports = [
@@ -131,8 +131,38 @@
     };
   };
 
-  qt.enable = true;
-  qt.platformTheme.name = "gtk";
-  qt.style.name = "adwaita-dark";
+  services.hypridle = {
+    enable = true;
+    lockCmd = "pidof hyprlock || ${lib.getExe pkgs.hyprlock}";
+    beforeSleepCmd = "loginctl lock-session"; #lock before suspend
+    afterSleepCmd = "hyprctl dispatch dpms on";
+    listeners = [
+      {
+        timeout = 150;
+        onTimeout = "brightnessctl -s set 10"; #monitor backlight minimum
+        onResume = "brightnessctl -r"; # monitor backlight restore
+      }
+      {
+        timeout = 150;
+        onTimeout = "brightnessctl -sd rgb:kbd_backlight set 0"; #keyboard backlight
+        onResume = "brightnessctl -rd rgb:kbd_backlight";
+      }
+      {
+        timeout = 300;
+        onTimeout = "loginctl lock-session";
+      }
+      {
+        timeout = 330;
+        onTimeout = "hyprctl dispatch dpms off"; #screen off
+        onResume = "hyprctl dispatch dpms on"; #screen on
+      }
+    ];
+  };
+
+  qt = {
+    enable = true;
+    platformTheme.name = "gtk";
+    style.name = "adwaita-dark";
+  };
 
 }
