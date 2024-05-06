@@ -4,7 +4,6 @@
   imports = [
     inputs.nix-colors.homeManagerModules.default
     inputs.hyprlock.homeManagerModules.default
-    inputs.hypridle.homeManagerModules.default
     ../../modules/programs/alacritty.nix
     ../../modules/programs/git.nix
     ../../modules/programs/gtk.nix
@@ -133,30 +132,34 @@
 
   services.hypridle = {
     enable = true;
-    lockCmd = "pidof hyprlock || ${lib.getExe pkgs.hyprlock}";
-    beforeSleepCmd = "loginctl lock-session"; #lock before suspend
-    afterSleepCmd = "hyprctl dispatch dpms on";
-    listeners = [
-      {
-        timeout = 150;
-        onTimeout = "brightnessctl -s set 10"; #monitor backlight minimum
-        onResume = "brightnessctl -r"; # monitor backlight restore
-      }
-      {
-        timeout = 150;
-        onTimeout = "brightnessctl -sd rgb:kbd_backlight set 0"; #keyboard backlight
-        onResume = "brightnessctl -rd rgb:kbd_backlight";
-      }
-      {
-        timeout = 300;
-        onTimeout = "loginctl lock-session";
-      }
-      {
-        timeout = 330;
-        onTimeout = "hyprctl dispatch dpms off"; #screen off
-        onResume = "hyprctl dispatch dpms on"; #screen on
-      }
-    ];
+    settings = {
+      general = {
+        lockCmd = "pidof hyprlock || ${lib.getExe pkgs.hyprlock}";
+        beforeSleepCmd = "loginctl lock-session"; #lock before suspend
+        afterSleepCmd = "hyprctl dispatch dpms on";
+      };
+      listener = [
+        {
+          timeout = 150;
+          onTimeout = "brightnessctl -s set 10"; #monitor backlight minimum
+          onResume = "brightnessctl -r"; # monitor backlight restore
+        }
+        {
+          timeout = 150;
+          onTimeout = "brightnessctl -sd rgb:kbd_backlight set 0"; #keyboard backlight
+          onResume = "brightnessctl -rd rgb:kbd_backlight";
+        }
+        {
+          timeout = 300;
+          onTimeout = "loginctl lock-session";
+        }
+        {
+          timeout = 330;
+          onTimeout = "hyprctl dispatch dpms off"; #screen off
+          onResume = "hyprctl dispatch dpms on"; #screen on
+        }
+      ];
+    };
   };
 
   qt = {
