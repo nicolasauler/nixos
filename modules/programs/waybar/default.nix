@@ -10,8 +10,8 @@ let
 
   mainWaybarConfig = {
     mod = "dock";
-    layer = "top";
-    gtk-layer-shell = true;
+    # layer = "top";
+    # gtk-layer-shell = true;
     height = 14;
     position = "top";
 
@@ -23,11 +23,12 @@ let
       "cpu"
       "cpu#cores"
       "custom/gpu-usage"
+      "custom/gpu-temp"
       "memory"
       "temperature"
       "pulseaudio"
-      "battery"
-      "bluetooth"
+      #"battery"
+      #"bluetooth"
       "network"
       "tray"
     ];
@@ -78,7 +79,7 @@ let
 
     "cpu#cores" = {
       interval = 10;
-      format = "󰍛 {usage0}% {usage1}% {usage2}% {usage3}% {usage4}% {usage5}% {usage6}% {usage7}%";
+      format = "󰍛 {usage0}% {usage2}% {usage4}% {usage6}% {usage8}% {usage10}% {usage12}% {usage14}%";
     };
 
     battery = {
@@ -105,15 +106,22 @@ let
     temperature = {
       interval = 10;
       #thermal-zone = 2;
-      #hwmon-path = "/sys/class/hwmon/hwmon2/temp1_input";
+      hwmon-path = "/sys/class/hwmon/hwmon1/temp3_input";
+
       critical-threshold = 80;
       format-critical = "{temperatureC}°C ";
-      format = "{temperatureC}°C ";
+      format = "{temperatureC}°C ";
     };
 
     "custom/gpu-usage" = {
+      exec = "nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits";
+      format = " 󰨜 {} ";
+      interval = 10;
+    };
+
+    "custom/gpu-temp" = {
       exec = "nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits";
-      format = "{}";
+      format = "  {} ";
       interval = 10;
     };
 
@@ -123,23 +131,24 @@ let
         "(.*) — Mozilla Firefox" = "󰈹  $1";
         "(.*)Steam" = "Steam 󰓓";
       };
+      separate-outputs = true;
     };
 
     "hyprland/language" = {
       format = " {}";
       format-br = "br";
       format-pt = "pt";
-      format-en = "english";
+      format-en = "en";
     };
 
     memory = {
       interval = 30;
       format = " {used:0.1f} GiB";
-      max-length = 10;
+      max-length = 25;
     };
 
     network = {
-      max-length = 30;
+      max-length = 70;
       interval = 10;
       format = "{ifname}";
       format-disconnected = " Disconnected󰤭 ";
@@ -150,7 +159,7 @@ let
     };
 
     pulseaudio = {
-      format = "{icon} {volume}%";
+      format = "{icon}  {volume}%";
       format-bluetooth = "{icon} {volume}%";
       format-muted = "";
       format-icons = {
@@ -181,5 +190,6 @@ in
       mesonFlags = oldAttrs.mesonFlags ++ [ "-Dexperimental=true" ];
     });
     settings = { mainBar = mainWaybarConfig; };
+    style = ./style.css;
   };
 }

@@ -5,7 +5,7 @@
     ./debug.nix
     #./flash.nix
     ./git.nix
-    #./harpoon.nix
+    ./harpoon.nix
     ./lualine.nix
     ./lsp.nix
     ./misc.nix

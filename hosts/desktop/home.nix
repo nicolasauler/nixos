@@ -13,7 +13,7 @@
     ../../modules/programs/qutebrowser.nix
     ../../modules/programs/rofi.nix
     ../../modules/programs/starship.nix
-    ../../modules/programs/waybar.nix
+    ../../modules/programs/waybar
     ../../modules/programs/zathura.nix
     ../../modules/programs/zellij.nix
   ];
