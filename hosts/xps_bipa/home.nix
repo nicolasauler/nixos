@@ -8,7 +8,7 @@
     ../../modules/programs/alacritty.nix
     ../../modules/programs/git.nix
     ../../modules/programs/gtk.nix
-    ../../modules/programs/hyprland.nix
+    ../../modules/programs/hyprland/hyprland_note.nix
     ../../modules/programs/mako.nix
     ../../modules/programs/nixvim
     ../../modules/programs/qutebrowser.nix

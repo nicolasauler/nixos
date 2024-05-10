@@ -85,6 +85,7 @@
   environment.systemPackages = with pkgs; [
     alacritty
     bat
+    blender
     du-dust
     eza
     firefox-wayland
@@ -157,6 +158,8 @@
 
   services.xserver.videoDrivers = ["nvidia"];
   hardware = {
+    enableAllFirmware = true;
+
     opengl = {
       enable = true;
       driSupport = true;

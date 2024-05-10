@@ -28,6 +28,7 @@
 @define-color braqua	#8ec07c;
 @define-color white	#ebdbb2;
 @define-color bg2	#504945;
+@define-color orange #d65d0e;
 
 
 @define-color warning 	@bryellow;
@@ -43,8 +44,9 @@
 @define-color temp	@brgreen;
 @define-color layout	@bryellow;
 @define-color battery	@aqua;
-@define-color date	@black;
+@define-color date	@gray;
 @define-color time	@white;
+@define-color disk @orange;
 
 /* Reset all styles */
 * {
@@ -151,8 +153,8 @@
 }
 
 #window {
-	margin-right: 35pt;
-	margin-left: 35pt;
+	margin-right: 5pt;
+	margin-left: 5pt;
 }
 
 #pulseaudio {
@@ -164,13 +166,13 @@
 #network {
 	background: @network;
 	color: @white;
-    min-width: 70px;
+    min-width: 72px;
 }
 
 #memory {
 	background: @memory;
 	color: @black;
-    min-width: 54px;
+    min-width: 68px;
 }
 
 #cpu {
@@ -190,7 +192,9 @@
 }
 
 #disk {
-    min-width: 30px;
+    background: @disk;
+    color: @white;
+    min-width: 38px;
 }
 
 #battery {
