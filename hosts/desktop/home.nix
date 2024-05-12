@@ -3,7 +3,6 @@
 {
   imports = [
     inputs.nix-colors.homeManagerModules.default
-    inputs.hyprlock.homeManagerModules.default
     ../../modules/programs/alacritty.nix
     ../../modules/programs/git.nix
     ../../modules/programs/gtk.nix
@@ -13,7 +12,7 @@
     ../../modules/programs/qutebrowser.nix
     ../../modules/programs/rofi.nix
     ../../modules/programs/starship.nix
-    ../../modules/programs/waybar
+    ../../modules/programs/waybar/waybar.nix
     ../../modules/programs/zathura.nix
     ../../modules/programs/zellij.nix
   ];
@@ -124,9 +123,11 @@
 
   programs.hyprlock = {
     enable = true;
-    general = {
-      ignore_empty_input = true;
-      hide_cursor = true;
+    settings = {
+      general = {
+        ignore_empty_input = true;
+        hide_cursor = true;
+      };
     };
   };
 
