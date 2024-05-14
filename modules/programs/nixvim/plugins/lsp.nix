@@ -85,5 +85,7 @@
         };
       };
     };
+
+    plugins.lspsaga.enable = false;
   };
 }
