@@ -18,7 +18,7 @@
   ];
 
   nixpkgs.overlays = [
-    inputs.neovim-nightly-overlay.overlay
+    # inputs.neovim-nightly-overlay.overlay
   ];
 
   colorScheme = inputs.nix-colors.colorSchemes.gruvbox-dark-medium;

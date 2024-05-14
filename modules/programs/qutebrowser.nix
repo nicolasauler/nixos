@@ -4,8 +4,6 @@
     enable = true;
 
     extraConfig = ''
-      config.set('content.notifications.enabled', True, 'https://slack.com/')
-
       bg0_hard = "#1d2021"
       bg0_soft = '#32302f'
       bg0_normal = '#282828'
