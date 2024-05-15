@@ -23,6 +23,9 @@
         dapui.close()
       end'';
 
-    plugins.rustaceanvim.enable = true;
+    plugins.rustaceanvim = {
+      enable = true;
+      tools.hoverActions.replaceBuiltinHover = true; # want to test lspsaga's impl
+    };
   };
 }

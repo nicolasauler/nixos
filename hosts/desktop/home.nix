@@ -4,6 +4,7 @@
   imports = [
     inputs.nix-colors.homeManagerModules.default
     ../../modules/programs/alacritty.nix
+    ../../modules/programs/direnv.nix
     ../../modules/programs/git.nix
     ../../modules/programs/gtk.nix
     ../../modules/programs/hyprland/hyprland.nix

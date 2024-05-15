@@ -66,7 +66,7 @@
             action = "implementation";
             desc = "Goto Implementation";
           };
-          "<leader>K" = {
+          "K" = {
             action = "hover";
             desc = "Hover";
           };
@@ -86,6 +86,14 @@
       };
     };
 
-    plugins.lspsaga.enable = true;
+    plugins.lspsaga = {
+      enable = true;
+
+      codeAction = {
+        extendGitSigns = true;
+      };
+
+      lightbulb.virtualText = false;
+    };
   };
 }
