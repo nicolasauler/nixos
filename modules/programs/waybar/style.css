@@ -40,13 +40,13 @@
 @define-color sound	@brpurple;
 @define-color network	@purple;
 @define-color memory	@braqua;
-@define-color cpu	@green;
-@define-color temp	@brgreen;
-@define-color layout	@bryellow;
+@define-color cpu	@yellow;
+@define-color temp	@blue;
+@define-color layout	@red;
 @define-color battery	@aqua;
-@define-color date	@gray;
-@define-color time	@white;
+@define-color clock @gray;
 @define-color disk @orange;
+@define-color gpu @green;
 
 /* Reset all styles */
 * {
@@ -73,6 +73,8 @@
 #battery,
 #clock,
 #cpu,
+#custom-gpu_usage,
+#custom-gpu_temp,
 #language,
 #memory,
 #mode,
@@ -177,7 +179,23 @@
 
 #cpu {
 	background: @cpu;
-	color: @white;
+	color: @black;
+}
+
+#custom-gpu_usage {
+	background: @gpu;
+	color: @black;
+    min-width: 40px;
+	padding-left: 0pt;
+	padding-right: 1pt;
+}
+
+#custom-gpu_temp {
+	background: @gpu;
+	color: @black;
+    min-width: 40px;
+	padding-left: 0pt;
+	padding-right: 1pt;
 }
 
 #temperature {
@@ -193,7 +211,7 @@
 
 #disk {
     background: @disk;
-    color: @white;
+    color: @black;
     min-width: 38px;
 }
 
@@ -206,13 +224,8 @@
 	background: @date;
 }
 
-#clock.date {
-	background: @date;
-	color: @white;
-}
-
-#clock.time {
-	background: @time;
+#clock {
+	background: @clock;
 	color: @black;
 }
 

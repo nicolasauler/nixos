@@ -170,4 +170,6 @@
     style.name = "adwaita-dark";
   };
 
+  xdg.userDirs.enable = true;
+
 }

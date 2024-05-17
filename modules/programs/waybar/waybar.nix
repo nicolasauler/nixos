@@ -22,8 +22,8 @@ let
       "disk"
       "cpu"
       "cpu#cores"
-      "custom/gpu-usage"
-      "custom/gpu-temp"
+      "custom/gpu_usage"
+      "custom/gpu_temp"
       "memory"
       "temperature"
       "pulseaudio"
@@ -113,16 +113,18 @@ let
       format = "{temperatureC}°C ";
     };
 
-    "custom/gpu-usage" = {
+    "custom/gpu_usage" = {
       exec = "nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits";
       format = " 󰨜 {} ";
       interval = 10;
+      max-length = 8;
     };
 
-    "custom/gpu-temp" = {
+    "custom/gpu_temp" = {
       exec = "nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits";
       format = "  {} ";
       interval = 10;
+      max-length = 8;
     };
 
     "hyprland/window" = {
