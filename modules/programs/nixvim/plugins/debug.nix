@@ -25,7 +25,7 @@
 
     plugins.rustaceanvim = {
       enable = true;
-      tools.hoverActions.replaceBuiltinHover = true; # want to test lspsaga's impl
+      settings.tools.hover_actions.replace_builtin_hover = true; # want to test lspsaga's impl
     };
   };
 }
