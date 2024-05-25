@@ -13,17 +13,22 @@
 
     hyprland.url = "git+https://github.com/hyprwm/Hyprland?submodules=1";
 
-    neovim-nightly-overlay.url = "github:nix-community/neovim-nightly-overlay";
+    # neovim-nightly-overlay.url = "github:nix-community/neovim-nightly-overlay";
     nixvim.url = "github:nix-community/nixvim";
   };
 
-  outputs = { self, nixpkgs, neovim-nightly-overlay, ... }@inputs:
+  # outputs = { self, nixpkgs, neovim-nightly-overlay, ... }@inputs:
+  outputs = { self, nixpkgs, ... }@inputs:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
         inherit system;
-        overlays = [ neovim-nightly-overlay.overlay ];
-        config.allowUnfree = true;
+        # overlays = [ neovim-nightly-overlay.overlay ];
+        overlays = [ ];
+        config = {
+          allowUnfree = true;
+          cudaSupport = true;
+        };
       };
     in
     {

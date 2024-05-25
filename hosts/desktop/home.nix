@@ -129,6 +129,13 @@
         ignore_empty_input = true;
         hide_cursor = true;
       };
+      background = [{
+        color = "rgba(0, 0, 0, 1.0)";
+      }];
+      input-fields = [{
+        fade_on_empty = true;
+        placeholder_text = "<i>Input Password...</i>";
+      }];
     };
   };
 
