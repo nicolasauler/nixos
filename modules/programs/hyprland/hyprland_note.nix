@@ -128,6 +128,8 @@
           "$mainMod SHIFT, Q, killactive,"
           "$mainMod, E, exit,"
           "$mainMod, F, fullscreen,"
+          "$mainMod, w, exec, rofi -show window"
+          "$mainMod, b, exec, pkill --signal USR1 waybar"
           "$mainMod SHIFT, F, togglefloating,"
           "ALT, F11, exec, loginctl lock-session"
           "$mainMod, D, exec, rofi -modi drun,run -show drun"

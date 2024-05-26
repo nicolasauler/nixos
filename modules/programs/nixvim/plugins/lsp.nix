@@ -134,6 +134,12 @@
         options.silent = false;
         action = "<cmd>Lspsaga diagnostic_jump_next<CR>";
       }
+      # {
+      #   mode = "n";
+      #   key = "]e";
+      #   options.silent = false;
+      #   action = "<cmd>Lspsaga diagnostic_jump_next<CR>";
+      # }
       {
         mode = "n";
         key = "<leader>Pd";

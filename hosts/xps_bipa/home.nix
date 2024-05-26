@@ -4,6 +4,7 @@
   imports = [
     inputs.nix-colors.homeManagerModules.default
     ../../modules/programs/alacritty.nix
+    ../../modules/programs/direnv.nix
     ../../modules/programs/git.nix
     ../../modules/programs/gtk.nix
     ../../modules/programs/hyprland/hyprland_note.nix
@@ -18,7 +19,7 @@
   ];
 
   nixpkgs.overlays = [
-    inputs.neovim-nightly-overlay.overlay
+    # inputs.neovim-nightly-overlay.overlay
   ];
 
   colorScheme = inputs.nix-colors.colorSchemes.gruvbox-dark-medium;
@@ -162,8 +163,11 @@
     };
   };
 
-  qt.enable = true;
-  qt.platformTheme.name = "gtk";
-  qt.style.name = "adwaita-dark";
+  qt = {
+    enable = true;
+    platformTheme.name = "gtk";
+    style.name = "adwaita-dark";
+  };
 
+  xdg.userDirs.enable = true;
 }
