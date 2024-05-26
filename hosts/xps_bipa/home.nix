@@ -5,7 +5,7 @@
     inputs.nix-colors.homeManagerModules.default
     ../../modules/programs/alacritty.nix
     ../../modules/programs/direnv.nix
-    ../../modules/programs/git.nix
+    ../../modules/programs/git
     ../../modules/programs/gtk.nix
     ../../modules/programs/hyprland/hyprland_note.nix
     ../../modules/programs/mako.nix
