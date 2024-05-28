@@ -6,6 +6,14 @@
         bashls.enable = true;
         clangd.enable = true;
         lua-ls.enable = true;
+        ltex = {
+          enable = true;
+          settings.additionalRules = {
+            enablePickyRules = true;
+            languageModel = "/home/nic/models/ngrams/";
+            motherTongue = "en-GB";
+          };
+        };
         nil_ls = {
           enable = true;
           settings.formatting.command = [ "nixpkgs-fmt" ];
