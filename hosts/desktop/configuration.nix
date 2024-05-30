@@ -91,6 +91,7 @@
     firefox-wayland
     fzf
     htop
+    godot_4
     gh
     git
     grim
