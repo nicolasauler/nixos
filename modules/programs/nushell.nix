@@ -5,9 +5,11 @@
     shellAliases = {
       builtin-ls = "ls";
       builtin-cd = "cd";
+      builtin-ps = "ps";
       cd = "z";
       builtin-cat = "cat";
       cat = "bat";
+      vi = "nvim .";
     };
     # The config.nu can be anywhere you want if you like to edit your Nushell with Nu
     # configFile.source = ./.../config.nu;

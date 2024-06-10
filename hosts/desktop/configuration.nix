@@ -75,6 +75,7 @@
     users = {
       "nic" = import ./home.nix;
     };
+    backupFileExtension = "backup";
   };
 
   virtualisation.docker.enable = true;
@@ -83,17 +84,13 @@
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
-    alacritty
     bat
     blender
     du-dust
-    eza
     firefox-wayland
     fzf
     htop
     godot_4
-    gh
-    git
     grim
     keepassxc
     mako
@@ -104,7 +101,6 @@
     procs
     qutebrowser
     slurp
-    starship
     sxiv
     ripgrep
     rofi-wayland
@@ -112,8 +108,6 @@
     wireplumber
     wl-clipboard
     zathura
-    zellij
-    zoxide
   ];
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
@@ -147,8 +141,7 @@
 
   xdg.portal = {
     enable = true;
-    extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
-    wlr.enable = true;
+    # extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
   };
 
   programs.hyprland = {

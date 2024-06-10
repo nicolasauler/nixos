@@ -10,6 +10,7 @@
     ../../modules/programs/hyprland/hyprland.nix
     ../../modules/programs/mako.nix
     ../../modules/programs/nixvim
+    ../../modules/programs/nushell.nix
     ../../modules/programs/qutebrowser.nix
     ../../modules/programs/rofi.nix
     ../../modules/programs/starship.nix
@@ -116,10 +117,10 @@
     enableCompletion = true;
     bashrcExtra = ''
       export PATH="$HOME/.local/bin:$PATH"
-      eval "$(zoxide init bash)"
       eval "$(zellij setup --generate-auto-start bash)"
-      eval "$(starship init bash)"
     '';
+    # eval "$(zoxide init bash)"
+    # eval "$(starship init bash)"
   };
 
   programs.hyprlock = {
