@@ -26,6 +26,55 @@
     plugins.rustaceanvim = {
       enable = true;
       settings.tools.hover_actions.replace_builtin_hover = true; # want to test lspsaga's impl
+      settings = {
+        rust-analyzer = {
+          server.extraEnv = {
+            CARGO_TARGET_DIR = "target/analyzer";
+          };
+          check.extraArgs = [
+            "--target-dir=target/analyzer"
+          ];
+          cargo = {
+            extraEnv = {
+              CARGO_PROFILE_RUST_ANALYZER_INHERITS = "dev";
+            };
+            extraArgs = [
+              "--profile"
+              "rust-analyzer"
+            ];
+          };
+          runnables.extraArgs = [
+            "--target-dir"
+            "target/analyzer"
+          ];
+        };
+        server = {
+          server.extraEnv = {
+            CARGO_TARGET_DIR = "target/analyzer";
+          };
+          check.extraArgs = [
+            "--target-dir=target/analyzer"
+          ];
+          cargo = {
+            extraEnv = {
+              CARGO_PROFILE_RUST_ANALYZER_INHERITS = "dev";
+            };
+            extraArgs = [
+              "--profile"
+              "rust-analyzer"
+            ];
+          };
+        };
+        # cargo = {
+        #   extraEnv = {
+        #     CARGO_PROFILE_RUST_ANALYZER_INHERITS = "dev";
+        #   };
+        #   extraArgs = [
+        #     "--profile"
+        #     "rust-analyzer"
+        #   ];
+        # };
+      };
     };
   };
 }

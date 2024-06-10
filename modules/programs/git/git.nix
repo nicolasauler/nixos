@@ -57,4 +57,13 @@ in
 
     # https://nixos.org/manual/nix/unstable/language/builtins#builtins-readDir
   };
+
+  programs.gh = {
+    enable = true;
+    # extensions = [];
+  };
+
+  programs.gh-dash = {
+    enable = true;
+  };
 }

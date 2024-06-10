@@ -27,7 +27,7 @@
         overlays = [ ];
         config = {
           allowUnfree = true;
-          cudaSupport = true;
+          # cudaSupport = true;
         };
       };
     in

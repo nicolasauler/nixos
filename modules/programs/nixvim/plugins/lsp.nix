@@ -2,6 +2,7 @@
   programs.nixvim = {
     plugins.lsp = {
       enable = true;
+      inlayHints = true;
       servers = {
         bashls.enable = true;
         clangd.enable = true;
@@ -14,7 +15,7 @@
             motherTongue = "en-GB";
           };
         };
-        nil_ls = {
+        nil-ls = {
           enable = true;
           settings.formatting.command = [ "nixpkgs-fmt" ];
         };
