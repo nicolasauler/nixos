@@ -71,5 +71,7 @@
         action = "<cmd>Neogit<CR>";
       }
     ];
+
+    plugins.octo.enable = true;
   };
 }

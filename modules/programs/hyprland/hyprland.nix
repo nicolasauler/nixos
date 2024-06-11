@@ -126,7 +126,7 @@
           "ALT, XF86LaunchA, exec, loginctl lock-session" # Alt F3
           "$mainMod, D, exec, rofi -modi drun,run -show drun"
           "$mainMod, P, pseudo," # dwindle
-          "$mainMod, J, togglesplit," # dwindle
+          "$mainMod, t, togglesplit," # dwindle
 
           "$mainMod SHIFT, Print, exec, grim -g \"$(slurp -d)\" - | wl-copy -t image/png"
           "$mainMod CTRL, Print, exec, grim -g \"$(slurp)\" $HOME/Pictures/$(date +'%s_grim.png')"
@@ -149,7 +149,7 @@
 
           # Example special workspce (scratchpad)
           "$mainMod, S, togglespecialworkspace, magic"
-          "$mainMod, SHIFT S, movetoworkspace, special:magic"
+          "$mainMod SHIFT, S, movetoworkspace, special:magic"
 
           # Scroll through existing workspaces with mainMod + scroll
           "bind = $mainMod, mouse_down, workspace, e+1"
