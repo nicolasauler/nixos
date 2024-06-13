@@ -1,5 +1,4 @@
-{ pkgs, ... }:
-{
+{pkgs, ...}: {
   programs.waybar = {
     enable = true;
     package = pkgs.waybar;
@@ -7,9 +6,9 @@
       mainBar = {
         height = 20;
         layer = "top";
-        modules-left = [ "custom/launcher" "cpu" "memory" "custom/weather" "hyprland/workspaces" ];
-        modules-center = [ "mpris" ];
-        modules-right = [ "network" "pulseaudio" "backlight" "battery" "clock" "tray" "hyprland/language" "custom/wallpaper" "custom/power-menu" ];
+        modules-left = ["custom/launcher" "cpu" "memory" "custom/weather" "hyprland/workspaces"];
+        modules-center = ["mpris"];
+        modules-right = ["network" "pulseaudio" "backlight" "battery" "clock" "tray" "hyprland/language" "custom/wallpaper" "custom/power-menu"];
 
         "hyprland/workspaces" = {
           format = "{name}";
@@ -20,15 +19,15 @@
             default = "󰍹";
           };
           persistent-workspaces = {
-            "1" = [ ];
-            "2" = [ ];
-            "3" = [ ];
-            "4" = [ ];
-            "5" = [ ];
-            "6" = [ ];
-            "7" = [ ];
-            "8" = [ ];
-            "9" = [ ];
+            "1" = [];
+            "2" = [];
+            "3" = [];
+            "4" = [];
+            "5" = [];
+            "6" = [];
+            "7" = [];
+            "8" = [];
+            "9" = [];
           };
         };
         "hyprland/language" = {
@@ -70,7 +69,7 @@
           format = "{icon}";
           tooltip = true;
           format-alt = "<small>{percent}%</small>";
-          format-icons = [ "󱩎" "󱩏" "󱩐" "󱩑" "󱩒" "󱩓" "󱩔" "󱩕" "󱩖" "󰛨" ];
+          format-icons = ["󱩎" "󱩏" "󱩐" "󱩑" "󱩒" "󱩓" "󱩔" "󱩕" "󱩖" "󰛨"];
           on-scroll-up = "brightnessctl set 1%+";
           on-scroll-down = "brightnessctl set 1%-";
           smooth-scrolling-threshold = "2400";
@@ -85,7 +84,7 @@
           tooltip-format = "{essid}";
           interval = 1;
           on-click = "~/.config/waybar/scripts/network/rofi-network-manager.sh";
-          format-icons = [ "󰤯" "󰤟" "󰤢" "󰤥" "󰤨" ];
+          format-icons = ["󰤯" "󰤟" "󰤢" "󰤥" "󰤨"];
         };
 
         "bluetooth" = {
@@ -103,7 +102,7 @@
           format = "{icon}";
           format-muted = "󰖁";
           format-icons = {
-            default = [ "" "" "󰕾" ];
+            default = ["" "" "󰕾"];
           };
           on-click = "pamixer -t";
           on-scroll-up = "pamixer -i 1";
@@ -130,7 +129,7 @@
           format-full = "󰂄";
 
           format-alt = "<small>{capacity}%</small> ";
-          format-icons = [ "󱊡" "󱊢" "󱊣" ];
+          format-icons = ["󱊡" "󱊢" "󱊣"];
         };
 
         "custom/weather" = {

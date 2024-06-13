@@ -1,5 +1,4 @@
-{ pkgs, ... }:
-{
+{pkgs, ...}: {
   programs.nixvim = {
     plugins = {
       cmp-nvim-lsp.enable = true;
@@ -43,16 +42,16 @@
             end
           '';
           sources = [
-            { name = "nvim_lsp"; }
-            { name = "luasnip"; }
-            { name = "nvim_lua"; }
-            { name = "path"; }
+            {name = "nvim_lsp";}
+            {name = "luasnip";}
+            {name = "nvim_lua";}
+            {name = "path";}
             {
               name = "buffer";
               # Words from other open buffers can also be suggested.
               option.get_bufnrs.__raw = "vim.api.nvim_list_bufs";
             }
-            { name = "vim-dadbod-completion"; }
+            {name = "vim-dadbod-completion";}
           ];
           mapping = {
             "<C-y>" = "cmp.mapping.confirm({ select = true })";

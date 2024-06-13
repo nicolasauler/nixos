@@ -17,7 +17,8 @@
         };
         nil-ls = {
           enable = true;
-          settings.formatting.command = [ "nixpkgs-fmt" ];
+          settings.formatting.command = ["alejandra"];
+          # settings.formatting.command = [ "nixpkgs-fmt" ];
         };
         pyright.enable = true;
         # rust-analyzer = {

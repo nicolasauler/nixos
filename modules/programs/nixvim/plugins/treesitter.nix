@@ -2,7 +2,7 @@
   programs.nixvim = {
     plugins.treesitter = {
       enable = true;
-      disabledLanguages = [ ];
+      disabledLanguages = [];
       ensureInstalled = [
         "c"
         "lua"

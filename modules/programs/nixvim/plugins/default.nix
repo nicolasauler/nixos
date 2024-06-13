@@ -4,6 +4,7 @@
     ./copilot.nix
     ./debug.nix
     ./flash.nix
+    ./format.nix
     ./git.nix
     ./harpoon.nix
     ./lualine.nix

@@ -1,6 +1,10 @@
-{ config, lib, pkgs, inputs, ... }:
-
 {
+  config,
+  lib,
+  pkgs,
+  inputs,
+  ...
+}: {
   imports = [
     inputs.nix-colors.homeManagerModules.default
     ../../modules/programs/alacritty.nix
@@ -51,9 +55,10 @@
     # # overrides. You can do that directly here, just don't forget the
     # # parentheses. Maybe you want to install Nerd Fonts with a limited number of
     # # fonts?
-    (pkgs.nerdfonts.override
+    (
+      pkgs.nerdfonts.override
       {
-        fonts = [ "Inconsolata" "InconsolataGo" "FiraCode" ];
+        fonts = ["Inconsolata" "InconsolataGo" "FiraCode"];
       }
     )
 

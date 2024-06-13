@@ -1,8 +1,8 @@
-{ pkgs
-, config
-, ...
-}:
-let
+{
+  pkgs,
+  config,
+  ...
+}: let
   workspaces = {
     format = "{id}"; # add urgent in CSS
     on-click = "activate";
@@ -15,7 +15,7 @@ let
     height = 14;
     position = "top";
 
-    modules-left = [ "hyprland/workspaces" "hyprland/window" ];
+    modules-left = ["hyprland/workspaces" "hyprland/window"];
     modules-right = [
       "clock"
       "hyprland/language"
@@ -89,7 +89,7 @@ let
       };
       max-length = 20;
       format = "{capacity}% {icon}";
-      format-icons = [ "" "" "" "" "" ];
+      format-icons = ["" "" "" "" ""];
       #format-charging = "<span font-family='Font Awesome 6 Free'></span>";
       format-plugged = "󰚥";
       format-notcharging = "󰚥";
@@ -155,7 +155,7 @@ let
       format-ethernet = "{ifname} 󰈀 {ipaddr}/{cidr}";
       format-wifi = "{ifname} {icon} {essid}";
       tooltip-format = "󱘖 {ipaddr}  {bandwidthUpBytes}  {bandwidthDownBytes}";
-      format-icons = [ "󰤯" "󰤟" "󰤢" "󰤥" "󰤨" ];
+      format-icons = ["󰤯" "󰤟" "󰤢" "󰤥" "󰤨"];
     };
 
     pulseaudio = {
@@ -169,7 +169,7 @@ let
         phone = " ";
         portable = " ";
         car = " ";
-        default = [ "" "" "" ];
+        default = ["" "" ""];
       };
       scroll-step = 5;
       #on-click = "mute";
@@ -182,14 +182,13 @@ let
       spacing = 5;
     };
   };
-in
-{
+in {
   programs.waybar = {
     enable = true;
     package = pkgs.waybar.overrideAttrs (oldAttrs: {
-      mesonFlags = oldAttrs.mesonFlags ++ [ "-Dexperimental=true" ];
+      mesonFlags = oldAttrs.mesonFlags ++ ["-Dexperimental=true"];
     });
-    settings = { mainBar = mainWaybarConfig; };
+    settings = {mainBar = mainWaybarConfig;};
     # style = ./style.css;
   };
 }

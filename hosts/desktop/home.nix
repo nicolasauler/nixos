@@ -1,6 +1,10 @@
-{ config, inputs, lib, pkgs, ... }:
-
 {
+  config,
+  inputs,
+  lib,
+  pkgs,
+  ...
+}: {
   imports = [
     inputs.nix-colors.homeManagerModules.default
     ../../modules/programs/alacritty.nix
@@ -52,9 +56,10 @@
     # # parentheses. Maybe you want to install Nerd Fonts with a limited number of
     # # fonts?
     # (pkgs.nerdfonts.override { fonts = [ "FantasqueSansMono" ]; })
-    (pkgs.nerdfonts.override
+    (
+      pkgs.nerdfonts.override
       {
-        fonts = [ "Inconsolata" "InconsolataGo" "FiraCode" ];
+        fonts = ["Inconsolata" "InconsolataGo" "FiraCode"];
       }
     )
 
@@ -130,13 +135,17 @@
         ignore_empty_input = true;
         hide_cursor = true;
       };
-      background = [{
-        color = "rgba(0, 0, 0, 1.0)";
-      }];
-      input-fields = [{
-        fade_on_empty = true;
-        placeholder_text = "<i>Input Password...</i>";
-      }];
+      background = [
+        {
+          color = "rgba(0, 0, 0, 1.0)";
+        }
+      ];
+      input-fields = [
+        {
+          fade_on_empty = true;
+          placeholder_text = "<i>Input Password...</i>";
+        }
+      ];
     };
   };
 
@@ -179,5 +188,4 @@
   };
 
   xdg.userDirs.enable = true;
-
 }

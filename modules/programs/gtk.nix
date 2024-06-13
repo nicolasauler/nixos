@@ -1,11 +1,10 @@
-{ pkgs
-, config
-, ...
-}:
-let
-  gruvboxPlus = import ./gruvboxplus.nix { inherit pkgs; };
-in
-let
+{
+  pkgs,
+  config,
+  ...
+}: let
+  gruvboxPlus = import ./gruvboxplus.nix {inherit pkgs;};
+in let
   cssContent = with config.colorScheme.palette; ''
     @define-color accent_color #${base0D};
     @define-color accent_bg_color mix(#${base0D}, #${base00},0.3);
@@ -86,8 +85,7 @@ let
     @define-color dark_4 mix(#${base00},black,0.2);
     @define-color dark_5 mix(#${base00},black,0.4);
   '';
-in
-{
+in {
   home.file = {
     ".local/share/icons/GruvboxPlus".source = "${gruvboxPlus}";
   };

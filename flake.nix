@@ -18,42 +18,44 @@
   };
 
   # outputs = { self, nixpkgs, neovim-nightly-overlay, ... }@inputs:
-  outputs = { self, nixpkgs, ... }@inputs:
-    let
-      system = "x86_64-linux";
-      pkgs = import nixpkgs {
-        inherit system;
-        # overlays = [ neovim-nightly-overlay.overlay ];
-        overlays = [ ];
-        config = {
-          allowUnfree = true;
-          cudaSupport = true;
-        };
-      };
-    in
-    {
-      nixosConfigurations = {
-        notebook = nixpkgs.lib.nixosSystem {
-          inherit pkgs;
-          specialArgs = { inherit inputs; };
-          modules = [
-            ./hosts/notebook/configuration.nix
-          ];
-        };
-        desktop = nixpkgs.lib.nixosSystem {
-          inherit pkgs;
-          specialArgs = { inherit inputs; };
-          modules = [
-            ./hosts/desktop/configuration.nix
-          ];
-        };
-        xps_bipa = nixpkgs.lib.nixosSystem {
-          inherit pkgs;
-          specialArgs = { inherit inputs; };
-          modules = [
-            ./hosts/xps_bipa/configuration.nix
-          ];
-        };
+  outputs = {
+    self,
+    nixpkgs,
+    ...
+  } @ inputs: let
+    system = "x86_64-linux";
+    pkgs = import nixpkgs {
+      inherit system;
+      # overlays = [ neovim-nightly-overlay.overlay ];
+      overlays = [];
+      config = {
+        allowUnfree = true;
+        cudaSupport = true;
       };
     };
+  in {
+    nixosConfigurations = {
+      notebook = nixpkgs.lib.nixosSystem {
+        inherit pkgs;
+        specialArgs = {inherit inputs;};
+        modules = [
+          ./hosts/notebook/configuration.nix
+        ];
+      };
+      desktop = nixpkgs.lib.nixosSystem {
+        inherit pkgs;
+        specialArgs = {inherit inputs;};
+        modules = [
+          ./hosts/desktop/configuration.nix
+        ];
+      };
+      xps_bipa = nixpkgs.lib.nixosSystem {
+        inherit pkgs;
+        specialArgs = {inherit inputs;};
+        modules = [
+          ./hosts/xps_bipa/configuration.nix
+        ];
+      };
+    };
+  };
 }

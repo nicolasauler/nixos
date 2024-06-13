@@ -1,5 +1,4 @@
-{ ... }:
-{
+{...}: {
   wayland.windowManager.hyprland = {
     enable = true;
 
@@ -164,17 +163,17 @@
           "bind = $mainMod, mouse_up, workspace, e-1"
         ]
         ++ map
-          (n: "$mainMod SHIFT, ${toString n}, movetoworkspace, ${toString (
-            if n == 0
-            then 10
-            else n
-          )}") [ 1 2 3 4 5 6 7 8 9 0 ]
+        (n: "$mainMod SHIFT, ${toString n}, movetoworkspace, ${toString (
+          if n == 0
+          then 10
+          else n
+        )}") [1 2 3 4 5 6 7 8 9 0]
         ++ map
-          (n: "$mainMod, ${toString n}, workspace, ${toString (
-            if n == 0
-            then 10
-            else n
-          )}") [ 1 2 3 4 5 6 7 8 9 0 ];
+        (n: "$mainMod, ${toString n}, workspace, ${toString (
+          if n == 0
+          then 10
+          else n
+        )}") [1 2 3 4 5 6 7 8 9 0];
 
       binde = [
         "$mainMod SHIFT, h, moveactive, -20 0"

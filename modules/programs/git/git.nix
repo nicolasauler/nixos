@@ -1,5 +1,8 @@
-{ lib, pkgs, ... }:
-let
+{
+  lib,
+  pkgs,
+  ...
+}: let
   # pubkey_files = lib.filterAttrs (k: v: v == "regular" && lib.hasSuffix ".pub" k) (builtins.readDir ./pubkeys);
   pubkeys_from_gh = builtins.readFile (pkgs.fetchurl {
     url = "https://github.com/nicolasauler.keys";
@@ -8,8 +11,7 @@ let
   pubkey_lines = lib.strings.splitString "\n" pubkeys_from_gh;
   addAsterisk = line: "* " + line;
   allowed_lines = map addAsterisk pubkey_lines;
-in
-{
+in {
   #home.file.".ssh/allowed_signers".text =
   #"* ${builtins.readFile ./pubkeys/desktop_ssh.pub}";
   #  builtins.concatStringsSep "\n" (lib.mapAttrsToList (name: _: builtins.readFile ./pubkeys/${name}) pubkey_files);
@@ -33,7 +35,10 @@ in
       };
       user.signingkey = "/home/nic/.ssh/id_ed25519.pub";
 
-      merge = { tool = "nvimdiff4"; prompt = false; };
+      merge = {
+        tool = "nvimdiff4";
+        prompt = false;
+      };
       mergeTool = {
         nvimdiff4 = {
           cmd = "nvim -d $LOCAL $BASE $REMOTE $MERGED -c '$wincmd w' -c 'wincmd J'";

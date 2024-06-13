@@ -1,4 +1,4 @@
-{
+{pkgs, ...}: {
   programs.nixvim = {
     plugins.dap = {
       enable = true;
@@ -26,6 +26,30 @@
     plugins.rustaceanvim = {
       enable = true;
       settings.tools.hover_actions.replace_builtin_hover = true; # want to test lspsaga's impl
+      settings = {
+        dap = {
+          adapter = {
+            type = "server";
+            name = "codelldb";
+            port = "\${port}";
+            executable = {
+              command = "${pkgs.vscode-extensions.vadimcn.vscode-lldb}/share/vscode/extensions/vadimcn.vscode-lldb/adapter/codelldb";
+              args = ["--port" "\${port}"];
+            };
+          };
+
+          autoload_configurations = true;
+        };
+        server = {
+          on_attach = ''
+            function(_, bufnr)
+              vim.keymap.set("n", "<leader>rd", function()
+                vim.cmd.RustLsp("debuggables")
+              end, { desc = "Rust Debuggables", buffer = bufnr })
+            end
+          '';
+        };
+      };
     };
   };
 }

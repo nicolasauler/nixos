@@ -16,6 +16,5 @@
         action = "<cmd>UndotreeToggle<CR>";
       }
     ];
-
   };
 }
