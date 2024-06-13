@@ -13,7 +13,7 @@
         json = [["prettierd" "prettier"]];
         lua = ["stylua "];
         markdown = [["prettierd" "prettier"]];
-        nix = [["alejandra" "nixfmt" "nixpkgs-fmt"]];
+        nix = [["alejandra" "nixfmt" "nixpkgs_fmt"]];
         python = ["isort" "black"];
         rust = ["rustfmt"];
         sh = ["shfmt "];
@@ -21,6 +21,11 @@
         yaml = ["prettierd"];
       };
     };
+
+    extraConfigLuaPost = ''
+      vim.o.formatexpr = "v:lua.require'conform'.formatexpr()"
+    '';
+
     extraPackages = with pkgs; [
       alejandra
       black
@@ -30,10 +35,22 @@
       nixpkgs-fmt
       pgformatter
       prettierd
-      rustfmt
       shfmt
       sqlfluff
       stylua
+    ];
+
+    keymaps = [
+      {
+        key = "<leader>cf";
+        action.__raw = "function() require('conform').format() end";
+        mode = ["n" "v"];
+        options = {
+          silent = true;
+          noremap = true;
+          desc = "[C]onform: [F]ormat current buffer";
+        };
+      }
     ];
   };
 }
