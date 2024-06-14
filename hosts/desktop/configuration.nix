@@ -91,24 +91,25 @@
     du-dust
     firefox-wayland
     fzf
-    htop
     godot_4
     grim
+    htop
     keepassxc
     mako
-    vscode-extensions.vadimcn.vscode-lldb
     # networkmanagerapplet
     pavucontrol
     playerctl
     procs
     qutebrowser
-    slurp
-    sxiv
     ripgrep
     rofi-wayland
+    slurp
+    sxiv
     tree-sitter
+    vscode-extensions.vadimcn.vscode-lldb
     wireplumber
     wl-clipboard
+    xdg_utils
     zathura
   ];
 

@@ -51,5 +51,38 @@
         };
       };
     };
+
+    keymaps = [
+      {
+        key = "<leader>do";
+        action.__raw = "function() require('dap').step_over() end";
+        mode = "n";
+        options.desc = "[D]ap Step-[O]ver";
+      }
+      {
+        key = "<leader>di";
+        action.__raw = "function() require('dap').step_into() end";
+        mode = "n";
+        options.desc = "[D]ap Step-[I]nto";
+      }
+      {
+        key = "<leader>le";
+        action = "<cmd>RustLsp explainError<CR>";
+        mode = "n";
+        options.desc = "[L]sp Explain [E]rror";
+      }
+      {
+        key = "<leader>od";
+        action = "<cmd>RustLsp openDocs<CR>";
+        mode = "n";
+        options.desc = "[O]pen docs.rs [D]oc for symbol under cursor";
+      }
+      {
+        key = "<leader>lr";
+        action = "<cmd>RustLsp renderDiagnostic<CR>";
+        mode = "n";
+        options.desc = "[L]sp [R]ender diagnostic: a bit more verbose than line diagnostic";
+      }
+    ];
   };
 }

@@ -5,8 +5,11 @@
     extraConfig = ''
       monitor=HDMI-A-1,1366x768,0x0,1
       monitor=DP-1,1920x1080,1366x0,1,transform,3
+      monitor=Unknown-1,disabled
       monitor=,preferred,auto,1
     '';
+
+    systemd.variables = ["--all"];
 
     settings = {
       #monitor = "DP-4,1920x1080,0x0,1";
@@ -195,6 +198,10 @@
         "$mainMod, mouse:272, movewindow"
         "$mainMod, mouse:273, resizewindow"
       ];
+
+      debug = {
+        disable_logs = false;
+      };
     };
   };
 }
