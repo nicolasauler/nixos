@@ -8,32 +8,56 @@
       {
         mode = "n";
         key = "<leader>tx";
-        options.silent = true;
-        action = "<cmd>TroubleToggle<CR>";
-      }
-      {
-        mode = "n";
-        key = "<leader>tw";
-        options.silent = true;
-        action = "<cmd>TroubleToggle workspace_diagnostics<CR>";
+        action = "<cmd>Trouble diagnostics toggle<CR>";
+        options = {
+          silent = true;
+          desc = "[T]rouble diagnostics";
+        };
       }
       {
         mode = "n";
         key = "<leader>td";
-        options.silent = true;
-        action = "<cmd>TroubleToggle document_diagnostics<CR>";
+        action = "<cmd>Trouble diagnostics toogle filter.buf=0<CR>";
+        options = {
+          silent = true;
+          desc = "[T]rouble buffer diagnostic";
+        };
       }
       {
         mode = "n";
         key = "<leader>tl";
-        options.silent = true;
-        action = "<cmd>TroubleToggle loclist<CR>";
+        action = "<cmd>Trouble loclist toggle<CR>";
+        options = {
+          silent = true;
+          desc = "[T]rouble [L]oclist toggle";
+        };
       }
       {
         mode = "n";
         key = "<leader>tq";
-        options.silent = true;
-        action = "<cmd>TroubleToggle quickfix<CR>";
+        action = "<cmd>Trouble qflist toggle<CR>";
+        options = {
+          silent = true;
+          desc = "[T]rouble [Q]uickfix list toggle";
+        };
+      }
+      {
+        mode = "n";
+        key = "<leader>ts";
+        action = "<cmd>Trouble symbols toggle focus=false<CR>";
+        options = {
+          silent = true;
+          desc = "[T]rouble [S]ymbols";
+        };
+      }
+      {
+        mode = "n";
+        key = "<leader>tr";
+        action = "<cmd>Trouble lsp toggle focus=false win.position=right<CR>";
+        options = {
+          silent = true;
+          desc = "[T]rouble lsp definitions / [R]eferences";
+        };
       }
     ];
   };

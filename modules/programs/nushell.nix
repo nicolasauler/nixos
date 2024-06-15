@@ -65,4 +65,6 @@
     enableBashIntegration = true;
     enableNushellIntegration = true;
   };
+
+  programs.fd.enable = true;
 }

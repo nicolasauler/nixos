@@ -10,18 +10,46 @@
 
     plugins.telescope = {
       enable = true;
+      enabledExtensions = [
+        "notify"
+      ];
 
       keymaps = {
-        "<leader>pf" = "find_files";
+        "<leader>pf" = {
+          action = "find_files";
+          options.desc = "Telescope [F]ind files";
+        };
         #vim.keymap.set('n', '<leader>pt', function()
         #	builtin.grep_string({ search = vim.fn.input("Grep > ") });
         #end)
-        "<C-p>" = "git_files";
-        "<leader>pg" = "live_grep";
-        "<leader>ph" = "help_tags";
-        "<leader>pb" = "git_branches";
-        "<leader>pc" = "git_commits";
-        "<leader>ps" = "git_status";
+        "<leader>tb" = {
+          action = "buffers";
+          options.desc = "Telescope open [B]uffers";
+        };
+        "<C-p>" = {
+          action = "git_files";
+          options.desc = "Telescope Git Files";
+        };
+        "<leader>pg" = {
+          action = "live_grep";
+          options.desc = "Telescope Live [G]rep";
+        };
+        "<leader>ph" = {
+          action = "help_tags";
+          options.desc = "Telescope [H]elp tags";
+        };
+        "<leader>pb" = {
+          action = "git_branches";
+          options.desc = "Telescope git [B]ranches";
+        };
+        "<leader>pc" = {
+          action = "git_commits";
+          options.desc = "Telescope git [C]ommits";
+        };
+        "<leader>ps" = {
+          action = "git_status";
+          options.desc = "Telescope git [S]tatus";
+        };
       };
 
       settings = {
@@ -30,6 +58,21 @@
             hidden = true;
             no_ignore = true;
             file_ignore_patterns = ["%.git/.*"];
+          };
+        };
+        defaults = {
+          layout_strategy = "flex";
+          mappings = let
+            open_with_trouble = {
+              __raw = "require(\"trouble.sources.telescope\").open";
+            };
+          in {
+            i = {
+              "<c-t>" = open_with_trouble;
+            };
+            n = {
+              "<c-t>" = open_with_trouble;
+            };
           };
         };
       };
