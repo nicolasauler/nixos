@@ -1,8 +1,9 @@
 {pkgs ? import <nixpkgs> {}}:
 pkgs.mkShell {
   nativeBuildInputs = with pkgs; [
-    nixpkgs-fmt
+    alejandra
     python3
+    #nixpkgs-fmt
     # cargo
     #nodejs_latest
   ];

@@ -86,7 +86,7 @@
   # $ nix search wget
   environment.systemPackages = with pkgs; [
     bat
-    blender
+    # blender
     du-dust
     firefox-wayland
     fzf
