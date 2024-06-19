@@ -90,27 +90,24 @@
     du-dust
     firefox-wayland
     fzf
-    htop
     godot_4
-    git
     grim
+    htop
     keepassxc
     mako
-    vscode-extensions.vadimcn.vscode-lldb
     networkmanagerapplet
     pavucontrol
-    pipewire
     playerctl
     procs
     qutebrowser
-    slurp
-    sxiv
     ripgrep
     rofi-wayland
+    slurp
+    sxiv
     tree-sitter
-    wireplumber
+    vscode-extensions.vadimcn.vscode-lldb
     wl-clipboard
-    xwayland
+    xdg_utils
     zathura
   ];
 
@@ -180,16 +177,6 @@
     # here, NOT in environment.systemPackages
     postgresql.lib
   ];
-
-  # ...
-  services.postgresql = {
-    enable = false;
-    #ensureDatabases = [ "mydatabase" ];
-    #authentication = pkgs.lib.mkOverride 10 ''
-    #  #type database  DBuser  auth-method
-    #  local all       all     trust
-    #'';
-  };
 
   nix.settings = {
     trusted-substituters = [

@@ -100,17 +100,14 @@
     pavucontrol
     playerctl
     procs
-    qutebrowser
     ripgrep
     rofi-wayland
     slurp
     sxiv
     tree-sitter
     vscode-extensions.vadimcn.vscode-lldb
-    wireplumber
     wl-clipboard
     xdg_utils
-    zathura
   ];
 
   nix.settings.experimental-features = ["nix-command" "flakes"];

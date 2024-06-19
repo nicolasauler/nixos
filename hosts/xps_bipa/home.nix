@@ -102,6 +102,8 @@
   #
   home.sessionVariables = {
     # EDITOR = "emacs";
+    BROWSER = "firefox";
+    # BROWSER = "${lib.getExe pkgs.firefox-wayland}";
   };
 
   home.shellAliases = {
