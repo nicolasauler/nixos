@@ -99,7 +99,6 @@
     pavucontrol
     playerctl
     procs
-    qutebrowser
     ripgrep
     rofi-wayland
     slurp
