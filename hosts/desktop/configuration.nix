@@ -154,17 +154,15 @@
   hardware = {
     enableAllFirmware = true;
 
-    opengl = {
-      enable = true;
-      driSupport = true;
-      driSupport32Bit = true;
-    };
+    graphics.enable = true;
 
     nvidia = {
       modesetting.enable = true;
       open = false;
       nvidiaSettings = true;
     };
+
+    opentabletdriver.enable = true;
   };
 
   programs.nix-ld.enable = true;
