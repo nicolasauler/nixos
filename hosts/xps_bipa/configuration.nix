@@ -90,7 +90,7 @@
     du-dust
     firefox-wayland
     fzf
-    godot_4
+    # godot_4
     grim
     htop
     keepassxc
@@ -152,7 +152,7 @@
   };
 
   hardware = {
-    opengl.enable = true;
+    graphics.enable = true;
     cpu.intel.updateMicrocode = true;
     bluetooth = {
       enable = true;
