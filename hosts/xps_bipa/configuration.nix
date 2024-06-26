@@ -86,11 +86,9 @@
   # $ nix search wget
   environment.systemPackages = with pkgs; [
     bat
-    # blender
     du-dust
     firefox-wayland
     fzf
-    # godot_4
     grim
     htop
     keepassxc
