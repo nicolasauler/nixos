@@ -2,10 +2,8 @@
   programs.nixvim = {
     plugins.yanky = {
       enable = true;
-      picker.telescope = {
-        enable = true;
-        useDefaultMappings = true;
-      };
+      enableTelescope = true;
+      settings.picker.telescope.use_default_mappings = true;
     };
 
     plugins.telescope = {
