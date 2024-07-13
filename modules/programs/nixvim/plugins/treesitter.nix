@@ -2,28 +2,30 @@
   programs.nixvim = {
     plugins.treesitter = {
       enable = true;
-      disabledLanguages = [];
-      ensureInstalled = [
-        "c"
-        "lua"
-        "vim"
-        "vimdoc"
-        "query"
-        "rust"
-        "bash"
-        "json"
-        "yaml"
-        "toml"
-        "python"
-        "go"
-        "http"
-      ];
-      ignoreInstall = [
-        "javascript"
-      ];
-      indent = true;
       folding = false;
       nixGrammars = true;
+      settings = {
+        indent.enable = true;
+        ensure_installed = [
+          "c"
+          "lua"
+          "vim"
+          "vimdoc"
+          "query"
+          "rust"
+          "bash"
+          "json"
+          "yaml"
+          "toml"
+          "python"
+          "go"
+          "http"
+        ];
+        ignore_install = [
+          "javascript"
+        ];
+        highlight.disable = [];
+      };
     };
 
     plugins.treesitter-context.enable = true;
