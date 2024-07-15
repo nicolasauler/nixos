@@ -15,6 +15,7 @@
     ../../modules/programs/mako.nix
     ../../modules/programs/nixvim
     ../../modules/programs/nushell.nix
+    ../../modules/programs/nix-index.nix
     ../../modules/programs/qutebrowser.nix
     ../../modules/programs/rofi.nix
     ../../modules/programs/starship.nix

@@ -13,6 +13,7 @@
     ../../modules/programs/gtk.nix
     ../../modules/programs/hyprland/hyprland.nix
     ../../modules/programs/mako.nix
+    ../../modules/programs/nix-index.nix
     ../../modules/programs/nixvim
     ../../modules/programs/nushell.nix
     ../../modules/programs/qutebrowser.nix
