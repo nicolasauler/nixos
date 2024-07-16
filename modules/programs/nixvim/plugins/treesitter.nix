@@ -6,25 +6,8 @@
       nixGrammars = true;
       settings = {
         indent.enable = true;
-        ensure_installed = [
-          "c"
-          "lua"
-          "vim"
-          "vimdoc"
-          "query"
-          "rust"
-          "bash"
-          "json"
-          "yaml"
-          "toml"
-          "python"
-          "go"
-          "http"
-        ];
-        ignore_install = [
-          "javascript"
-        ];
-        highlight.disable = [];
+        ensure_installed = "all";
+        highlight.enable = true;
       };
     };
 
