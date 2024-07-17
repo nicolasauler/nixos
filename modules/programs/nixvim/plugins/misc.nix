@@ -13,6 +13,8 @@
       };
     };
 
+    plugins.which-key.enable = true;
+
     keymaps = [
       {
         mode = "n";
@@ -30,8 +32,12 @@
           function() require('todo-comments').jump_prev() end
         '';
       }
+      {
+        mode = "n";
+        key = "<leader>wk";
+        action = "<cmd>WhichKey<CR>";
+        options.desc = "[W]hich [K]ey";
+      }
     ];
-
-    plugins.which-key.enable = true;
   };
 }

@@ -49,11 +49,6 @@
       '';
     };
 
-    plugins.git-worktree = {
-      enable = true;
-      enableTelescope = true;
-    };
-
     plugins.neogit = {
       enable = true;
       settings.integrations = {
@@ -63,11 +58,13 @@
     };
 
     keymaps = [
-      # neogit
       {
         mode = "n";
         key = "<leader>gs";
-        options.silent = false;
+        options = {
+          silent = false;
+          desc = "Neogit [G]ithub Da[S]hboard (or [S]tatus idk)";
+        };
         action = "<cmd>Neogit<CR>";
       }
     ];

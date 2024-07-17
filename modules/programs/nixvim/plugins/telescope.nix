@@ -17,12 +17,29 @@
           action = "find_files";
           options.desc = "Telescope [F]ind files";
         };
-        #vim.keymap.set('n', '<leader>pt', function()
-        #	builtin.grep_string({ search = vim.fn.input("Grep > ") });
-        #end)
-        "<leader>tb" = {
+        "<leader>ob" = {
           action = "buffers";
-          options.desc = "Telescope open [B]uffers";
+          options.desc = "Telescope [O]pen [B]uffers";
+        };
+        "<leader>po" = {
+          action = "oldfiles";
+          options.desc = "Telescope [O]ld files";
+        };
+        "<leader>pe" = {
+          action = "commands";
+          options.desc = "Telescope commands ([E]xecutables)";
+        };
+        "<leader>pl" = {
+          action = "command_history";
+          options.desc = "Telescope command history ([L]og)";
+        };
+        "<leader>pj" = {
+          action = "jumplist";
+          options.desc = "Telescope [J]umplist";
+        };
+        "<leader>pr" = {
+          action = "resume";
+          options.desc = "Telescope [R]esume previous picker";
         };
         "<C-p>" = {
           action = "git_files";
@@ -31,6 +48,10 @@
         "<leader>pg" = {
           action = "live_grep";
           options.desc = "Telescope Live [G]rep";
+        };
+        "<leader>pm" = {
+          action = "grep_string";
+          options.desc = "Telescope Grep String [M]atch";
         };
         "<leader>ph" = {
           action = "help_tags";
@@ -85,10 +106,6 @@
 
       local dap_ext = require("telescope").load_extension('dap')
       vim.keymap.set('n', '<leader>pd', dap_ext.commands, {})
-
-      local git_worktree_ext = require("telescope").load_extension('git_worktree')
-      vim.keymap.set('n', '<leader>pw', git_worktree_ext.git_worktrees, {})
-      vim.keymap.set('n', '<leader>pr', git_worktree_ext.create_git_worktree, {})
     '';
   };
 }
