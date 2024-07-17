@@ -111,8 +111,11 @@
       }
       {
         mode = "n";
-        key = "<leader>s";
-        options.silent = true;
+        key = "<leader>ss";
+        options = {
+          desc = "[S]ubstitute [S]tring in buffer";
+          silent = true;
+        };
         action = "[[:%s/\<<C-r><C-w>\>/<C-r><C-w>/gI<Left><Left><Left>]]";
       }
       {
