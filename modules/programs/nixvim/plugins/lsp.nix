@@ -96,6 +96,11 @@
       };
     };
 
+    plugins.clangd-extensions = {
+      enable = true;
+      enableOffsetEncodingWorkaround = true;
+    };
+
     plugins.lspsaga = {
       enable = true;
 
