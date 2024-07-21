@@ -49,11 +49,11 @@
           ./hosts/desktop/configuration.nix
         ];
       };
-      xps_bipa = nixpkgs.lib.nixosSystem {
+      xpsbipa = nixpkgs.lib.nixosSystem {
         inherit pkgs;
         specialArgs = {inherit inputs;};
         modules = [
-          ./hosts/xps_bipa/configuration.nix
+          ./hosts/xpsbipa/configuration.nix
         ];
       };
     };
