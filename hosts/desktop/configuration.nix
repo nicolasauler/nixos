@@ -17,7 +17,7 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  networking.hostName = "nixos"; # Define your hostname.
+  networking.hostName = "desktop"; # Define your hostname.
   # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
 
   # Configure network proxy if necessary
@@ -95,6 +95,7 @@
     keepassxc
     mako
     # networkmanagerapplet
+    nix-output-monitor
     pavucontrol
     playerctl
     procs
@@ -170,6 +171,13 @@
     # here, NOT in environment.systemPackages
     postgresql.lib
   ];
+
+  programs.nh = {
+    enable = true;
+    clean.enable = true;
+    clean.extraArgs = "--keep-since 7d --keep 5";
+    flake = "/home/nic/nixos";
+  };
 
   nix.settings = {
     trusted-substituters = [
