@@ -7,6 +7,7 @@
     ./format.nix
     ./git.nix
     ./harpoon.nix
+    ./lint.nix
     ./lualine.nix
     ./lsp.nix
     ./misc.nix
