@@ -104,6 +104,7 @@
     slurp
     sxiv
     tree-sitter
+    vale
     vscode-extensions.vadimcn.vscode-lldb
     wl-clipboard
     xdg_utils
