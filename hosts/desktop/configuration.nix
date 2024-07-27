@@ -65,7 +65,7 @@
   users.users.nic = {
     isNormalUser = true;
     description = "nic";
-    extraGroups = ["networkmanager" "wheel" "docker"];
+    extraGroups = ["networkmanager" "wheel" "docker" "uinput"];
     packages = with pkgs; [];
   };
 
@@ -179,6 +179,78 @@
     clean.extraArgs = "--keep-since 7d --keep 5";
     flake = "/home/nic/nixos";
   };
+
+  hardware.uinput.enable = true;
+  users.groups.uinput.members = ["nic"];
+  users.groups.input.members = ["nic"];
+
+  #services.kanata = {
+  #  enable = true;
+  #  keyboards.ek68 = {
+  #    devices = ["/dev/input/by-id/usb-hfd.cn_EK68-event-kbd"];
+  #    # Home row mods Colemak-DH example with more complexity.
+  #    # Some of the changes from the basic example:
+  #    # - when a home row mod activates tap, the home row mods are disabled
+  #    #   while continuing to type rapidly
+  #    # - tap-hold-release helps make the hold action more responsive
+  #    # - pressing another key on the same half of the keyboard
+  #    #   as the home row mod will activate an early tap action
+  #    #
+  #    #
+  #    #  (defcfg
+  #    #    process-unmapped-keys yes
+  #    #  )
+  #    config = ''
+  #      (defsrc
+  #        a   r   s   t   n   e   i   o
+  #      )
+  #      (defvar
+  #        ;; Note: consider using different time values for your different fingers.
+  #        ;; For example, your pinkies might be slower to release keys and index
+  #        ;; fingers faster.
+  #        tap-time 50
+  #        hold-time 200
+
+  #        left-hand-keys (
+  #          q w f p b
+  #          a r s t g
+  #          x c d v z
+  #        )
+  #        right-hand-keys (
+  #          j l u y ;
+  #          m n e i o
+  #          / k h , .
+  #        )
+  #      )
+  #      (deflayer base
+  #        @a  @r  @s  @t  @n  @e  @i  @o
+  #      )
+
+  #      (deflayer nomods
+  #        a   r   s   t   n   e   i   o
+  #      )
+
+  #      (deffakekeys
+  #        to-base (layer-switch base)
+  #      )
+  #      (defalias
+  #        tap (multi
+  #          (layer-switch nomods)
+  #          (on-idle-fakekey to-base tap 20)
+  #        )
+
+  #        a (tap-hold-release-keys $tap-time $hold-time (multi a @tap) lmet $left-hand-keys)
+  #        r (tap-hold-release-keys $tap-time $hold-time (multi r @tap) lalt $left-hand-keys)
+  #        s (tap-hold-release-keys $tap-time $hold-time (multi s @tap) lctl $left-hand-keys)
+  #        t (tap-hold-release-keys $tap-time $hold-time (multi t @tap) lsft $left-hand-keys)
+  #        n (tap-hold-release-keys $tap-time $hold-time (multi n @tap) rsft $right-hand-keys)
+  #        e (tap-hold-release-keys $tap-time $hold-time (multi e @tap) rctl $right-hand-keys)
+  #        i (tap-hold-release-keys $tap-time $hold-time (multi i @tap) ralt $right-hand-keys)
+  #        o (tap-hold-release-keys $tap-time $hold-time (multi o @tap) rmet $right-hand-keys)
+  #      )
+  #    '';
+  #  };
+  #};
 
   nix.settings = {
     trusted-substituters = [
