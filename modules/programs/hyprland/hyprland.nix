@@ -55,10 +55,15 @@
 
       # cat $(nix-build --no-out-link '<nixpkgs>' -A xkeyboard_config)/etc/X11/xkb/rules/base.lst
       input = {
-        kb_layout = "us,us";
-        kb_variant = "altgr-intl,colemak_dh_wide";
+        # kb_layout = "us,dh";
+        kb_layout = "us";
+        kb_variant = "altgr-intl";
+        # kb_variant = "altgr-intl,";
         kb_model = "";
-        kb_options = "caps:swapescape,grp:win_space_toggle";
+        # kb_options = "caps:swapescape,grp:win_space_toggle";
+        kb_options = "";
+        # kb_options = "caps:swapescape,grp:win_space_toggle,compose:ralt";
+        # kb_options = "caps:swapescape,grp:win_space_toggle,caps:escape";
         kb_rules = "";
 
         # follow_mouse = 1;

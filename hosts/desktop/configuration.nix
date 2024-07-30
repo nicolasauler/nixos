@@ -51,6 +51,12 @@
   #   xkbVariant = "altgr-intl";
   # };
 
+  services.xserver.xkb.extraLayouts.dh = {
+    description = "attempt at colemak-dh";
+    languages = ["eng"];
+    symbolsFile = ../../symbols/colemakdh;
+  };
+
   security.rtkit.enable = true;
   services.pipewire = {
     enable = true;
@@ -184,73 +190,51 @@
   users.groups.uinput.members = ["nic"];
   users.groups.input.members = ["nic"];
 
-  #services.kanata = {
-  #  enable = true;
-  #  keyboards.ek68 = {
-  #    devices = ["/dev/input/by-id/usb-hfd.cn_EK68-event-kbd"];
-  #    # Home row mods Colemak-DH example with more complexity.
-  #    # Some of the changes from the basic example:
-  #    # - when a home row mod activates tap, the home row mods are disabled
-  #    #   while continuing to type rapidly
-  #    # - tap-hold-release helps make the hold action more responsive
-  #    # - pressing another key on the same half of the keyboard
-  #    #   as the home row mod will activate an early tap action
-  #    #
-  #    #
-  #    #  (defcfg
-  #    #    process-unmapped-keys yes
-  #    #  )
-  #    config = ''
-  #      (defsrc
-  #        a   r   s   t   n   e   i   o
-  #      )
-  #      (defvar
-  #        ;; Note: consider using different time values for your different fingers.
-  #        ;; For example, your pinkies might be slower to release keys and index
-  #        ;; fingers faster.
-  #        tap-time 50
-  #        hold-time 200
+  # add extend layer with arrows for my default colemak-dh-wide
+  services.kanata = {
+    enable = true;
+    keyboards.ek68 = {
+      devices = ["/dev/input/by-id/usb-hfd.cn_EK68-event-kbd"];
+      config = ''
+        (defsrc
+          esc  1    2    3    4    5    6    7    8    9    0    -    =    bspc
+          tab  q    w    e    r    t    y    u    i    o    p    [    ]    \
+          caps a    s    d    f    g    h    j    k    l    ;    '    ret
+          lsft z    x    c    v    b    n    m    ,    .    /    rsft
+          lctl lmet lalt           spc            ralt       rmet
+        )
 
-  #        left-hand-keys (
-  #          q w f p b
-  #          a r s t g
-  #          x c d v z
-  #        )
-  #        right-hand-keys (
-  #          j l u y ;
-  #          m n e i o
-  #          / k h , .
-  #        )
-  #      )
-  #      (deflayer base
-  #        @a  @r  @s  @t  @n  @e  @i  @o
-  #      )
+        (defalias
+          ext (layer-toggle extend)
+          vim (tap-hold 200 200 esc (layer-toggle vim-compat))
+        )
 
-  #      (deflayer nomods
-  #        a   r   s   t   n   e   i   o
-  #      )
+        (deflayer colemak-dh-wide
+          caps 1    2    3    4    5    6    =    7    8    9    0    -    bspc
+          tab  q    w    f    p    b    [    j    l    u    y    ;    '    \
+          @vim a    r    s    t    g    ]    m    n    e    i    o    ret
+          lsft x    c    d    v    z    /    k    h    ,    .    rsft
+          lctl lmet @ext           spc            ralt       rmet
+        )
 
-  #      (deffakekeys
-  #        to-base (layer-switch base)
-  #      )
-  #      (defalias
-  #        tap (multi
-  #          (layer-switch nomods)
-  #          (on-idle-fakekey to-base tap 20)
-  #        )
+        (deflayer extend
+          _    _    _    _    _    _    _    _    _    _    _    _    _    _
+          _    _    _    _    _    _    _    _    _    _    _    _    _    _
+          _    lctl lmet lalt _    _    _    _    lft  down up   rght _
+          _    _    _    _    _    _    _    home pgdn pgup end  _
+          _    _    _              _              _           _
+        )
 
-  #        a (tap-hold-release-keys $tap-time $hold-time (multi a @tap) lmet $left-hand-keys)
-  #        r (tap-hold-release-keys $tap-time $hold-time (multi r @tap) lalt $left-hand-keys)
-  #        s (tap-hold-release-keys $tap-time $hold-time (multi s @tap) lctl $left-hand-keys)
-  #        t (tap-hold-release-keys $tap-time $hold-time (multi t @tap) lsft $left-hand-keys)
-  #        n (tap-hold-release-keys $tap-time $hold-time (multi n @tap) rsft $right-hand-keys)
-  #        e (tap-hold-release-keys $tap-time $hold-time (multi e @tap) rctl $right-hand-keys)
-  #        i (tap-hold-release-keys $tap-time $hold-time (multi i @tap) ralt $right-hand-keys)
-  #        o (tap-hold-release-keys $tap-time $hold-time (multi o @tap) rmet $right-hand-keys)
-  #      )
-  #    '';
-  #  };
-  #};
+        (deflayer vim-compat
+          _    _    _    _    _    _    _    _    _    _    _    _    _    _
+          _    _    _    _    _    _    _    _    _    _    _    _    _    _
+          _    _    _    _    _    _    _    _    h    j    k    l    _
+          _    _    _    _    _    _    _    _    _    _    _    _
+          _    _    _              _              _           _
+        )
+      '';
+    };
+  };
 
   nix.settings = {
     trusted-substituters = [

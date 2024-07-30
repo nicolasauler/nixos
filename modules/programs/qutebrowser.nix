@@ -3,6 +3,8 @@
     enable = true;
 
     extraConfig = ''
+      c.hints.chars = 'arstgmneio'
+
       bg0_hard = "#1d2021"
       bg0_soft = '#32302f'
       bg0_normal = '#282828'

@@ -1,0 +1,36 @@
+//  DreymaR's Sym mod for setups using the Wide-ANSI model (without Sym, it has the Quote key on AD12)
+partial alphanumeric_keys
+xkb_symbols "cmk_ed_sym_w-104" {
+    include "symkeys(cmk_ed_commons)"
+    include "symkeys(cmk_ed_numbers)"
+    key <AE07> { [         equal,          plus,    dead_doubleacute,            notequal ] }; // =+ _≠
+    key <AE12> { [         minus,    underscore,         dead_macron,           plusminus ] }; // -_ _±
+    // key <AE12> { [     backslash,           bar,          dead_grave,           brokenbar ] }; // \| _¦
+    // key <AD11> { [   bracketleft,     braceleft,               aring,               Aring ] }; // [{ åÅ
+    // key <AD12> { [  bracketright,    braceright,                  ae,                  AE ] }; // ]} æÆ
+    // key <AC11> { [    apostrophe,      quotedbl,          dead_acute,               U2032 ] }; // '" _′
+    // key <BKSL> { [     semicolon,         colon,      dead_diaeresis,            ellipsis ] }; // QWE P Cmk ;: ¨…
+    // key <AB10> { [         slash,      question,         dead_stroke,        questiondown ] }; // /? _¿
+};
+
+hidden partial alphanumeric_keys
+xkb_symbols "cmk_ed_commons" {
+    key <TLDE> { [         grave,    asciitilde,          dead_tilde,               U2248 ] }; // `~ _≈
+    key <LSGT> { [            oe,            OE,              oslash,            Ooblique ] }; // œŒ øØ
+    key <AB09> { [         comma,          less,        dead_cedilla,       lessthanequal ] }; // ,< _≤
+    key <AB10> { [        period,       greater,       dead_abovedot,    greaterthanequal ] }; // .> _≥
+};  //  U2248 - approx. equal
+
+hidden partial alphanumeric_keys
+xkb_symbols "cmk_ed_numbers" {
+    key <AE01> { [             1,        exclam,       dead_belowdot,          exclamdown ] }; // 1! _¡
+    key <AE02> { [             2,            at,           dead_hook,         twosuperior ] }; // 2@ _²
+    key <AE03> { [             3,    numbersign,           dead_horn,       threesuperior ] }; // 3# _³
+    key <AE04> { [             4,        dollar,       dead_currency,            sterling ] }; // 4$ _£
+    key <AE05> { [             5,       percent,                  mu,               U2030 ] }; // 5% µ‰
+    key <AE06> { [             6,   asciicircum,     dead_circumflex,   partialderivative ] }; // 6^ _∂
+    key <AE08> { [             7,     ampersand,          dead_caron,             notsign ] }; // 7& _¬
+    key <AE09> { [             8,      asterisk,         dead_ogonek,            infinity ] }; // 8* _∞
+    key <AE10> { [             9,     parenleft,          dead_breve,      periodcentered ] }; // 9( _·
+    key <AE11> { [             0,    parenright,      dead_abovering,              degree ] }; // 0) _°
+};  //  U2030 - per mille

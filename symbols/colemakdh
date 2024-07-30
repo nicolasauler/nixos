@@ -1,0 +1,13 @@
+partial alphanumeric_keys
+xkb_symbols "dh" {
+	// get the base colemak layout
+	include "us(colemak_dh_wide)"
+
+    // include "symkeys(cmk_ed_sym_w-104)"
+    // include "colemak(cmk_ed_letters)"
+
+	// use AltGr as a 3rd modifier
+    include "level3(ralt_switch)"
+
+    key <CAPS> { [    Escape,    Escape,       Escape,        Escape ] };
+};

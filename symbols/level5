@@ -1,0 +1,9 @@
+// The CapsLock key (while pressed) chooses the fifth shift level.
+partial modifier_keys
+xkb_symbols "lalt_switch" {
+  key <LALT> {
+    type[Group1]="ONE_LEVEL",
+    symbols[Group1] = [ ISO_Level5_Shift ]
+  };
+  include "level5(modifier_mapping)"
+};
