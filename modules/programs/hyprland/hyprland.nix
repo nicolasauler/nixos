@@ -151,6 +151,11 @@
           "$mainMod, k, movefocus, u"
           "$mainMod, j, movefocus, d"
 
+          "$mainMod SHIFT, left, movewindow, l"
+          "$mainMod SHIFT, right, movewindow, r"
+          "$mainMod SHIFT, up, movewindow, u"
+          "$mainMod SHIFT, down, movewindow, d"
+
           "$mainMod SHIFT, h, movewindow, l"
           "$mainMod SHIFT, l, movewindow, r"
           "$mainMod SHIFT, k, movewindow, u"

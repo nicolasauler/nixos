@@ -124,6 +124,8 @@
         options.silent = true;
         action = "<cmd>!chmod +x %<CR>";
       }
+      # just a reminder for my future self that C-k is a way to type :digraphs
+      # like '<C-k>cH' ♡
     ];
   };
 }
