@@ -2,23 +2,27 @@
   programs.nixvim = {
     plugins.conform-nvim = {
       enable = true;
-      formatOnSave = {
-        lspFallback = true;
-        timeoutMs = 500;
-      };
-      notifyOnError = true;
-      formattersByFt = {
-        c = ["clang-format"];
-        cpp = ["clang-format"];
-        json = [["prettierd" "prettier"]];
-        lua = ["stylua "];
-        markdown = [["prettierd" "prettier"]];
-        nix = [["alejandra" "nixfmt" "nixpkgs_fmt"]];
-        python = ["isort" "black"];
-        rust = ["rustfmt"];
-        sh = ["shfmt "];
-        sql = [["pg_format" "sql_formatter" "sqlfluff"]];
-        yaml = ["prettierd"];
+      settings = {
+        format_on_save = {
+          lsp_format = "fallback";
+          timeout_ms = 500;
+        };
+
+        notify_on_error = true;
+
+        formatters_by_ft = {
+          c = ["clang-format"];
+          cpp = ["clang-format"];
+          json = [["prettierd" "prettier"]];
+          lua = ["stylua "];
+          markdown = [["prettierd" "prettier"]];
+          nix = [["alejandra" "nixfmt" "nixpkgs_fmt"]];
+          python = ["isort" "black"];
+          rust = ["rustfmt"];
+          sh = ["shfmt "];
+          sql = [["pg_format" "sql_formatter" "sqlfluff"]];
+          yaml = ["prettierd"];
+        };
       };
     };
 
