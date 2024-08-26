@@ -182,6 +182,83 @@
     flake = "/home/nic/nixos";
   };
 
+  hardware.uinput.enable = true;
+  users.groups.uinput.members = ["nic"];
+  users.groups.input.members = ["nic"];
+
+  # add extend layer with arrows for my default colemak-dh-wide
+  services.kanata = {
+    enable = true;
+    keyboards.ek68 = {
+      # devices = ["/dev/input/by-id/usb-hfd.cn_EK68-event-kbd"];
+      config = ''
+        (defsrc
+          esc  1    2    3    4    5    6    7    8    9    0    -    =    bspc
+          tab  q    w    e    r    t    y    u    i    o    p    [    ]    \
+          caps a    s    d    f    g    h    j    k    l    ;    '    ret
+          lsft z    x    c    v    b    n    m    ,    .    /    rsft
+          lctl lmet lalt           spc            ralt       rmet
+        )
+
+        (defalias
+          ext (tap-hold 200 200 spc (layer-toggle extend))
+          sym (layer-toggle symbols)
+          vim (tap-hold 200 200 z (layer-toggle vim-compat))
+
+          ;; shifted keys
+          _ S--
+          ! S-1
+          @ S-2
+          # S-3
+          { S-[
+          $ S-4
+          % S-5
+          ^ S-6
+          } S-]
+          & S-7
+          * S-8
+          op S-9
+          cp S-0
+          til S-grv
+          ? S-/
+          pipe S-\
+        )
+
+        (deflayer colemak-dh-wide
+          caps 1    2    3    4    5    6    =    7    8    9    0    -    bspc
+          tab  q    w    f    p    b    [    j    l    u    y    ;    '    \
+          esc  a    r    s    t    g    ]    m    n    e    i    o    ret
+          @vim x    c    d    v    ralt /    k    h    ,    .    rsft
+          lctl lmet lsft           @ext            @sym       rmet
+        )
+
+        (deflayer extend
+          _    _    _    _    _    _    _    _    _    _    _    _    _    _
+          _    _    prnt _    _    _    _    del  _    _    _    _    _    _
+          _    lctl lmet lalt _    _    _    bspc lft  down up   rght _
+          _    _    _    _    _    _    _    home pgdn pgup end  _
+          _    _    _              _              _           _
+        )
+
+        (deflayer symbols
+          _    _    _    _    _    _    _    _     _    _    _    _    _    _
+          _    @!   @@   @%   @$   =    _    @pipe 7    8    9    +    @_    _
+          _    @#   @til @{   @op  [    _    @*    4    5    6    -    _
+          _    @^   @&   @}   @cp  ]    0    1     2    3    @?   rsft
+          _    _    _              _              _           _
+        )
+
+        (deflayer vim-compat
+          _    _    _    _    _    _    _    _    _    _    _    _    _    _
+          _    _    _    _    _    _    _    _    _    _    _    _    _    _
+          _    _    _    _    _    _    _    _    h    j    k    l    _
+          _    _    _    _    _    _    _    _    _    _    _    _
+          _    _    _              _              _           _
+        )
+      '';
+    };
+  };
+
   nix.settings = {
     trusted-substituters = [
       "https://cache.nixos.org/"
