@@ -13,14 +13,32 @@
         formatters_by_ft = {
           c = ["clang-format"];
           cpp = ["clang-format"];
-          json = [["prettierd" "prettier"]];
+          json = {
+            __unkeyed-1 = "prettierd";
+            __unkeyed-2 = "prettier";
+            stop_after_first = true;
+          };
           lua = ["stylua "];
-          markdown = [["prettierd" "prettier"]];
-          nix = [["alejandra" "nixfmt" "nixpkgs_fmt"]];
+          markdown = {
+            __unkeyed-1 = "prettierd";
+            __unkeyed-2 = "prettier";
+            stop_after_first = true;
+          };
+          nix = {
+            __unkeyed-1 = "alejandra";
+            __unkeyed-2 = "nixfmt";
+            __unkeyed-3 = "nixpkgs_fmt";
+            stop_after_first = true;
+          };
           python = ["isort" "black"];
           rust = ["rustfmt"];
           sh = ["shfmt "];
-          sql = [["pg_format" "sql_formatter" "sqlfluff"]];
+          sql = {
+            __unkeyed-1 = "pg_format";
+            __unkeyed-2 = "sql_formatter";
+            __unkeyed-3 = "sqlfluff";
+            stop_after_first = true;
+          };
           yaml = ["prettierd"];
         };
       };
