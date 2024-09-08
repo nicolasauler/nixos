@@ -50,10 +50,11 @@
       ];
 
       input = {
-        kb_layout = "br,us";
-        kb_variant = ",intl"; # the problem is here, maybe the intl_nodeadkeys stuff
+        kb_layout = "us";
+        kb_variant = "altgr-intl";
         kb_model = "";
-        kb_options = "caps:swapescape,grp:alt_space_toggle";
+        # kb_options = "caps:swapescape,grp:alt_space_toggle";
+        # kb_options = "caps:swapescape";
         kb_rules = "";
 
         follow_mouse = 1;
@@ -66,7 +67,9 @@
           tap-to-click = true;
         };
 
-        sensitivity = 0.0;
+        # sensitivity = 0.0;
+        # accel_profile
+        # force_no_accel
       };
 
       general = {
