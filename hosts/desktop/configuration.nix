@@ -282,4 +282,214 @@
       "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw="
     ];
   };
+
+  services = {
+    grafana = {
+      enable = true;
+      settings = {
+        server = {
+          http_addr = "127.0.0.1";
+          http_port = 3000;
+        };
+      };
+      provision = {
+        enable = true;
+        datasources.settings.datasources = [
+          {
+            name = "Prometheus";
+            type = "prometheus";
+            access = "proxy";
+            url = "http://127.0.0.1:${toString config.services.prometheus.port}";
+          }
+          {
+            name = "Loki";
+            type = "loki";
+            access = "proxy";
+            url = "http://127.0.0.1:${toString config.services.loki.configuration.server.http_listen_port}";
+          }
+          {
+            name = "Tempo";
+            type = "tempo";
+            access = "proxy";
+            url = "http://127.0.0.1:${toString config.services.tempo.settings.server.http_listen_port}";
+          }
+        ];
+        ## add alerting with sops secrets
+        # alerting.contactPoints.settings.contactPoints = [
+        #   {
+        #     orgId = 1;
+        #     name = "Telegram";
+        #     receivers = [
+        #       {
+        #         uid = "1";
+        #         type = "telegram";
+        #         settings = {
+        #         };
+        #       }
+        #     ];
+        #   }
+        # ];
+      };
+    };
+
+    # mimir = {
+    #   enable = true;
+    # };
+
+    prometheus = {
+      enable = true;
+      port = 3020;
+      exporters = {
+        node = {
+          enable = true;
+          port = 3021;
+          enabledCollectors = ["systemd"];
+        };
+      };
+      scrapeConfigs = [
+        {
+          job_name = "desktop";
+          static_configs = [
+            {
+              targets = ["127.0.0.1:${toString config.services.prometheus.exporters.node.port}"];
+            }
+          ];
+        }
+      ];
+    };
+
+    loki = {
+      enable = true;
+      configuration = {
+        server.http_listen_port = 3030;
+        auth_enabled = false;
+
+        common = {
+        };
+
+        ingester = {
+          lifecycler = {
+            address = "127.0.0.1";
+            ring = {
+              kvstore = {
+                store = "inmemory";
+              };
+              replication_factor = 1;
+            };
+          };
+          chunk_idle_period = "1h";
+          max_chunk_age = "1h";
+          chunk_target_size = 999999;
+          chunk_retain_period = "30s";
+        };
+
+        schema_config = {
+          configs = [
+            {
+              from = "2024-07-12";
+              store = "tsdb";
+              object_store = "filesystem";
+              schema = "v13";
+              index = {
+                prefix = "index_";
+                period = "24h";
+              };
+            }
+          ];
+        };
+
+        storage_config = {
+          tsdb_shipper = {
+            active_index_directory = "/var/lib/loki/tsdb-index";
+            cache_location = "/var/lib/loki/tsdb-cache";
+            cache_ttl = "24h";
+          };
+
+          filesystem = {
+            directory = "/var/lib/loki/chunks";
+          };
+        };
+
+        limits_config = {
+          reject_old_samples = true;
+          reject_old_samples_max_age = "168h";
+        };
+
+        table_manager = {
+          retention_deletes_enabled = false;
+          retention_period = "0s";
+        };
+
+        compactor = {
+          working_directory = "/var/lib/loki";
+          compactor_ring = {
+            kvstore = {
+              store = "inmemory";
+            };
+          };
+        };
+      };
+    };
+
+    # promtail: port 3031 (8031)
+    #
+    promtail = {
+      enable = true;
+      configuration = {
+        server = {
+          http_listen_port = 3031;
+          grpc_listen_port = 0;
+        };
+        positions = {
+          filename = "/tmp/positions.yaml";
+        };
+        clients = [
+          {
+            url = "http://127.0.0.1:${toString config.services.loki.configuration.server.http_listen_port}/loki/api/v1/push";
+          }
+        ];
+        scrape_configs = [
+          {
+            job_name = "journal";
+            journal = {
+              max_age = "12h";
+              labels = {
+                job = "systemd-journal";
+                host = "desktop";
+              };
+            };
+            relabel_configs = [
+              {
+                source_labels = ["__journal__systemd_unit"];
+                target_label = "unit";
+              }
+            ];
+          }
+        ];
+      };
+    };
+
+    tempo = {
+      enable = true;
+      settings = {
+        server = {
+          http_listen_address = "127.0.0.1";
+          http_listen_port = 3040;
+        };
+        distributor.receivers = {
+          otlp.protocols = {
+            http = {};
+          };
+        };
+        storage.trace = {
+          backend = "local";
+          wal.path = "/var/lib/tempo/wal";
+          local.path = "/var/lib/tempo/blocks";
+        };
+      };
+    };
+
+    # alloy = {
+    # };
+  };
 }
