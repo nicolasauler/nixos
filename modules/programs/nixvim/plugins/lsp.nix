@@ -27,7 +27,7 @@
         #   installRustc = false;
         # };
         svelte.enable = true;
-        tsserver.enable = true;
+        ts-ls.enable = true;
         yamlls.enable = true;
       };
 
