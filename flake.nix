@@ -15,6 +15,9 @@
 
     # neovim-nightly-overlay.url = "github:nix-community/neovim-nightly-overlay";
     nixvim.url = "github:nix-community/nixvim";
+
+    # sops-nix.url = "github:Mic92/sops-nix";
+    agenix.url = "github:ryantm/agenix";
   };
 
   # outputs = { self, nixpkgs, neovim-nightly-overlay, ... }@inputs:
