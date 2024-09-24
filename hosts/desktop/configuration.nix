@@ -102,6 +102,7 @@
     grim
     htop
     keepassxc
+    keymapp
     mako
     # networkmanagerapplet
     nix-output-monitor
@@ -202,6 +203,10 @@
   users.groups.uinput.members = ["nic"];
   users.groups.input.members = ["nic"];
 
+  ## ZSA Voyager
+  hardware.keyboard.zsa.enable = true;
+
+  ## Epomaker EK68
   # add extend layer with arrows for my default colemak-dh-wide
   services.kanata = {
     enable = true;
