@@ -39,5 +39,7 @@
         options.desc = "[W]hich [K]ey";
       }
     ];
+
+    plugins.web-devicons.enable = true;
   };
 }
