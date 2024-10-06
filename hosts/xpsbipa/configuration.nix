@@ -66,7 +66,7 @@
   users.users.nic = {
     isNormalUser = true;
     description = "nicolas";
-    extraGroups = ["networkmanager" "wheel" "docker"];
+    extraGroups = ["networkmanager" "wheel" "docker" "dialout"];
     packages = with pkgs; [];
   };
 
