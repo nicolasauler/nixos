@@ -6,7 +6,7 @@
       servers = {
         bashls.enable = true;
         clangd.enable = true;
-        lua-ls.enable = true;
+        lua_ls.enable = true;
         ltex = {
           enable = true;
           settings.additionalRules = {
@@ -15,7 +15,8 @@
             motherTongue = "en-GB";
           };
         };
-        nil-ls = {
+        kotlin_language_server.enable = true;
+        nil_ls = {
           enable = true;
           settings.formatting.command = ["alejandra"];
           # settings.formatting.command = [ "nixpkgs-fmt" ];
@@ -27,7 +28,7 @@
         #   installRustc = false;
         # };
         svelte.enable = true;
-        ts-ls.enable = true;
+        ts_ls.enable = true;
         yamlls.enable = true;
       };
 
