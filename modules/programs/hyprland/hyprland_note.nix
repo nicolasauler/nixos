@@ -129,7 +129,7 @@
         [
           "$mainMod, return, exec, alacritty"
           "$mainMod SHIFT, Q, killactive,"
-          "$mainMod, E, exit,"
+          "$mainMod SHIFT, E, exit,"
           "$mainMod, F, fullscreen,"
           "$mainMod, w, exec, rofi -show window"
           "$mainMod, b, exec, pkill --signal USR1 waybar"
