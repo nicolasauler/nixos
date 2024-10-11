@@ -18,6 +18,7 @@
         carapace $spans.0 nushell ...$spans | from json
       }
       $env.config = {
+        edit_mode: vi,
         show_banner: false,
         completions: {
           case_sensitive: false # case-sensitive completions
