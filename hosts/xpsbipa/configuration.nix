@@ -300,4 +300,206 @@
       "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw="
     ];
   };
+
+  environment.etc."alloy/client.alloy" = {
+    text = ''
+      logging {
+        level  = "debug"
+        format = "logfmt"
+      }
+
+      otelcol.receiver.otlp "default" {
+        grpc {
+          endpoint = "0.0.0.0:4317"
+        }
+
+        output {
+          logs = [otelcol.processor.batch.default.input]
+        }
+      }
+
+      otelcol.processor.batch "default" {
+        output {
+          logs = [otelcol.exporter.otlphttp.loki.input]
+        }
+      }
+
+      otelcol.exporter.otlphttp "loki" {
+        client {
+          endpoint = "http://127.0.0.1:3100/otlp"
+        }
+      }
+    '';
+  };
+  # otelcol.exporter.otlphttp "loki" {
+  #   client {
+  #     endpoint = "https://otlp-gateway-prod-sa-east-1.grafana.net/otlp"
+  #   }
+  # }
+
+  #      otelcol.exporter.loki "default" {
+  #       forward_to = [loki.write.default.receiver]
+  #      }
+  #
+  #      loki.write "default" {
+  #      	endpoint {
+  #      		url = "http://127.0.0.1:3100/loki/api/v1/push"
+  #        }
+  #      }
+
+  ## SEPARATOR
+
+  #        discovery.relabel "journal" {
+  #          targets = []
+  #          rule {
+  #            source_labels = ["__journal__hostname"]
+  #            target_label  = "nodename"
+  #          }
+  #        }
+  #
+  #        loki.source.journal "journal" {
+  #          path          = "/var/log/journal"
+  #          relabel_rules = discovery.relabel.journal.rules
+  #          forward_to    = [loki.write.remote.receiver]
+  #        }
+  #
+  #        loki.write "remote" {
+  #        endpoint {
+  #          url = "http://127.0.0.1:3000/loki/api/v1/push"
+  #        }
+  #      }
+
+  #            loki.write "grafana_cloud_loki" {
+  #        endpoint {
+  #          url = local.file.logs_url.content
+  #
+  #          basic_auth {
+  #            username = local.file.logs_username.content
+  #            password_file = "@password_file@"
+  #          }
+  #        }
+  #      }
+  #
+  #      loki.write "grafana_loki" {
+  #            endpoint {
+  #              url = "http://${loki_host}:3100/loki/api/v1/push"
+  #
+  #              // basic_auth {
+  #              //  username = "admin"
+  #              //  password = "admin"
+  #              // }
+  #            }
+  #          }
+  #
+  #            loki.write "adminvm" {
+  #              endpoint {
+  #                url = "${endpointUrl}"
+  #              }
+  #            }
+
+  services = {
+    grafana = {
+      enable = true;
+      settings = {
+        server = {
+          http_addr = "127.0.0.1";
+          http_port = 3000;
+        };
+      };
+      provision = {
+        enable = true;
+        datasources.settings.datasources = [
+          {
+            name = "Loki";
+            type = "loki";
+            access = "proxy";
+            url = "http://127.0.0.1:${toString config.services.loki.configuration.server.http_listen_port}";
+          }
+        ];
+      };
+    };
+
+    alloy = {
+      enable = true;
+    };
+
+    loki = {
+      enable = true;
+      configuration = {
+        server.http_listen_port = 3100;
+        auth_enabled = false;
+
+        # common = {
+        #  replication_factor = 1;
+        # };
+
+        ingester = {
+          lifecycler = {
+            address = "127.0.0.1";
+            ring = {
+              kvstore = {
+                store = "inmemory";
+              };
+              replication_factor = 1;
+            };
+          };
+          chunk_idle_period = "1h";
+          max_chunk_age = "1h";
+          chunk_target_size = 999999;
+          chunk_retain_period = "30s";
+        };
+
+        schema_config = {
+          configs = [
+            {
+              from = "2024-07-12";
+              store = "tsdb";
+              object_store = "filesystem";
+              schema = "v13";
+              index = {
+                prefix = "index_";
+                period = "24h";
+              };
+            }
+          ];
+        };
+
+        storage_config = {
+          tsdb_shipper = {
+            active_index_directory = "/var/lib/loki/tsdb-index";
+            cache_location = "/var/lib/loki/tsdb-cache";
+            cache_ttl = "24h";
+          };
+
+          filesystem = {
+            directory = "/var/lib/loki/chunks";
+          };
+        };
+
+        limits_config = {
+          reject_old_samples = true;
+          reject_old_samples_max_age = "168h";
+        };
+
+        table_manager = {
+          retention_deletes_enabled = false;
+          retention_period = "0s";
+        };
+
+        compactor = {
+          working_directory = "/var/lib/loki";
+          compactor_ring = {
+            kvstore = {
+              store = "inmemory";
+            };
+          };
+        };
+      };
+    };
+  };
+
+  systemd.services.alloy = {
+    serviceConfig.TimeoutStopSec = 4;
+    reloadTriggers = ["/etc/alloy/client.alloy"];
+  };
 }
