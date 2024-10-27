@@ -4,7 +4,9 @@
       enable = true;
       # inlayHints = true;
       servers = {
-        arduino_language_server.enable = true;
+        # arduino_lsp doesn't work with nvim 0.10
+        # really annoying
+        # arduino_language_server.enable = true;
         bashls.enable = true;
         clangd.enable = true;
         lua_ls.enable = true;

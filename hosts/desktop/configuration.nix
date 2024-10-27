@@ -73,7 +73,8 @@
   users.users.nic = {
     isNormalUser = true;
     description = "nic";
-    extraGroups = ["networkmanager" "wheel" "docker" "uinput" "dialout"];
+    # extraGroups = ["networkmanager" "wheel" "docker" "uinput" "dialout"];
+    extraGroups = ["networkmanager" "wheel" "uinput" "dialout"];
     packages = with pkgs; [];
   };
 
@@ -88,7 +89,8 @@
     backupFileExtension = "backup";
   };
 
-  virtualisation.docker.enable = true;
+  # don't need docker for now
+  # virtualisation.docker.enable = true;
   virtualisation.podman.enable = true;
 
   # List packages installed in system profile. To search, run:
