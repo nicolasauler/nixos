@@ -104,7 +104,7 @@
     tree-sitter
     vscode-extensions.vadimcn.vscode-lldb
     wl-clipboard
-    xdg_utils
+    xdg-utils
     zathura
   ];
 
