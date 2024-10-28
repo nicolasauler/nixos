@@ -66,7 +66,8 @@
   users.users.nic = {
     isNormalUser = true;
     description = "nicolas";
-    extraGroups = ["networkmanager" "wheel" "docker" "dialout"];
+    # extraGroups = ["networkmanager" "wheel" "docker" "dialout"];
+    extraGroups = ["networkmanager" "wheel" "dialout"];
     packages = with pkgs; [];
   };
 
@@ -79,7 +80,8 @@
     backupFileExtension = "backup";
   };
 
-  virtualisation.docker.enable = true;
+  ## don't need docker for now
+  # virtualisation.docker.enable = true;
   virtualisation.podman.enable = true;
 
   # List packages installed in system profile. To search, run:
@@ -397,109 +399,110 @@
   #              }
   #            }
 
-  services = {
-    grafana = {
-      enable = true;
-      settings = {
-        server = {
-          http_addr = "127.0.0.1";
-          http_port = 3000;
-        };
-      };
-      provision = {
-        enable = true;
-        datasources.settings.datasources = [
-          {
-            name = "Loki";
-            type = "loki";
-            access = "proxy";
-            url = "http://127.0.0.1:${toString config.services.loki.configuration.server.http_listen_port}";
-          }
-        ];
-      };
-    };
+  #### UNCOMMENT
+  ## services = {
+  ##   grafana = {
+  ##     enable = true;
+  ##     settings = {
+  ##       server = {
+  ##         http_addr = "127.0.0.1";
+  ##         http_port = 3000;
+  ##       };
+  ##     };
+  ##     provision = {
+  ##       enable = true;
+  ##       datasources.settings.datasources = [
+  ##         {
+  ##           name = "Loki";
+  ##           type = "loki";
+  ##           access = "proxy";
+  ##           url = "http://127.0.0.1:${toString config.services.loki.configuration.server.http_listen_port}";
+  ##         }
+  ##       ];
+  ##     };
+  ##   };
 
-    alloy = {
-      enable = true;
-    };
+  ##   alloy = {
+  ##     enable = true;
+  ##   };
 
-    loki = {
-      enable = true;
-      configuration = {
-        server.http_listen_port = 3100;
-        auth_enabled = false;
+  ##   loki = {
+  ##     enable = true;
+  ##     configuration = {
+  ##       server.http_listen_port = 3100;
+  ##       auth_enabled = false;
 
-        # common = {
-        #  replication_factor = 1;
-        # };
+  ##       # common = {
+  ##       #  replication_factor = 1;
+  ##       # };
 
-        ingester = {
-          lifecycler = {
-            address = "127.0.0.1";
-            ring = {
-              kvstore = {
-                store = "inmemory";
-              };
-              replication_factor = 1;
-            };
-          };
-          chunk_idle_period = "1h";
-          max_chunk_age = "1h";
-          chunk_target_size = 999999;
-          chunk_retain_period = "30s";
-        };
+  ##       ingester = {
+  ##         lifecycler = {
+  ##           address = "127.0.0.1";
+  ##           ring = {
+  ##             kvstore = {
+  ##               store = "inmemory";
+  ##             };
+  ##             replication_factor = 1;
+  ##           };
+  ##         };
+  ##         chunk_idle_period = "1h";
+  ##         max_chunk_age = "1h";
+  ##         chunk_target_size = 999999;
+  ##         chunk_retain_period = "30s";
+  ##       };
 
-        schema_config = {
-          configs = [
-            {
-              from = "2024-07-12";
-              store = "tsdb";
-              object_store = "filesystem";
-              schema = "v13";
-              index = {
-                prefix = "index_";
-                period = "24h";
-              };
-            }
-          ];
-        };
+  ##       schema_config = {
+  ##         configs = [
+  ##           {
+  ##             from = "2024-07-12";
+  ##             store = "tsdb";
+  ##             object_store = "filesystem";
+  ##             schema = "v13";
+  ##             index = {
+  ##               prefix = "index_";
+  ##               period = "24h";
+  ##             };
+  ##           }
+  ##         ];
+  ##       };
 
-        storage_config = {
-          tsdb_shipper = {
-            active_index_directory = "/var/lib/loki/tsdb-index";
-            cache_location = "/var/lib/loki/tsdb-cache";
-            cache_ttl = "24h";
-          };
+  ##       storage_config = {
+  ##         tsdb_shipper = {
+  ##           active_index_directory = "/var/lib/loki/tsdb-index";
+  ##           cache_location = "/var/lib/loki/tsdb-cache";
+  ##           cache_ttl = "24h";
+  ##         };
 
-          filesystem = {
-            directory = "/var/lib/loki/chunks";
-          };
-        };
+  ##         filesystem = {
+  ##           directory = "/var/lib/loki/chunks";
+  ##         };
+  ##       };
 
-        limits_config = {
-          reject_old_samples = true;
-          reject_old_samples_max_age = "168h";
-        };
+  ##       limits_config = {
+  ##         reject_old_samples = true;
+  ##         reject_old_samples_max_age = "168h";
+  ##       };
 
-        table_manager = {
-          retention_deletes_enabled = false;
-          retention_period = "0s";
-        };
+  ##       table_manager = {
+  ##         retention_deletes_enabled = false;
+  ##         retention_period = "0s";
+  ##       };
 
-        compactor = {
-          working_directory = "/var/lib/loki";
-          compactor_ring = {
-            kvstore = {
-              store = "inmemory";
-            };
-          };
-        };
-      };
-    };
-  };
+  ##       compactor = {
+  ##         working_directory = "/var/lib/loki";
+  ##         compactor_ring = {
+  ##           kvstore = {
+  ##             store = "inmemory";
+  ##           };
+  ##         };
+  ##       };
+  ##     };
+  ##   };
+  ## };
 
-  systemd.services.alloy = {
-    serviceConfig.TimeoutStopSec = 4;
-    reloadTriggers = ["/etc/alloy/client.alloy"];
-  };
+  ## systemd.services.alloy = {
+  ##   serviceConfig.TimeoutStopSec = 4;
+  ##   reloadTriggers = ["/etc/alloy/client.alloy"];
+  ## };
 }
