@@ -152,7 +152,12 @@
   };
 
   hardware = {
-    graphics.enable = true;
+    graphics = {
+      enable = true;
+      extraPackages = with pkgs; [
+        vpl-gpu-rt
+      ];
+    };
     cpu.intel.updateMicrocode = true;
     bluetooth = {
       enable = true;
