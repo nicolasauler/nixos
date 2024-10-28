@@ -153,6 +153,11 @@
           "$mainMod, k, movefocus, u"
           "$mainMod, j, movefocus, d"
 
+          "$mainMod SHIFT, left, movewindow, l"
+          "$mainMod SHIFT, right, movewindow, r"
+          "$mainMod SHIFT, up, movewindow, u"
+          "$mainMod SHIFT, down, movewindow, d"
+
           "$mainMod SHIFT, h, movewindow, l"
           "$mainMod SHIFT, l, movewindow, r"
           "$mainMod SHIFT, k, movewindow, u"
@@ -180,10 +185,20 @@
         )}") [1 2 3 4 5 6 7 8 9 0];
 
       binde = [
+        "$mainMod SHIFT, left, moveactive, -20 0"
+        "$mainMod SHIFT, right, moveactive, 20 0"
+        "$mainMod SHIFT, up, moveactive, 0 -20"
+        "$mainMod SHIFT, down, moveactive, 0 20"
+
         "$mainMod SHIFT, h, moveactive, -20 0"
         "$mainMod SHIFT, l, moveactive, 20 0"
         "$mainMod SHIFT, k, moveactive, 0 -20"
         "$mainMod SHIFT, j, moveactive, 0 20"
+
+        "$mainMod CTRL, left, resizeactive, 30 0"
+        "$mainMod CTRL, right, resizeactive, -30 0"
+        "$mainMod CTRL, up, resizeactive, 0 -10"
+        "$mainMod CTRL, down, resizeactive, 0 10"
 
         "$mainMod CTRL, l, resizeactive, 30 0"
         "$mainMod CTRL, h, resizeactive, -30 0"
