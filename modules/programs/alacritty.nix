@@ -10,6 +10,9 @@
           style = "Bold";
         };
       };
+
+      # set in zellij
+      # terminal.shell.program = "nu";
     };
   };
 }
