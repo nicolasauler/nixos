@@ -39,7 +39,8 @@
             __unkeyed-3 = "sqlfluff";
             stop_after_first = true;
           };
-          yaml = ["prettierd"];
+          # yaml = ["prettierd"];
+          yaml = ["yamlfmt"];
         };
       };
     };
@@ -60,6 +61,7 @@
       shfmt
       sqlfluff
       stylua
+      yamlfmt
     ];
 
     keymaps = [
