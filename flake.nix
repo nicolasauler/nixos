@@ -13,14 +13,12 @@
 
     hyprland.url = "git+https://github.com/hyprwm/Hyprland?submodules=1";
 
-    # neovim-nightly-overlay.url = "github:nix-community/neovim-nightly-overlay";
     nixvim.url = "github:nix-community/nixvim";
 
     # sops-nix.url = "github:Mic92/sops-nix";
     agenix.url = "github:ryantm/agenix";
   };
 
-  # outputs = { self, nixpkgs, neovim-nightly-overlay, ... }@inputs:
   outputs = {
     self,
     nixpkgs,
@@ -29,7 +27,6 @@
     system = "x86_64-linux";
     pkgs = import nixpkgs {
       inherit system;
-      # overlays = [ neovim-nightly-overlay.overlay ];
       overlays = [];
       config = {
         allowUnfree = true;
