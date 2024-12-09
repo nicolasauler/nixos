@@ -306,6 +306,25 @@
     };
   };
 
+  fonts = {
+    packages = with pkgs; [
+      nerd-fonts.inconsolata
+      nerd-fonts.inconsolata-go
+      nerd-fonts.fira-code
+    ];
+
+    fontconfig = {
+      defaultFonts = {
+        serif = ["InconslataGo Nerd Font"];
+        sansSerif = ["InconslataGo Nerd Font"];
+        monospace = ["InconslataGo Nerd Font Mono"];
+        emoji = ["InconslataGo Nerd Font"];
+      };
+    };
+
+    fontDir.enable = true;
+  };
+
   nix.settings = {
     trusted-users = [
       "nic"
