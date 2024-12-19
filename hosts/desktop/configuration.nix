@@ -234,77 +234,77 @@
 
   ## Epomaker EK68
   # add extend layer with arrows for my default colemak-dh-wide
-  services.kanata = {
-    enable = true;
-    keyboards.ek68 = {
-      devices = ["/dev/input/by-id/usb-hfd.cn_EK68-event-kbd"];
-      config = ''
-        (defsrc
-          esc  1    2    3    4    5    6    7    8    9    0    -    =    bspc
-          tab  q    w    e    r    t    y    u    i    o    p    [    ]    \
-          caps a    s    d    f    g    h    j    k    l    ;    '    ret
-          lsft z    x    c    v    b    n    m    ,    .    /    rsft
-          lctl lmet lalt           spc            ralt       rmet
-        )
+  ### services.kanata = {
+  ###   enable = true;
+  ###   keyboards.ek68 = {
+  ###     devices = ["/dev/input/by-id/usb-hfd.cn_EK68-event-kbd"];
+  ###     config = ''
+  ###       (defsrc
+  ###         esc  1    2    3    4    5    6    7    8    9    0    -    =    bspc
+  ###         tab  q    w    e    r    t    y    u    i    o    p    [    ]    \
+  ###         caps a    s    d    f    g    h    j    k    l    ;    '    ret
+  ###         lsft z    x    c    v    b    n    m    ,    .    /    rsft
+  ###         lctl lmet lalt           spc            ralt       rmet
+  ###       )
 
-        (defalias
-          ext (tap-hold 200 200 spc (layer-toggle extend))
-          sym (layer-toggle symbols)
-          vim (tap-hold 200 200 z (layer-toggle vim-compat))
+  ###       (defalias
+  ###         ext (tap-hold 200 200 spc (layer-toggle extend))
+  ###         sym (layer-toggle symbols)
+  ###         vim (tap-hold 200 200 z (layer-toggle vim-compat))
 
-          ;; shifted keys
-          _ S--
-          ! S-1
-          @ S-2
-          # S-3
-          { S-[
-          $ S-4
-          % S-5
-          ^ S-6
-          } S-]
-          & S-7
-          * S-8
-          op S-9
-          cp S-0
-          til S-grv
-          ? S-/
-          pipe S-\
-        )
+  ###         ;; shifted keys
+  ###         _ S--
+  ###         ! S-1
+  ###         @ S-2
+  ###         # S-3
+  ###         { S-[
+  ###         $ S-4
+  ###         % S-5
+  ###         ^ S-6
+  ###         } S-]
+  ###         & S-7
+  ###         * S-8
+  ###         op S-9
+  ###         cp S-0
+  ###         til S-grv
+  ###         ? S-/
+  ###         pipe S-\
+  ###       )
 
-        (deflayer colemak-dh-wide
-          caps 1    2    3    4    5    6    =    7    8    9    0    -    bspc
-          tab  q    w    f    p    b    [    j    l    u    y    ;    '    \
-          esc  a    r    s    t    g    ]    m    n    e    i    o    ret
-          @vim x    c    d    v    ralt /    k    h    ,    .    rsft
-          lctl lmet lsft           @ext            @sym       rmet
-        )
+  ###       (deflayer colemak-dh-wide
+  ###         caps 1    2    3    4    5    6    =    7    8    9    0    -    bspc
+  ###         tab  q    w    f    p    b    [    j    l    u    y    ;    '    \
+  ###         esc  a    r    s    t    g    ]    m    n    e    i    o    ret
+  ###         @vim x    c    d    v    ralt /    k    h    ,    .    rsft
+  ###         lctl lmet lsft           @ext            @sym       rmet
+  ###       )
 
-        (deflayer extend
-          _    _    _    _    _    _    _    _    _    _    _    _    _    _
-          _    _    prnt _    _    _    _    del  _    _    _    _    _    _
-          _    lctl lmet lalt _    _    _    bspc lft  down up   rght _
-          _    _    _    _    _    _    _    home pgdn pgup end  _
-          _    _    _              _              _           _
-        )
+  ###       (deflayer extend
+  ###         _    _    _    _    _    _    _    _    _    _    _    _    _    _
+  ###         _    _    prnt _    _    _    _    del  _    _    _    _    _    _
+  ###         _    lctl lmet lalt _    _    _    bspc lft  down up   rght _
+  ###         _    _    _    _    _    _    _    home pgdn pgup end  _
+  ###         _    _    _              _              _           _
+  ###       )
 
-        (deflayer symbols
-          _    _    _    _    _    _    _    _     _    _    _    _    _    _
-          _    @!   @@   @%   @$   =    _    @pipe 7    8    9    +    @_    _
-          _    @#   @til @{   @op  [    _    @*    4    5    6    -    _
-          _    @^   @&   @}   @cp  ]    0    1     2    3    @?   rsft
-          _    _    _              _              _           _
-        )
+  ###       (deflayer symbols
+  ###         _    _    _    _    _    _    _    _     _    _    _    _    _    _
+  ###         _    @!   @@   @%   @$   =    _    @pipe 7    8    9    +    @_    _
+  ###         _    @#   @til @{   @op  [    _    @*    4    5    6    -    _
+  ###         _    @^   @&   @}   @cp  ]    0    1     2    3    @?   rsft
+  ###         _    _    _              _              _           _
+  ###       )
 
-        (deflayer vim-compat
-          _    _    _    _    _    _    _    _    _    _    _    _    _    _
-          _    _    _    _    _    _    _    _    _    _    _    _    _    _
-          _    _    _    _    _    _    _    _    h    j    k    l    _
-          _    _    _    _    _    _    _    _    _    _    _    _
-          _    _    _              _              _           _
-        )
-      '';
-    };
-  };
+  ###       (deflayer vim-compat
+  ###         _    _    _    _    _    _    _    _    _    _    _    _    _    _
+  ###         _    _    _    _    _    _    _    _    _    _    _    _    _    _
+  ###         _    _    _    _    _    _    _    _    h    j    k    l    _
+  ###         _    _    _    _    _    _    _    _    _    _    _    _
+  ###         _    _    _              _              _           _
+  ###       )
+  ###     '';
+  ###   };
+  ### };
 
   fonts = {
     packages = with pkgs; [
@@ -345,59 +345,6 @@
       "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
     ];
   };
-
-  #services = {
-  #  grafana = {
-  #    enable = true;
-  #    settings = {
-  #      server = {
-  #        http_addr = "127.0.0.1";
-  #        http_port = 3000;
-  #      };
-  #    };
-  #    provision = {
-  #      enable = true;
-  #      datasources.settings.datasources = [
-  #        {
-  #          name = "Prometheus";
-  #          type = "prometheus";
-  #          access = "proxy";
-  #          url = "http://127.0.0.1:${toString config.services.prometheus.port}";
-  #        }
-  #        {
-  #          name = "Loki";
-  #          type = "loki";
-  #          access = "proxy";
-  #          url = "http://127.0.0.1:${toString config.services.loki.configuration.server.http_listen_port}";
-  #        }
-  #        {
-  #          name = "Tempo";
-  #          type = "tempo";
-  #          access = "proxy";
-  #          url = "http://127.0.0.1:${toString config.services.tempo.settings.server.http_listen_port}";
-  #        }
-  #      ];
-  #      ## add alerting with sops secrets
-  #      # alerting.contactPoints.settings.contactPoints = [
-  #      #   {
-  #      #     orgId = 1;
-  #      #     name = "Telegram";
-  #      #     receivers = [
-  #      #       {
-  #      #         uid = "1";
-  #      #         type = "telegram";
-  #      #         settings = {
-  #      #         };
-  #      #       }
-  #      #     ];
-  #      #   }
-  #      # ];
-  #    };
-  #  };
-
-  #  # mimir = {
-  #  #   enable = true;
-  #  # };
 
   #  prometheus = {
   #    enable = true;
@@ -494,8 +441,6 @@
   #    };
   #  };
 
-  #  # promtail: port 3031 (8031)
-  #  #
   #  promtail = {
   #    enable = true;
   #    configuration = {
@@ -532,230 +477,294 @@
   #    };
   #  };
 
-  #  tempo = {
-  #    enable = true;
-  #    settings = {
-  #      server = {
-  #        http_listen_address = "127.0.0.1";
-  #        http_listen_port = 3040;
-  #      };
-  #      distributor.receivers = {
-  #        otlp.protocols = {
-  #          http = {};
-  #        };
-  #      };
-  #      storage.trace = {
-  #        backend = "local";
-  #        wal.path = "/var/lib/tempo/wal";
-  #        local.path = "/var/lib/tempo/blocks";
-  #      };
-  #    };
-  #  };
+  ### environment.etc."alloy/client.alloy" = {
+  ###   text = ''
+  ###     logging {
+  ###       level  = "debug"
+  ###       format = "logfmt"
+  ###     }
 
-  #  # alloy = {
-  #  # };
-  #};
+  ###     otelcol.receiver.otlp "default" {
+  ###       grpc {
+  ###         endpoint = "0.0.0.0:4317"
+  ###       }
 
-  ### UNCOMMENT
-  ##  environment.etc."alloy/client.alloy" = {
-  ##    text = ''
-  ##      logging {
-  ##        level  = "debug"
-  ##        format = "logfmt"
-  ##      }
-  ##
-  ##      otelcol.receiver.otlp "default" {
-  ##        grpc {
-  ##          endpoint = "0.0.0.0:4317"
-  ##        }
-  ##
-  ##        output {
-  ##          logs = [otelcol.processor.batch.default.input]
-  ##        }
-  ##      }
-  ##
-  ##      otelcol.processor.batch "default" {
-  ##        output {
-  ##          logs = [otelcol.exporter.otlphttp.loki.input]
-  ##        }
-  ##      }
-  ##
-  ##      otelcol.exporter.otlphttp "loki" {
-  ##        client {
-  ##          endpoint = "http://127.0.0.1:3100/otlp"
-  ##        }
-  ##      }
-  ##    '';
-  ##  };
-  ##  # otelcol.exporter.otlphttp "loki" {
-  ##  #   client {
-  ##  #     endpoint = "https://otlp-gateway-prod-sa-east-1.grafana.net/otlp"
-  ##  #   }
-  ##  # }
-  ##
-  ##  #      otelcol.exporter.loki "default" {
-  ##  #       forward_to = [loki.write.default.receiver]
-  ##  #      }
-  ##  #
-  ##  #      loki.write "default" {
-  ##  #       endpoint {
-  ##  #       url = "http://127.0.0.1:3100/loki/api/v1/push"
-  ##  #        }
-  ##  #      }
-  ##
-  ##  ## SEPARATOR
-  ##
-  ##  #        discovery.relabel "journal" {
-  ##  #          targets = []
-  ##  #          rule {
-  ##  #            source_labels = ["__journal__hostname"]
-  ##  #            target_label  = "nodename"
-  ##  #          }
-  ##  #        }
-  ##  #
-  ##  #        loki.source.journal "journal" {
-  ##  #          path          = "/var/log/journal"
-  ##  #          relabel_rules = discovery.relabel.journal.rules
-  ##  #          forward_to    = [loki.write.remote.receiver]
-  ##  #        }
-  ##  #
-  ##  #        loki.write "remote" {
-  ##  #        endpoint {
-  ##  #          url = "http://127.0.0.1:3000/loki/api/v1/push"
-  ##  #        }
-  ##  #      }
-  ##
-  ##  #            loki.write "grafana_cloud_loki" {
-  ##  #        endpoint {
-  ##  #          url = local.file.logs_url.content
-  ##  #
-  ##  #          basic_auth {
-  ##  #            username = local.file.logs_username.content
-  ##  #            password_file = "@password_file@"
-  ##  #          }
-  ##  #        }
-  ##  #      }
-  ##  #
-  ##  #      loki.write "grafana_loki" {
-  ##  #            endpoint {
-  ##  #              url = "http://${loki_host}:3100/loki/api/v1/push"
-  ##  #
-  ##  #              // basic_auth {
-  ##  #              //  username = "admin"
-  ##  #              //  password = "admin"
-  ##  #              // }
-  ##  #            }
-  ##  #          }
-  ##  #
-  ##  #            loki.write "adminvm" {
-  ##  #              endpoint {
-  ##  #                url = "${endpointUrl}"
-  ##  #              }
-  ##  #            }
-  ##
-  ##  services = {
-  ##    grafana = {
-  ##      enable = true;
-  ##      settings = {
-  ##        server = {
-  ##          http_addr = "127.0.0.1";
-  ##          http_port = 3000;
-  ##        };
-  ##      };
-  ##      provision = {
-  ##        enable = true;
-  ##        datasources.settings.datasources = [
-  ##          {
-  ##            name = "Loki";
-  ##            type = "loki";
-  ##            access = "proxy";
-  ##            url = "http://127.0.0.1:${toString config.services.loki.configuration.server.http_listen_port}";
-  ##          }
-  ##        ];
-  ##      };
-  ##    };
-  ##
-  ##    alloy = {
-  ##      enable = true;
-  ##    };
-  ##
-  ##    loki = {
-  ##      enable = true;
-  ##      configuration = {
-  ##        server.http_listen_port = 3100;
-  ##        auth_enabled = false;
-  ##
-  ##        # common = {
-  ##        #  replication_factor = 1;
-  ##        # };
-  ##
-  ##        ingester = {
-  ##          lifecycler = {
-  ##            address = "127.0.0.1";
-  ##            ring = {
-  ##              kvstore = {
-  ##                store = "inmemory";
-  ##              };
-  ##              replication_factor = 1;
-  ##            };
-  ##          };
-  ##          chunk_idle_period = "1h";
-  ##          max_chunk_age = "1h";
-  ##          chunk_target_size = 999999;
-  ##          chunk_retain_period = "30s";
-  ##        };
-  ##
-  ##        schema_config = {
-  ##          configs = [
-  ##            {
-  ##              from = "2024-07-12";
-  ##              store = "tsdb";
-  ##              object_store = "filesystem";
-  ##              schema = "v13";
-  ##              index = {
-  ##                prefix = "index_";
-  ##                period = "24h";
-  ##              };
-  ##            }
-  ##          ];
-  ##        };
-  ##
-  ##        storage_config = {
-  ##          tsdb_shipper = {
-  ##            active_index_directory = "/var/lib/loki/tsdb-index";
-  ##            cache_location = "/var/lib/loki/tsdb-cache";
-  ##            cache_ttl = "24h";
-  ##          };
-  ##
-  ##          filesystem = {
-  ##            directory = "/var/lib/loki/chunks";
-  ##          };
-  ##        };
-  ##
-  ##        limits_config = {
-  ##          reject_old_samples = true;
-  ##          reject_old_samples_max_age = "168h";
-  ##        };
-  ##
-  ##        table_manager = {
-  ##          retention_deletes_enabled = false;
-  ##          retention_period = "0s";
-  ##        };
-  ##
-  ##        compactor = {
-  ##          working_directory = "/var/lib/loki";
-  ##          compactor_ring = {
-  ##            kvstore = {
-  ##              store = "inmemory";
-  ##            };
-  ##          };
-  ##        };
-  ##      };
-  ##    };
-  ##  };
-  ##
-  ##  systemd.services.alloy = {
-  ##    serviceConfig.TimeoutStopSec = 4;
-  ##    reloadTriggers = ["/etc/alloy/client.alloy"];
-  ##  };
+  ###       output {
+  ###         logs = [otelcol.processor.batch.default.input]
+  ###         traces = [otelcol.processor.batch.default.input]
+  ###         metrics = [otelcol.processor.batch.default.input]
+  ###       }
+  ###     }
+
+  ###     otelcol.processor.batch "default" {
+  ###       output {
+  ###         logs = [otelcol.exporter.otlphttp.loki.input]
+  ###         traces = [otelcol.exporter.otlp.tempo.input]
+  ###         metrics = [otelcol.exporter.prometheus.default.input]
+  ###       }
+  ###     }
+
+  ###     otelcol.exporter.otlphttp "loki" {
+  ###       client {
+  ###         endpoint = "http://127.0.0.1:3100/otlp"
+  ###       }
+  ###     }
+
+  ###     otelcol.exporter.otlp "tempo" {
+  ###       client {
+  ###         endpoint = "http://127.0.0.1:14319"
+  ###         tls { insecure = true }
+  ###       }
+  ###     }
+
+  ###     otelcol.exporter.prometheus "default" {
+  ###       forward_to = [prometheus.remote_write.mimir.receiver]
+  ###     }
+
+  ###     prometheus.remote_write "mimir" {
+  ###       endpoint {
+  ###         url = "http://127.0.0.1:3300/api/v1/push"
+  ###       }
+  ###     }
+
+  ###   '';
+  ### };
+
+  ### ## in tempo alloy
+  ### #           tls {
+  ### #             insecure = true
+  ### #             insecure_skip_verify = true
+  ### #           }
+
+  ### services = {
+  ###   grafana = {
+  ###     enable = true;
+  ###     settings = {
+  ###       server = {
+  ###         http_addr = "127.0.0.1";
+  ###         http_port = 3000;
+  ###       };
+  ###       security.admin_user = "nic";
+  ###       security.admin_password = "senhadificil";
+  ###       # security.disable_initial_admin_creation = true;
+  ###     };
+  ###     provision = {
+  ###       enable = true;
+  ###       datasources.settings.datasources = [
+  ###         {
+  ###           name = "Loki";
+  ###           type = "loki";
+  ###           access = "proxy";
+  ###           url = "http://127.0.0.1:${toString config.services.loki.configuration.server.http_listen_port}";
+  ###         }
+  ###         {
+  ###           name = "Tempo";
+  ###           type = "tempo";
+  ###           access = "proxy";
+  ###           url = "http://127.0.0.1:${toString config.services.tempo.settings.server.http_listen_port}";
+  ###         }
+  ###         {
+  ###           name = "Mimir";
+  ###           type = "prometheus";
+  ###           access = "proxy";
+  ###           url = "http://127.0.0.1:${toString config.services.mimir.configuration.server.http_listen_port}/prometheus";
+  ###         }
+  ###       ];
+  ###       ## add alerting with sops secrets
+  ###       # alerting.contactPoints.settings.contactPoints = [
+  ###       #   {
+  ###       #     orgId = 1;
+  ###       #     name = "Telegram";
+  ###       #     receivers = [
+  ###       #       {
+  ###       #         uid = "1";
+  ###       #         type = "telegram";
+  ###       #         settings = {
+  ###       #         };
+  ###       #       }
+  ###       #     ];
+  ###       #   }
+  ###       # ];
+  ###     };
+  ###   };
+
+  ###   alloy = {
+  ###     enable = true;
+  ###   };
+
+  ###   loki = {
+  ###     enable = true;
+  ###     configuration = {
+  ###       server = {
+  ###         http_listen_port = 3100;
+  ###         grpc_listen_port = 9096;
+  ###       };
+  ###       auth_enabled = false;
+
+  ###       # common = {
+  ###       #  replication_factor = 1;
+  ###       # };
+
+  ###       ingester = {
+  ###         lifecycler = {
+  ###           address = "127.0.0.1";
+  ###           ring = {
+  ###             kvstore = {
+  ###               store = "inmemory";
+  ###             };
+  ###             replication_factor = 1;
+  ###           };
+  ###         };
+  ###         chunk_idle_period = "1h";
+  ###         max_chunk_age = "1h";
+  ###         chunk_target_size = 999999;
+  ###         chunk_retain_period = "30s";
+  ###       };
+
+  ###       schema_config = {
+  ###         configs = [
+  ###           {
+  ###             from = "2024-07-12";
+  ###             store = "tsdb";
+  ###             object_store = "filesystem";
+  ###             schema = "v13";
+  ###             index = {
+  ###               prefix = "index_";
+  ###               period = "24h";
+  ###             };
+  ###           }
+  ###         ];
+  ###       };
+
+  ###       storage_config = {
+  ###         tsdb_shipper = {
+  ###           active_index_directory = "/var/lib/loki/tsdb-index";
+  ###           cache_location = "/var/lib/loki/tsdb-cache";
+  ###           cache_ttl = "24h";
+  ###         };
+
+  ###         filesystem = {
+  ###           directory = "/var/lib/loki/chunks";
+  ###         };
+  ###       };
+
+  ###       limits_config = {
+  ###         reject_old_samples = true;
+  ###         reject_old_samples_max_age = "168h";
+  ###       };
+
+  ###       table_manager = {
+  ###         retention_deletes_enabled = false;
+  ###         retention_period = "0s";
+  ###       };
+
+  ###       compactor = {
+  ###         working_directory = "/var/lib/loki";
+  ###         compactor_ring = {
+  ###           kvstore = {
+  ###             store = "inmemory";
+  ###           };
+  ###         };
+  ###       };
+  ###     };
+  ###   };
+
+  ###   tempo = {
+  ###     enable = true;
+  ###     settings = {
+  ###       server = {
+  ###         http_listen_address = "127.0.0.1";
+  ###         http_listen_port = 3200;
+  ###         grpc_listen_address = "127.0.0.1";
+  ###         grpc_listen_port = 9095;
+  ###       };
+  ###       distributor.receivers = {
+  ###         otlp.protocols = {
+  ###           http.endpoint = "127.0.0.1:14318";
+  ###           grpc.endpoint = "127.0.0.1:14319";
+  ###         };
+  ###       };
+  ###       storage.trace = {
+  ###         backend = "local";
+  ###         wal.path = "/var/lib/tempo/wal";
+  ###         local.path = "/var/lib/tempo/blocks";
+  ###       };
+  ###       ingester = {
+  ###         trace_idle_period = "30s";
+  ###         max_block_bytes = 1000000;
+  ###         max_block_duration = "5m";
+  ###       };
+  ###       compactor = {
+  ###         compaction = {
+  ###           compaction_window = "1h";
+  ###           max_block_bytes = 100000000;
+  ###           compacted_block_retention = "10m";
+  ###         };
+  ###       };
+  ###     };
+  ###   };
+
+  ###   mimir = {
+  ###     enable = true;
+  ###     configuration = {
+  ###       multitenancy_enabled = false;
+  ###       server = {
+  ###         http_listen_address = "127.0.0.1";
+  ###         http_listen_port = 3300;
+  ###         grpc_listen_address = "127.0.0.1";
+  ###         grpc_listen_port = 9097;
+  ###       };
+
+  ###       common = {
+  ###         storage = {
+  ###           backend = "filesystem";
+  ###           filesystem.dir = "/var/lib/mimir/metrics";
+  ###         };
+  ###       };
+
+  ###       blocks_storage = {
+  ###         backend = "filesystem";
+  ###         bucket_store.sync_dir = "/var/lib/mimir/tsdb-sync";
+  ###         filesystem.dir = "/var/lib/mimir/data/tsdb";
+  ###         tsdb.dir = "/var/lib/mimir/tsdb";
+  ###       };
+
+  ###       compactor = {
+  ###         data_dir = "/var/lib/mimir/data/compactor";
+  ###         sharding_ring.kvstore.store = "memberlist";
+  ###       };
+
+  ###       limits = {
+  ###         compactor_blocks_retention_period = "90d";
+  ###       };
+
+  ###       distributor = {
+  ###         ring = {
+  ###           instance_addr = "127.0.0.1";
+  ###           kvstore.store = "memberlist";
+  ###         };
+  ###       };
+
+  ###       ingester = {
+  ###         ring = {
+  ###           instance_addr = "127.0.0.1";
+  ###           kvstore.store = "memberlist";
+  ###           replication_factor = 1;
+  ###         };
+  ###       };
+
+  ###       ruler_storage = {
+  ###         backend = "filesystem";
+  ###         filesystem.dir = "/var/lib/mimir/data/rules";
+  ###       };
+
+  ###       store_gateway.sharding_ring.replication_factor = 1;
+  ###     };
+  ###   };
+  ### };
+
+  ### systemd.services.alloy = {
+  ###   serviceConfig.TimeoutStopSec = 4;
+  ###   reloadTriggers = ["/etc/alloy/client.alloy"];
+  ### };
 }
