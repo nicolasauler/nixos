@@ -66,8 +66,7 @@
   users.users.nic = {
     isNormalUser = true;
     description = "nicolas";
-    # extraGroups = ["networkmanager" "wheel" "docker" "dialout"];
-    extraGroups = ["networkmanager" "wheel" "dialout"];
+    extraGroups = ["networkmanager" "wheel" "docker" "uinput" "dialout"];
     packages = with pkgs; [];
   };
 
@@ -94,6 +93,7 @@
     grim
     htop
     keepassxc
+    keymapp
     mako
     networkmanagerapplet
     pavucontrol
@@ -198,7 +198,7 @@
     package = pkgs.postgresql;
 
     enableTCPIP = true;
-    settings.port = 6543;
+    # settings.port = 6543;
 
     # ensureDatabases = ["finapp"];
     authentication = pkgs.lib.mkOverride 10 ''
@@ -219,80 +219,83 @@
     '';
   };
 
+  hardware.keyboard.zsa.enable = true;
+
   # add extend layer with arrows for my default colemak-dh-wide
-  services.kanata = {
-    enable = true;
-    keyboards.ek68 = {
-      # devices = ["/dev/input/by-id/usb-hfd.cn_EK68-event-kbd"];
-      config = ''
-        (defsrc
-          esc  1    2    3    4    5    6    7    8    9    0    -    =    bspc
-          tab  q    w    e    r    t    y    u    i    o    p    [    ]    \
-          caps a    s    d    f    g    h    j    k    l    ;    '    ret
-          lsft z    x    c    v    b    n    m    ,    .    /    rsft
-          lctl lmet lalt           spc            ralt       rmet
-        )
+  ## services.kanata = {
+  ##   enable = true;
+  ##   keyboards.ek68 = {
+  ##     devices = ["/dev/input/by-id/usb-hfd.cn_EK68-event-kbd"];
+  ##     config = ''
+  ##       (defsrc
+  ##         esc  1    2    3    4    5    6    7    8    9    0    -    =    bspc
+  ##         tab  q    w    e    r    t    y    u    i    o    p    [    ]    \
+  ##         caps a    s    d    f    g    h    j    k    l    ;    '    ret
+  ##         lsft z    x    c    v    b    n    m    ,    .    /    rsft
+  ##         lctl lmet lalt           spc            ralt       rmet
+  ##       )
 
-        (defalias
-          ext (tap-hold 200 200 spc (layer-toggle extend))
-          sym (layer-toggle symbols)
-          vim (tap-hold 200 200 z (layer-toggle vim-compat))
+  ##       (defalias
+  ##         ext (tap-hold 200 200 spc (layer-toggle extend))
+  ##         sym (layer-toggle symbols)
+  ##         vim (tap-hold 200 200 z (layer-toggle vim-compat))
 
-          ;; shifted keys
-          _ S--
-          ! S-1
-          @ S-2
-          # S-3
-          { S-[
-          $ S-4
-          % S-5
-          ^ S-6
-          } S-]
-          & S-7
-          * S-8
-          op S-9
-          cp S-0
-          til S-grv
-          ? S-/
-          pipe S-\
-        )
+  ##         ;; shifted keys
+  ##         _ S--
+  ##         ! S-1
+  ##         @ S-2
+  ##         # S-3
+  ##         { S-[
+  ##         $ S-4
+  ##         % S-5
+  ##         ^ S-6
+  ##         } S-]
+  ##         & S-7
+  ##         * S-8
+  ##         op S-9
+  ##         cp S-0
+  ##         til S-grv
+  ##         ? S-/
+  ##         pipe S-\
+  ##       )
 
-        (deflayer colemak-dh-wide
-          caps 1    2    3    4    5    6    =    7    8    9    0    -    bspc
-          tab  q    w    f    p    b    [    j    l    u    y    ;    '    \
-          esc  a    r    s    t    g    ]    m    n    e    i    o    ret
-          @vim x    c    d    v    ralt /    k    h    ,    .    rsft
-          lctl lmet lsft           @ext            @sym       rmet
-        )
+  ##       (deflayer colemak-dh-wide
+  ##         caps 1    2    3    4    5    6    =    7    8    9    0    -    bspc
+  ##         tab  q    w    f    p    b    [    j    l    u    y    ;    '    \
+  ##         esc  a    r    s    t    g    ]    m    n    e    i    o    ret
+  ##         @vim x    c    d    v    ralt /    k    h    ,    .    rsft
+  ##         lctl lmet lsft           @ext            @sym       rmet
+  ##       )
 
-        (deflayer extend
-          _    _    _    _    _    _    _    _    _    _    _    _    _    _
-          _    _    prnt _    _    _    _    del  _    _    _    _    _    _
-          _    lctl lmet lalt _    _    _    bspc lft  down up   rght _
-          _    _    _    _    _    _    _    home pgdn pgup end  _
-          _    _    _              _              _           _
-        )
+  ##       (deflayer extend
+  ##         _    _    _    _    _    _    _    _    _    _    _    _    _    _
+  ##         _    _    prnt _    _    _    _    del  _    _    _    _    _    _
+  ##         _    lctl lmet lalt _    _    _    bspc lft  down up   rght _
+  ##         _    _    _    _    _    _    _    home pgdn pgup end  _
+  ##         _    _    _              _              _           _
+  ##       )
 
-        (deflayer symbols
-          _    _    _    _    _    _    _    _     _    _    _    _    _    _
-          _    @!   @@   @%   @$   =    _    @pipe 7    8    9    +    @_    _
-          _    @#   @til @{   @op  [    _    @*    4    5    6    -    _
-          _    @^   @&   @}   @cp  ]    0    1     2    3    @?   rsft
-          _    _    _              _              _           _
-        )
+  ##       (deflayer symbols
+  ##         _    _    _    _    _    _    _    _     _    _    _    _    _    _
+  ##         _    @!   @@   @%   @$   =    _    @pipe 7    8    9    +    @_    _
+  ##         _    @#   @til @{   @op  [    _    @*    4    5    6    -    _
+  ##         _    @^   @&   @}   @cp  ]    0    1     2    3    @?   rsft
+  ##         _    _    _              _              _           _
+  ##       )
 
-        (deflayer vim-compat
-          _    _    _    _    _    _    _    _    _    _    _    _    _    _
-          _    _    _    _    _    _    _    _    _    _    _    _    _    _
-          _    _    _    _    _    _    _    _    h    j    k    l    _
-          _    _    _    _    _    _    _    _    _    _    _    _
-          _    _    _              _              _           _
-        )
-      '';
-    };
-  };
+  ##       (deflayer vim-compat
+  ##         _    _    _    _    _    _    _    _    _    _    _    _    _    _
+  ##         _    _    _    _    _    _    _    _    _    _    _    _    _    _
+  ##         _    _    _    _    _    _    _    _    h    j    k    l    _
+  ##         _    _    _    _    _    _    _    _    _    _    _    _
+  ##         _    _    _              _              _           _
+  ##       )
+  ##     '';
+  ##   };
+  ## };
 
   nix.settings = {
+    trusted-users = ["nic"];
     trusted-substituters = [
       "https://cache.nixos.org/"
     ];
@@ -307,207 +310,4 @@
       "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw="
     ];
   };
-
-  environment.etc."alloy/client.alloy" = {
-    text = ''
-      logging {
-        level  = "debug"
-        format = "logfmt"
-      }
-
-      otelcol.receiver.otlp "default" {
-        grpc {
-          endpoint = "0.0.0.0:4317"
-        }
-
-        output {
-          logs = [otelcol.processor.batch.default.input]
-        }
-      }
-
-      otelcol.processor.batch "default" {
-        output {
-          logs = [otelcol.exporter.otlphttp.loki.input]
-        }
-      }
-
-      otelcol.exporter.otlphttp "loki" {
-        client {
-          endpoint = "http://127.0.0.1:3100/otlp"
-        }
-      }
-    '';
-  };
-  # otelcol.exporter.otlphttp "loki" {
-  #   client {
-  #     endpoint = "https://otlp-gateway-prod-sa-east-1.grafana.net/otlp"
-  #   }
-  # }
-
-  #      otelcol.exporter.loki "default" {
-  #       forward_to = [loki.write.default.receiver]
-  #      }
-  #
-  #      loki.write "default" {
-  #      	endpoint {
-  #      		url = "http://127.0.0.1:3100/loki/api/v1/push"
-  #        }
-  #      }
-
-  ## SEPARATOR
-
-  #        discovery.relabel "journal" {
-  #          targets = []
-  #          rule {
-  #            source_labels = ["__journal__hostname"]
-  #            target_label  = "nodename"
-  #          }
-  #        }
-  #
-  #        loki.source.journal "journal" {
-  #          path          = "/var/log/journal"
-  #          relabel_rules = discovery.relabel.journal.rules
-  #          forward_to    = [loki.write.remote.receiver]
-  #        }
-  #
-  #        loki.write "remote" {
-  #        endpoint {
-  #          url = "http://127.0.0.1:3000/loki/api/v1/push"
-  #        }
-  #      }
-
-  #            loki.write "grafana_cloud_loki" {
-  #        endpoint {
-  #          url = local.file.logs_url.content
-  #
-  #          basic_auth {
-  #            username = local.file.logs_username.content
-  #            password_file = "@password_file@"
-  #          }
-  #        }
-  #      }
-  #
-  #      loki.write "grafana_loki" {
-  #            endpoint {
-  #              url = "http://${loki_host}:3100/loki/api/v1/push"
-  #
-  #              // basic_auth {
-  #              //  username = "admin"
-  #              //  password = "admin"
-  #              // }
-  #            }
-  #          }
-  #
-  #            loki.write "adminvm" {
-  #              endpoint {
-  #                url = "${endpointUrl}"
-  #              }
-  #            }
-
-  #### UNCOMMENT
-  ## services = {
-  ##   grafana = {
-  ##     enable = true;
-  ##     settings = {
-  ##       server = {
-  ##         http_addr = "127.0.0.1";
-  ##         http_port = 3000;
-  ##       };
-  ##     };
-  ##     provision = {
-  ##       enable = true;
-  ##       datasources.settings.datasources = [
-  ##         {
-  ##           name = "Loki";
-  ##           type = "loki";
-  ##           access = "proxy";
-  ##           url = "http://127.0.0.1:${toString config.services.loki.configuration.server.http_listen_port}";
-  ##         }
-  ##       ];
-  ##     };
-  ##   };
-
-  ##   alloy = {
-  ##     enable = true;
-  ##   };
-
-  ##   loki = {
-  ##     enable = true;
-  ##     configuration = {
-  ##       server.http_listen_port = 3100;
-  ##       auth_enabled = false;
-
-  ##       # common = {
-  ##       #  replication_factor = 1;
-  ##       # };
-
-  ##       ingester = {
-  ##         lifecycler = {
-  ##           address = "127.0.0.1";
-  ##           ring = {
-  ##             kvstore = {
-  ##               store = "inmemory";
-  ##             };
-  ##             replication_factor = 1;
-  ##           };
-  ##         };
-  ##         chunk_idle_period = "1h";
-  ##         max_chunk_age = "1h";
-  ##         chunk_target_size = 999999;
-  ##         chunk_retain_period = "30s";
-  ##       };
-
-  ##       schema_config = {
-  ##         configs = [
-  ##           {
-  ##             from = "2024-07-12";
-  ##             store = "tsdb";
-  ##             object_store = "filesystem";
-  ##             schema = "v13";
-  ##             index = {
-  ##               prefix = "index_";
-  ##               period = "24h";
-  ##             };
-  ##           }
-  ##         ];
-  ##       };
-
-  ##       storage_config = {
-  ##         tsdb_shipper = {
-  ##           active_index_directory = "/var/lib/loki/tsdb-index";
-  ##           cache_location = "/var/lib/loki/tsdb-cache";
-  ##           cache_ttl = "24h";
-  ##         };
-
-  ##         filesystem = {
-  ##           directory = "/var/lib/loki/chunks";
-  ##         };
-  ##       };
-
-  ##       limits_config = {
-  ##         reject_old_samples = true;
-  ##         reject_old_samples_max_age = "168h";
-  ##       };
-
-  ##       table_manager = {
-  ##         retention_deletes_enabled = false;
-  ##         retention_period = "0s";
-  ##       };
-
-  ##       compactor = {
-  ##         working_directory = "/var/lib/loki";
-  ##         compactor_ring = {
-  ##           kvstore = {
-  ##             store = "inmemory";
-  ##           };
-  ##         };
-  ##       };
-  ##     };
-  ##   };
-  ## };
-
-  ## systemd.services.alloy = {
-  ##   serviceConfig.TimeoutStopSec = 4;
-  ##   reloadTriggers = ["/etc/alloy/client.alloy"];
-  ## };
 }
