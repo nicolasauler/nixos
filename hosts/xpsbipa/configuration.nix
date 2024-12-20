@@ -198,7 +198,7 @@
     package = pkgs.postgresql;
 
     enableTCPIP = true;
-    # settings.port = 6543;
+    settings.port = 6543;
 
     # ensureDatabases = ["finapp"];
     authentication = pkgs.lib.mkOverride 10 ''
