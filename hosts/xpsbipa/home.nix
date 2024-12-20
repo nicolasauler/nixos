@@ -56,12 +56,12 @@
     # # overrides. You can do that directly here, just don't forget the
     # # parentheses. Maybe you want to install Nerd Fonts with a limited number of
     # # fonts?
-    (
-      pkgs.nerdfonts.override
-      {
-        fonts = ["Inconsolata" "InconsolataGo" "FiraCode"];
-      }
-    )
+    # (
+    #   pkgs.nerdfonts.override
+    #   {
+    #     fonts = ["Inconsolata" "InconsolataGo" "FiraCode"];
+    #   }
+    # )
 
     # # You can also create simple shell scripts directly inside your
     # # configuration. For example, this adds a command 'my-hello' to your
