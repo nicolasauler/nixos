@@ -1,4 +1,8 @@
 {
+  pkgs,
+  inputs,
+  ...
+}: {
   programs.nixvim = {
     plugins.lsp = {
       enable = true;
@@ -33,7 +37,10 @@
         svelte.enable = true;
         ts_ls.enable = true;
         yamlls.enable = true;
-        zls.enable = true;
+        zls = {
+          enable = true;
+          package = inputs.zls-overlay.packages.${pkgs.system}.zls;
+        };
       };
 
       keymaps = {

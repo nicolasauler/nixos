@@ -17,6 +17,8 @@
 
     # sops-nix.url = "github:Mic92/sops-nix";
     agenix.url = "github:ryantm/agenix";
+
+    zls-overlay.url = "github:zigtools/zls";
   };
 
   outputs = {
