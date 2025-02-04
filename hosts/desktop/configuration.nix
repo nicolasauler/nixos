@@ -113,6 +113,7 @@
     rofi-wayland
     slurp
     sxiv
+    tailscale
     tree-sitter
     vale
     vscode-extensions.vadimcn.vscode-lldb
@@ -139,12 +140,33 @@
   # List services that you want to enable:
 
   # Enable the OpenSSH daemon.
-  # services.openssh.enable = true;
+  services.openssh.enable = true;
+  services.tailscale.enable = true;
 
   # Open ports in the firewall.
+  networking.nftables.enable = true;
   networking.firewall = {
     enable = true;
-    allowedTCPPorts = [8000 9000];
+    # allowedTCPPorts = [8000 9000];
+    extraInputRules = ''
+      ip saddr 100.67.189.119 tcp dport 22 accept comment "only allow ssh from tail"
+      tcp dport 22 drop comment "drop all other ssh attempts"
+
+      ip saddr 192.168.15.0/24 tcp dport 9000 accept comment "only on local network"
+      tcp dport 9000 drop comment "drop all other accesses to port 9000"
+    '';
+    # extraCommands = ''
+    #   iptables -A INPUT -p tcp --dport 22 --source 100.67.189.119 -j ACCEPT
+    #   iptables -A INPUT -p tcp --dport 22 -j DROP
+    # '';
+    # extraStopCommands = ''
+    #   iptables -D INPUT -p tcp --dport 22 --source 100.67.189.119 -j ACCEPT || true
+    #   iptables -D INPUT -p tcp --dport 22 -j DROP || true
+    # '';
+  };
+  services.fail2ban = {
+    enable = true;
+    ignoreIP = ["100.67.189.119"];
   };
   # networking.firewall.allowedTCPPorts = [ ... ];
   # networking.firewall.allowedUDPPorts = [ ... ];
