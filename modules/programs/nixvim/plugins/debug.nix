@@ -1,12 +1,10 @@
 {pkgs, ...}: {
   programs.nixvim = {
-    plugins.dap = {
-      enable = true;
-      extensions.dap-go.enable = true;
-      extensions.dap-python.enable = true;
-      extensions.dap-ui.enable = true;
-      extensions.dap-virtual-text.enable = true;
-    };
+    plugins.dap.enable = true;
+    plugins.dap-go.enable = true;
+    plugins.dap-python.enable = true;
+    plugins.dap-ui.enable = true;
+    plugins.dap-virtual-text.enable = true;
 
     extraConfigLua = ''
       local dap, dapui = require("dap"), require("dapui")
