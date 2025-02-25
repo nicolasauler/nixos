@@ -10,7 +10,7 @@
     ../../modules/programs/alacritty.nix
     ../../modules/programs/direnv.nix
     ../../modules/programs/git
-    ../../modules/programs/gtk.nix
+    #../../modules/programs/gtk.nix
     ../../modules/programs/hyprland/hyprland.nix
     ../../modules/programs/mako.nix
     ../../modules/programs/nix-index.nix
@@ -50,7 +50,7 @@
     # # Adds the 'hello' command to your environment. It prints a friendly
     # # "Hello, world!" when run.
     # pkgs.hello
-    pkgs.adwaita-qt
+    ## pkgs.adwaita-qt
 
     # # It is sometimes useful to fine-tune packages, for example, by applying
     # # overrides. You can do that directly here, just don't forget the
@@ -184,11 +184,11 @@
     };
   };
 
-  qt = {
-    enable = true;
-    platformTheme.name = "gtk";
-    style.name = "adwaita-dark";
-  };
+  # qt = {
+  #   enable = true;
+  #   platformTheme.name = "gtk";
+  #   style.name = "adwaita-dark";
+  # };
 
   xdg.userDirs.enable = true;
   xdg.mimeApps = {

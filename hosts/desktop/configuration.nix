@@ -347,6 +347,31 @@
     fontDir.enable = true;
   };
 
+  # stylix = {
+  #   enable = true;
+
+  #   base16Scheme = "${pkgs.base16-schemes}/share/themes/gruvbox-dark-medium.yaml";
+
+  #   fonts = {
+  #     serif = {
+  #       package = pkgs.nerd-fonts.inconsolata-go;
+  #       name = "InconsolataGo Nerd Font";
+  #     };
+  #     sansSerif = {
+  #       package = pkgs.nerd-fonts.inconsolata-go;
+  #       name = "InconsolataGo Nerd Font";
+  #     };
+  #     monospace = {
+  #       package = pkgs.nerd-fonts.inconsolata-go;
+  #       name = "InconsolataGo Nerd Font Mono";
+  #     };
+  #     emoji = {
+  #       package = pkgs.nerd-fonts.inconsolata-go;
+  #       name = "InconsolataGo Nerd Font";
+  #     };
+  #   };
+  # };
+
   nix.settings = {
     trusted-users = [
       "nic"
