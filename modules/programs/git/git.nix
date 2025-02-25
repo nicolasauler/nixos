@@ -6,7 +6,7 @@
   # pubkey_files = lib.filterAttrs (k: v: v == "regular" && lib.hasSuffix ".pub" k) (builtins.readDir ./pubkeys);
   pubkeys_from_gh = builtins.readFile (pkgs.fetchurl {
     url = "https://github.com/nicolasauler.keys";
-    hash = "sha256-4fSaMKgxvVLGJHWEUPHljHHXwWaHg0zrO2CRfvFKHNc=";
+    hash = "sha256-X0PNpaJmboio+XSFO0dLc6IevcUQq0oyeAZwi5A0j2I=";
   });
   pubkey_lines = lib.strings.splitString "\n" pubkeys_from_gh;
   addAsterisk = line: "* " + line;
