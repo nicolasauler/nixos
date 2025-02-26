@@ -332,4 +332,321 @@
       "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw="
     ];
   };
+
+  ## environment.etc."alloy/client.alloy" = {
+  ##   text = ''
+  ##     logging {
+  ##       level  = "debug"
+  ##       format = "logfmt"
+  ##     }
+
+  ##     otelcol.receiver.otlp "default" {
+  ##       grpc {
+  ##         endpoint = "0.0.0.0:4317"
+  ##       }
+
+  ##       output {
+  ##         logs = [otelcol.processor.batch.default.input]
+  ##         traces = [otelcol.processor.batch.default.input]
+  ##         metrics = [otelcol.processor.batch.default.input]
+  ##       }
+  ##     }
+
+  ##     otelcol.processor.batch "default" {
+  ##       output {
+  ##         logs = [otelcol.exporter.otlphttp.loki.input]
+  ##         traces = [otelcol.exporter.otlp.tempo.input]
+  ##         metrics = [otelcol.exporter.prometheus.default.input]
+  ##       }
+  ##     }
+
+  ##     otelcol.exporter.otlphttp "loki" {
+  ##       client {
+  ##         endpoint = "http://127.0.0.1:3100/otlp"
+  ##       }
+  ##     }
+
+  ##     otelcol.exporter.otlp "tempo" {
+  ##       client {
+  ##         endpoint = "http://127.0.0.1:14319"
+  ##         tls { insecure = true }
+  ##       }
+  ##     }
+
+  ##     otelcol.exporter.prometheus "default" {
+  ##       forward_to = [prometheus.remote_write.mimir.receiver]
+  ##     }
+
+  ##     prometheus.remote_write "mimir" {
+  ##       endpoint {
+  ##         url = "http://127.0.0.1:3300/api/v1/push"
+  ##       }
+  ##     }
+
+  ##   '';
+  ## };
+
+  ## ## in tempo alloy
+  ## #           tls {
+  ## #             insecure = true
+  ## #             insecure_skip_verify = true
+  ## #           }
+
+  ## services = {
+  ##   grafana = {
+  ##     enable = true;
+  ##     settings = {
+  ##       server = {
+  ##         http_addr = "127.0.0.1";
+  ##         http_port = 3000;
+  ##       };
+  ##       security.admin_user = "nic";
+  ##       security.admin_password = "senhadificil";
+  ##       # security.disable_initial_admin_creation = true;
+  ##     };
+  ##     provision = {
+  ##       enable = true;
+  ##       datasources.settings.datasources = [
+  ##         {
+  ##           name = "Loki";
+  ##           type = "loki";
+  ##           access = "proxy";
+  ##           url = "http://127.0.0.1:${toString config.services.loki.configuration.server.http_listen_port}";
+  ##         }
+  ##         {
+  ##           name = "Tempo";
+  ##           type = "tempo";
+  ##           access = "proxy";
+  ##           url = "http://127.0.0.1:${toString config.services.tempo.settings.server.http_listen_port}";
+  ##         }
+  ##         {
+  ##           name = "Mimir";
+  ##           type = "prometheus";
+  ##           access = "proxy";
+  ##           url = "http://127.0.0.1:${toString config.services.mimir.configuration.server.http_listen_port}/prometheus";
+  ##         }
+  ##       ];
+  ##       ## add alerting with sops secrets
+  ##       # alerting.contactPoints.settings.contactPoints = [
+  ##       #   {
+  ##       #     orgId = 1;
+  ##       #     name = "Telegram";
+  ##       #     receivers = [
+  ##       #       {
+  ##       #         uid = "1";
+  ##       #         type = "telegram";
+  ##       #         settings = {
+  ##       #         };
+  ##       #       }
+  ##       #     ];
+  ##       #   }
+  ##       # ];
+  ##     };
+  ##   };
+
+  ##   alloy = {
+  ##     enable = true;
+  ##   };
+
+  ##   loki = {
+  ##     enable = true;
+  ##     configuration = {
+  ##       server = {
+  ##         http_listen_port = 3100;
+  ##         grpc_listen_port = 9096;
+  ##       };
+  ##       auth_enabled = false;
+
+  ##       # common = {
+  ##       #  replication_factor = 1;
+  ##       # };
+
+  ##       ingester = {
+  ##         lifecycler = {
+  ##           address = "127.0.0.1";
+  ##           ring = {
+  ##             kvstore = {
+  ##               store = "inmemory";
+  ##             };
+  ##             replication_factor = 1;
+  ##           };
+  ##         };
+  ##         chunk_idle_period = "1h";
+  ##         max_chunk_age = "1h";
+  ##         chunk_target_size = 999999;
+  ##         chunk_retain_period = "30s";
+  ##       };
+
+  ##       schema_config = {
+  ##         configs = [
+  ##           {
+  ##             from = "2024-07-12";
+  ##             store = "tsdb";
+  ##             object_store = "filesystem";
+  ##             schema = "v13";
+  ##             index = {
+  ##               prefix = "index_";
+  ##               period = "24h";
+  ##             };
+  ##           }
+  ##         ];
+  ##       };
+
+  ##       storage_config = {
+  ##         tsdb_shipper = {
+  ##           active_index_directory = "/var/lib/loki/tsdb-index";
+  ##           cache_location = "/var/lib/loki/tsdb-cache";
+  ##           cache_ttl = "24h";
+  ##         };
+
+  ##         filesystem = {
+  ##           directory = "/var/lib/loki/chunks";
+  ##         };
+  ##       };
+
+  ##       limits_config = {
+  ##         reject_old_samples = true;
+  ##         reject_old_samples_max_age = "168h";
+  ##       };
+
+  ##       table_manager = {
+  ##         retention_deletes_enabled = false;
+  ##         retention_period = "0s";
+  ##       };
+
+  ##       compactor = {
+  ##         working_directory = "/var/lib/loki";
+  ##         compactor_ring = {
+  ##           kvstore = {
+  ##             store = "inmemory";
+  ##           };
+  ##         };
+  ##       };
+  ##     };
+  ##   };
+
+  ##   tempo = {
+  ##     enable = true;
+  ##     settings = {
+  ##       server = {
+  ##         http_listen_address = "127.0.0.1";
+  ##         http_listen_port = 3200;
+  ##         grpc_listen_address = "127.0.0.1";
+  ##         grpc_listen_port = 9095;
+  ##       };
+  ##       distributor.receivers = {
+  ##         otlp.protocols = {
+  ##           http.endpoint = "127.0.0.1:14318";
+  ##           grpc.endpoint = "127.0.0.1:14319";
+  ##         };
+  ##       };
+  ##       storage.trace = {
+  ##         backend = "local";
+  ##         wal.path = "/var/lib/tempo/wal";
+  ##         local.path = "/var/lib/tempo/blocks";
+  ##       };
+  ##       ingester = {
+  ##         trace_idle_period = "30s";
+  ##         max_block_bytes = 1000000;
+  ##         max_block_duration = "5m";
+  ##       };
+  ##       compactor = {
+  ##         compaction = {
+  ##           compaction_window = "1h";
+  ##           max_block_bytes = 100000000;
+  ##           compacted_block_retention = "10m";
+  ##         };
+  ##       };
+  ##     };
+  ##   };
+
+  ##   mimir = {
+  ##     enable = true;
+  ##     configuration = {
+  ##       multitenancy_enabled = false;
+  ##       server = {
+  ##         http_listen_address = "127.0.0.1";
+  ##         http_listen_port = 3300;
+  ##         grpc_listen_address = "127.0.0.1";
+  ##         grpc_listen_port = 9097;
+  ##       };
+
+  ##       common = {
+  ##         storage = {
+  ##           backend = "filesystem";
+  ##           filesystem.dir = "/var/lib/mimir/metrics";
+  ##         };
+  ##       };
+
+  ##       blocks_storage = {
+  ##         backend = "filesystem";
+  ##         bucket_store.sync_dir = "/var/lib/mimir/tsdb-sync";
+  ##         filesystem.dir = "/var/lib/mimir/data/tsdb";
+  ##         tsdb.dir = "/var/lib/mimir/tsdb";
+  ##       };
+
+  ##       compactor = {
+  ##         data_dir = "/var/lib/mimir/data/compactor";
+  ##         sharding_ring.kvstore.store = "memberlist";
+  ##       };
+
+  ##       limits = {
+  ##         compactor_blocks_retention_period = "90d";
+  ##       };
+
+  ##       distributor = {
+  ##         ring = {
+  ##           instance_addr = "127.0.0.1";
+  ##           kvstore.store = "memberlist";
+  ##         };
+  ##       };
+
+  ##       ingester = {
+  ##         ring = {
+  ##           instance_addr = "127.0.0.1";
+  ##           kvstore.store = "memberlist";
+  ##           replication_factor = 1;
+  ##         };
+  ##       };
+
+  ##       ruler_storage = {
+  ##         backend = "filesystem";
+  ##         filesystem.dir = "/var/lib/mimir/data/rules";
+  ##       };
+
+  ##       store_gateway.sharding_ring.replication_factor = 1;
+  ##     };
+  ##   };
+  ## };
+
+  ## systemd.services.alloy = {
+  ##   serviceConfig.TimeoutStopSec = 4;
+  ##   reloadTriggers = ["/etc/alloy/client.alloy"];
+  ## };
+
+  ## services.telegraf = {
+  ##   enable = true;
+  ##   extraConfig = {
+  ##     inputs = {
+  ##       mqtt_consumer = {
+  ##         servers = ["tcp://georgesilva.duckdns.org:3883"];
+  ##         topics = ["BitDevsMesh/#"];
+  ##         data_format = "json";
+  ##         username = "nDataMarket";
+  ##         password = "BTCppLFG!";
+  ##         name_override = "mqtt_raw";
+  ##       };
+  ##     };
+  ##     outputs = {
+  ##       postgresql = {
+  ##         connection = "host=localhost user=postgres dbname=mercedado sslmode=disable";
+  ##         fields_as_jsonb = true;
+  ##         schema = "public";
+  ##         # create_templates = [
+  ##         #   "CREATE TABLE IF NOT EXISTS {{ .table }} (time TIMESTAMP WITH TIME ZONE, topic TEXT, fields JSONB)"
+  ##         # ];
+  ##       };
+  ##     };
+  ##   };
+  ## };
 }
