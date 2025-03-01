@@ -14,12 +14,19 @@
 
     hyprland.url = "git+https://github.com/hyprwm/Hyprland?submodules=1";
 
-    nixvim.url = "github:nix-community/nixvim";
+    nixvim = {
+      url = "github:nix-community/nixvim";
+      # If using a stable channel you can use `url = "github:nix-community/nixvim/nixos-<version>"`
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     # sops-nix.url = "github:Mic92/sops-nix";
     agenix.url = "github:ryantm/agenix";
 
-    zls-overlay.url = "github:zigtools/zls";
+    zls-overlay = {
+      url = "github:zigtools/zls";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {
