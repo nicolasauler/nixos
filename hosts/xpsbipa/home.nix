@@ -124,8 +124,8 @@
     enableCompletion = true;
     bashrcExtra = ''
       export PATH="$HOME/.local/bin:$PATH"
-      eval "$(zellij setup --generate-auto-start bash)"
     '';
+    # eval "$(zellij setup --generate-auto-start bash)"
     # eval "$(zoxide init bash)"
     # eval "$(starship init bash)"
   };
