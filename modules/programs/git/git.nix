@@ -48,6 +48,8 @@ in {
       init.defaultBranch = "main";
     };
 
+    difftastic.enable = true;
+
     # signing.signByDefault = false;
 
     # https://ryantm.github.io/nixpkgs/builders/fetchers/
