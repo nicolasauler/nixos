@@ -192,5 +192,6 @@ in {
     });
     settings = {mainBar = mainWaybarConfig;};
     style = ./style.css;
+    # style = ./style.css;
   };
 }

@@ -10,5 +10,6 @@
     };
 
     theme = "${pkgs.rofi-wayland}/share/rofi/themes/gruvbox-dark-hard.rasi";
+    # theme = "${pkgs.rofi-wayland}/share/rofi/themes/gruvbox-dark-hard.rasi";
   };
 }
