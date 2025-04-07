@@ -39,7 +39,6 @@
     ];
 
     extraPlugins = with pkgs.vimPlugins; [
-      # harpoon2
       neodev-nvim
       nvim-nio
       vim-dadbod
