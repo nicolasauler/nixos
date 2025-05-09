@@ -184,12 +184,20 @@
   xdg.portal = {
     enable = true;
     # extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
+    # extraPortals = with pkgs; [xdg-desktop-portal-hyprland];
+  };
+
+  programs.uwsm = {
+    enable = true;
   };
 
   programs.hyprland = {
     enable = true;
+    withUWSM = true;
     xwayland.enable = true;
-    package = inputs.hyprland.packages."${pkgs.system}".hyprland;
+    # package = inputs.hyprland.packages."${pkgs.system}".hyprland;
+    package = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
+    portalPackage = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.xdg-desktop-portal-hyprland;
   };
 
   services.xserver.videoDrivers = ["nvidia"];

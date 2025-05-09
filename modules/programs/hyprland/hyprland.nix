@@ -9,7 +9,7 @@
       monitor=,preferred,auto,1
     '';
 
-    systemd.variables = ["--all"];
+    # systemd.variables = ["--all"];
 
     settings = {
       #monitor = "DP-4,1920x1080,0x0,1";
@@ -18,10 +18,10 @@
 
       exec-once = [
         "waybar"
-        "mako"
-        #"nm-applet"
-        "dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP"
-        "alacritty -e bash -c 'curl wttr.in | less && zellij'"
+        #"mako"
+        ##"nm-applet"
+        #"dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP"
+        #"alacritty -e bash -c 'curl wttr.in | less && zellij'"
       ];
 
       env = [

@@ -12,7 +12,7 @@
     nix-colors.url = "github:misterio77/nix-colors";
     # stylix.url = "github:danth/stylix";
 
-    hyprland.url = "git+https://github.com/hyprwm/Hyprland?submodules=1";
+    hyprland.url = "github:hyprwm/Hyprland";
 
     nixvim = {
       url = "github:nix-community/nixvim";
