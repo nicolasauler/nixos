@@ -124,53 +124,53 @@
     enableCompletion = true;
     bashrcExtra = ''
       export PATH="$HOME/.local/bin:$PATH"
+      eval "$(zellij setup --generate-auto-start bash)"
     '';
-    # eval "$(zellij setup --generate-auto-start bash)"
     # eval "$(zoxide init bash)"
     # eval "$(starship init bash)"
   };
 
-  programs.hyprlock = {
-    enable = true;
-    settings = {
-      general = {
-        ignore_empty_input = true;
-        hide_cursor = true;
-      };
-    };
-  };
+  # programs.hyprlock = {
+  #   enable = true;
+  #   settings = {
+  #     general = {
+  #       ignore_empty_input = true;
+  #       hide_cursor = true;
+  #     };
+  #   };
+  # };
 
-  services.hypridle = {
-    enable = true;
-    settings = {
-      general = {
-        lockCmd = "pidof hyprlock || ${lib.getExe pkgs.hyprlock}";
-        beforeSleepCmd = "loginctl lock-session"; #lock before suspend
-        afterSleepCmd = "hyprctl dispatch dpms on";
-      };
-      listener = [
-        {
-          timeout = 150;
-          onTimeout = "brightnessctl -s set 10"; #monitor backlight minimum
-          onResume = "brightnessctl -r"; # monitor backlight restore
-        }
-        {
-          timeout = 150;
-          onTimeout = "brightnessctl -sd rgb:kbd_backlight set 0"; #keyboard backlight
-          onResume = "brightnessctl -rd rgb:kbd_backlight";
-        }
-        {
-          timeout = 300;
-          onTimeout = "loginctl lock-session";
-        }
-        {
-          timeout = 330;
-          onTimeout = "hyprctl dispatch dpms off"; #screen off
-          onResume = "hyprctl dispatch dpms on"; #screen on
-        }
-      ];
-    };
-  };
+  # services.hypridle = {
+  #   enable = true;
+  #   settings = {
+  #     general = {
+  #       lockCmd = "pidof hyprlock || ${lib.getExe pkgs.hyprlock}";
+  #       beforeSleepCmd = "loginctl lock-session"; #lock before suspend
+  #       afterSleepCmd = "hyprctl dispatch dpms on";
+  #     };
+  #     listener = [
+  #       {
+  #         timeout = 150;
+  #         onTimeout = "brightnessctl -s set 10"; #monitor backlight minimum
+  #         onResume = "brightnessctl -r"; # monitor backlight restore
+  #       }
+  #       {
+  #         timeout = 150;
+  #         onTimeout = "brightnessctl -sd rgb:kbd_backlight set 0"; #keyboard backlight
+  #         onResume = "brightnessctl -rd rgb:kbd_backlight";
+  #       }
+  #       {
+  #         timeout = 300;
+  #         onTimeout = "loginctl lock-session";
+  #       }
+  #       {
+  #         timeout = 330;
+  #         onTimeout = "hyprctl dispatch dpms off"; #screen off
+  #         onResume = "hyprctl dispatch dpms on"; #screen on
+  #       }
+  #     ];
+  #   };
+  # };
 
   # qt = {
   #   enable = true;
