@@ -67,6 +67,13 @@
           ./hosts/xpsbipa/configuration.nix
         ];
       };
+      precision = nixpkgs.lib.nixosSystem {
+        inherit pkgs;
+        specialArgs = {inherit inputs;};
+        modules = [
+          ./hosts/precision/configuration.nix
+        ];
+      };
     };
   };
 }
