@@ -152,7 +152,7 @@
     enable = true;
     # allowedTCPPorts = [8000 9000];
     extraInputRules = ''
-      ip saddr 100.67.189.119 tcp dport 22 accept comment "only allow ssh from tail"
+      ip saddr 100.83.239.83 tcp dport 22 accept comment "only allow ssh from tail"
       tcp dport 22 drop comment "drop all other ssh attempts"
 
       ip saddr 192.168.15.0/24 tcp dport 9000 accept comment "only on local network"

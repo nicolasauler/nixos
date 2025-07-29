@@ -2,11 +2,11 @@
   wayland.windowManager.hyprland = {
     enable = true;
 
-    extraConfig = ''
-      monitor=DP-4,1920x1080,0x0,1
-      monitor=eDP-1,preferred,1920x0,2
-      monitor=,preferred,auto,1
-    '';
+    #extraConfig = ''
+    #  monitor=DP-4,1920x1080,0x0,1
+    #  monitor=eDP-1,preferred,1920x0,2
+    #  monitor=,preferred,auto,1
+    #'';
 
     settings = {
       #monitor = "DP-4,1920x1080,0x0,1";
