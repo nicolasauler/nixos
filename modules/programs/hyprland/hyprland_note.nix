@@ -124,6 +124,12 @@
       # See https://wiki.hyprland.org/Configuring/Keywords/ for more
       "$mainMod" = "SUPER";
 
+      # notification dismiss
+      # makoctl dismiss when I hit mainmod + n + d
+      # binds = [
+      #   "$mainMod, n&d, exec, makoctl dismiss"
+      # ];
+
       # Example binds, see https://wiki.hyprland.org/Configuring/Binds/ for more
       bind =
         [
