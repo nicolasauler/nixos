@@ -11,6 +11,7 @@
     # Include the results of the hardware scan.
     ./hardware-configuration.nix
     inputs.home-manager.nixosModules.default
+    inputs.sentinelone.nixosModules.sentinelone
   ];
 
   # Bootloader.
@@ -126,6 +127,17 @@
   # };
 
   # List services that you want to enable:
+
+  services.sentinelone = {
+    enable = true;
+    sentinelOneManagementTokenPath = /home/nic/bipa/sentinel_one_token;
+    email = "nicolas@bipa.app";
+    serialNumber = "nicolas_precision";
+    package = pkgs.sentinelone.overrideAttrs (old: {
+      version = "v25_2_1_20";
+      src = /home/nic/bipa/SentinelAgent_linux_x86_64_v25_2_1_20.deb;
+    });
+  };
 
   # Enable the OpenSSH daemon.
   # services.openssh.enable = true;

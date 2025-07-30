@@ -12,7 +12,7 @@
     ./hardware-configuration.nix
     inputs.home-manager.nixosModules.default
     # inputs.sops-nix.nixosModules.sops
-    inputs.agenix.nixosModules.default
+    # inputs.agenix.nixosModules.default
   ];
 
   # Bootloader.
@@ -94,7 +94,7 @@
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
-    inputs.agenix.packages.${system}.default
+    # inputs.agenix.packages.${system}.default
     bat
     du-dust
     firefox-wayland
