@@ -122,10 +122,10 @@
     xournalpp
   ];
 
-  age = {
-    identityPaths = ["/home/nic/.ssh/id_ed25519"];
-    secrets.beyla-otlp.file = /home/nic/secrets/beyla-otlp.age;
-  };
+  # age = {
+  #   identityPaths = ["/home/nic/.ssh/id_ed25519"];
+  #   secrets.beyla-otlp.file = /home/nic/secrets/beyla-otlp.age;
+  # };
 
   nix.settings.experimental-features = ["nix-command" "flakes"];
 
