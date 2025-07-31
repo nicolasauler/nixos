@@ -169,7 +169,7 @@
   };
   services.fail2ban = {
     enable = true;
-    ignoreIP = ["100.67.189.119"];
+    ignoreIP = ["100.83.239.83"];
   };
   # networking.firewall.allowedTCPPorts = [ ... ];
   # networking.firewall.allowedUDPPorts = [ ... ];
