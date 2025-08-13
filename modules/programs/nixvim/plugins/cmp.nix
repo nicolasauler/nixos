@@ -19,15 +19,17 @@
       lspkind = {
         enable = true;
 
-        cmp = {
-          enable = true;
-          menu = {
-            nvim_lsp = "[LSP]";
-            nvim_lua = "[lua]";
-            path = "[path]";
-            luasnip = "[snip]";
-            buffer = "[buffer]";
-            vim-dadbod-completion = "[dadbod]";
+        settings = {
+          cmp = {
+            enable = true;
+            menu = {
+              nvim_lsp = "[LSP]";
+              nvim_lua = "[lua]";
+              path = "[path]";
+              luasnip = "[snip]";
+              buffer = "[buffer]";
+              vim-dadbod-completion = "[dadbod]";
+            };
           };
         };
       };

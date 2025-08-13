@@ -109,6 +109,7 @@
     vscode-extensions.vadimcn.vscode-lldb
     wl-clipboard
     xdg-utils
+    xournalpp
     zathura
   ];
 
@@ -181,6 +182,7 @@
       enable = true;
       powerOnBoot = true;
     };
+    opentabletdriver.enable = true;
   };
   services.blueman.enable = true;
 
