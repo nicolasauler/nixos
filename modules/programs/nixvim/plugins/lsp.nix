@@ -116,11 +116,13 @@
     plugins.lspsaga = {
       enable = true;
 
-      codeAction.extendGitSigns = false; # this adds gitsigns actions to code actions
-      hover.openCmd = "!firefox";
-      rename.inSelect = false;
-      lightbulb.virtualText = false;
-      symbolInWinbar.folderLevel = 2;
+      settings = {
+        codeAction.extendGitSigns = false; # this adds gitsigns actions to code actions
+        hover.openCmd = "!firefox";
+        rename.inSelect = false;
+        lightbulb.virtualText = false;
+        symbolInWinbar.folderLevel = 2;
+      };
     };
 
     keymaps = [
