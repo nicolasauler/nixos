@@ -100,7 +100,7 @@
     playerctl
     procs
     ripgrep
-    rofi-wayland
+    # rofi-wayland
     slurp
     sxiv
     tailscale

@@ -100,7 +100,7 @@
     procs
     qutebrowser
     ripgrep
-    rofi-wayland
+    # rofi-wayland
     slack
     slurp
     starship
