@@ -37,10 +37,10 @@
         svelte.enable = true;
         ts_ls.enable = true;
         yamlls.enable = true;
-        zls = {
-          enable = true;
-          package = inputs.zls-overlay.packages.${pkgs.system}.zls;
-        };
+        # zls = {
+        #   enable = true;
+        #   package = inputs.zls-overlay.packages.${pkgs.system}.zls;
+        # };
       };
 
       keymaps = {

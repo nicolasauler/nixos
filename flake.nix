@@ -23,10 +23,10 @@
     # sops-nix.url = "github:Mic92/sops-nix";
     # agenix.url = "github:ryantm/agenix";
 
-    zls-overlay = {
-      url = "github:zigtools/zls";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # zls-overlay = {
+    #   url = "github:zigtools/zls";
+    #   inputs.nixpkgs.follows = "nixpkgs";
+    # };
 
     sentinelone.url = "github:devusb/sentinelone-nix";
   };
