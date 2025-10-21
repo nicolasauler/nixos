@@ -14,14 +14,14 @@
         bashls.enable = true;
         clangd.enable = true;
         lua_ls.enable = true;
-        ltex = {
-          enable = true;
-          settings.additionalRules = {
-            enablePickyRules = true;
-            languageModel = "/home/nic/models/ngrams/";
-            motherTongue = "en-GB";
-          };
-        };
+        # ltex = {
+        #   enable = true;
+        #   settings.additionalRules = {
+        #     enablePickyRules = true;
+        #     languageModel = "/home/nic/models/ngrams/";
+        #     motherTongue = "en-GB";
+        #   };
+        # };
         kotlin_language_server.enable = true;
         nil_ls = {
           enable = true;

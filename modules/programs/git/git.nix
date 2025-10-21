@@ -6,7 +6,7 @@
   # pubkey_files = lib.filterAttrs (k: v: v == "regular" && lib.hasSuffix ".pub" k) (builtins.readDir ./pubkeys);
   pubkeys_from_gh = builtins.readFile (pkgs.fetchurl {
     url = "https://github.com/nicolasauler.keys";
-    hash = "sha256-NNEWw+DFGlCeMeDlwbL/zS2rJ7d97qRfab9OiROTUjQ=";
+    hash = "sha256-fefGahcWTgfBtmIqK2lBrHSeAoxR/8ld0W55pkphmEY=";
   });
   pubkey_lines = lib.strings.splitString "\n" pubkeys_from_gh;
   addAsterisk = line: "* " + line;
@@ -21,10 +21,11 @@ in {
 
   programs.git = {
     enable = true;
-    userName = "Nicolas Auler";
-    userEmail = "nicolasauler@usp.br";
 
-    extraConfig = {
+    settings = {
+      user.name = "Nicolas Auler";
+      user.email = "nicolasauler@usp.br";
+
       commit = {
         template = "/home/nic/.config/git/commit_template";
         gpgsign = true;
@@ -48,8 +49,6 @@ in {
       init.defaultBranch = "main";
     };
 
-    difftastic.enable = true;
-
     # signing.signByDefault = false;
 
     # https://ryantm.github.io/nixpkgs/builders/fetchers/
@@ -63,6 +62,11 @@ in {
     # https://www.reddit.com/r/NixOS/comments/15tbgmw/question_how_to_load_a_text_file_from_a_url_and/
 
     # https://nixos.org/manual/nix/unstable/language/builtins#builtins-readDir
+  };
+
+  programs.difftastic = {
+    enable = true;
+    git.enable = true;
   };
 
   programs.gh = {
