@@ -102,6 +102,7 @@
     procs
     ripgrep
     # rofi-wayland
+    slack
     slurp
     sxiv
     tailscale
