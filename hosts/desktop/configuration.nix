@@ -96,8 +96,9 @@
   environment.systemPackages = with pkgs; [
     # inputs.agenix.packages.${system}.default
     bat
-    du-dust
-    firefox-wayland
+    discord
+    dust
+    firefox
     fzf
     grim
     htop
