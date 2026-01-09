@@ -54,7 +54,7 @@
       black
       clang-tools
       isort
-      nixfmt-rfc-style
+      nixfmt
       nixpkgs-fmt
       pgformatter
       prettierd
