@@ -46,6 +46,19 @@
               end, { desc = "Rust Debuggables", buffer = bufnr })
             end
           '';
+          default_settings = {
+            rust-analyzer = {
+              check = {
+                command = "check --all-targets --all-features";
+              };
+              inlayHints = {
+                lifetimeElisionHints = {
+                  enable = "always";
+                };
+              };
+            };
+          };
+          standalone = false;
         };
       };
     };
