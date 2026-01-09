@@ -2,13 +2,8 @@
   programs.nixvim = {
     plugins.treesitter = {
       enable = true;
-      folding.enable = false;
       nixGrammars = true;
-      settings = {
-        indent.enable = true;
-        ensure_installed = "all";
-        highlight.enable = true;
-      };
+      highlight.enable = true;
     };
 
     # plugins.treesitter-context.enable = true;

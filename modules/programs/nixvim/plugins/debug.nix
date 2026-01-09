@@ -48,8 +48,11 @@
           '';
           default_settings = {
             rust-analyzer = {
+              checkOnSave = false;
               check = {
-                command = "check --all-targets --all-features";
+                command = "check";
+                allTargets = true;
+                features = "all";
               };
               inlayHints = {
                 lifetimeElisionHints = {
