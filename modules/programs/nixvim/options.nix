@@ -33,5 +33,24 @@
 
       colorcolumn = "80";
     };
+
+    extraConfigLua = ''
+      if os.getenv("SSH_CONNECTION") then
+        vim.g.clipboard = 'osc52'
+      else
+        vim.g.clipboard = {
+          name = "wayland",
+          copy = {
+            ["+"] = "wl-copy",
+            ["*"] = "wl-copy",
+          },
+          paste = {
+            ["+"] = "wl-paste",
+            ["*"] = "wl-paste",
+          },
+          cache_enabled = false,
+        }
+      end
+    '';
   };
 }

@@ -3,6 +3,7 @@
     enable = true;
 
     settings = {
+      # copy_command = "wl-copy";
       default_layout = "compact";
       default_mode = "locked";
       default_shell = "nu";
