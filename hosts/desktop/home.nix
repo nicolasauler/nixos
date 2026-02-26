@@ -125,7 +125,11 @@
     enableCompletion = true;
     bashrcExtra = ''
       export PATH="$HOME/.local/bin:$PATH"
-      eval "$(zellij setup --generate-auto-start bash)"
+    '';
+    initExtra = ''
+      if [[ -z "$SSH_CLIENT" && -z "$SSH_TTY" ]]; then
+        eval "$(zellij setup --generate-auto-start bash)"
+      fi
     '';
     # eval "$(zoxide init bash)"
     # eval "$(starship init bash)"
