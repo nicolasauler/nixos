@@ -27,14 +27,14 @@
       }
       {
         mode = "n";
-        key = "<C-m>";
+        key = "<C-s>";
         action.__raw = "function() require'harpoon':list():select(3) end";
       }
-      {
-        mode = "n";
-        key = "<C-i>";
-        action.__raw = "function() require'harpoon':list():select(4) end";
-      }
+      # {
+      #   mode = "n";
+      #   key = "<C-t>";
+      #   action.__raw = "function() require'harpoon':list():select(4) end";
+      # }
     ];
   };
 }
