@@ -33,6 +33,9 @@
     # agenix.url = "github:ryantm/agenix";
 
     sentinelone.url = "github:devusb/sentinelone-nix";
+
+    certus-infra.url = "git+ssh://git@github.com/nicolasauler/certus_infra.git";
+    # certus-infra.url = "git+file:///home/nic/certus/certus_infra.git/bencher";
   };
 
   outputs = {
@@ -63,6 +66,9 @@
         specialArgs = {inherit inputs;};
         modules = [
           # inputs.stylix.nixosModules.stylix
+          inputs.certus-infra.nixosModules.observability
+          inputs.certus-infra.nixosModules.buildbot
+          inputs.certus-infra.nixosModules.bencher
           ./hosts/desktop/configuration.nix
         ];
       };

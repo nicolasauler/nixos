@@ -626,30 +626,4 @@
   ##   serviceConfig.TimeoutStopSec = 4;
   ##   reloadTriggers = ["/etc/alloy/client.alloy"];
   ## };
-
-  ## services.telegraf = {
-  ##   enable = true;
-  ##   extraConfig = {
-  ##     inputs = {
-  ##       mqtt_consumer = {
-  ##         servers = ["tcp://georgesilva.duckdns.org:3883"];
-  ##         topics = ["BitDevsMesh/#"];
-  ##         data_format = "json";
-  ##         username = "nDataMarket";
-  ##         password = "BTCppLFG!";
-  ##         name_override = "mqtt_raw";
-  ##       };
-  ##     };
-  ##     outputs = {
-  ##       postgresql = {
-  ##         connection = "host=localhost user=postgres dbname=mercedado sslmode=disable";
-  ##         fields_as_jsonb = true;
-  ##         schema = "public";
-  ##         # create_templates = [
-  ##         #   "CREATE TABLE IF NOT EXISTS {{ .table }} (time TIMESTAMP WITH TIME ZONE, topic TEXT, fields JSONB)"
-  ##         # ];
-  ##       };
-  ##     };
-  ##   };
-  ## };
 }

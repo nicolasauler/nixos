@@ -135,6 +135,8 @@
     # eval "$(starship init bash)"
   };
 
+  services.ssh-agent.enable = true;
+
   # programs.hyprlock = {
   #   enable = true;
   #   settings = {
@@ -194,7 +196,10 @@
   #   style.name = "adwaita-dark";
   # };
 
-  xdg.userDirs.enable = true;
+  xdg.userDirs = {
+    enable = true;
+    setSessionVariables = true;
+  };
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
