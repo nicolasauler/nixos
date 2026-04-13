@@ -41,7 +41,7 @@
             map('n', '<leader>tb', gs.toggle_current_line_blame)
             map('n', '<leader>hd', gs.diffthis)
             map('n', '<leader>hD', function() gs.diffthis('~') end)
-            map('n', '<leader>td', gs.toggle_deleted)
+            -- toggle_deleted removed: use diffview (<leader>hd) instead
 
             -- Text object
             map({ 'o', 'x' }, 'ih', ':<C-U>Gitsigns select_hunk<CR>')
@@ -57,6 +57,8 @@
       };
     };
 
+    # plugins.octo.enable = true;
+
     keymaps = [
       {
         mode = "n";
@@ -67,8 +69,33 @@
         };
         action = "<cmd>Neogit<CR>";
       }
+      {
+        mode = "n";
+        key = "<leader>dv";
+        options = {
+          silent = true;
+          desc = "[D]iff[V]iew open";
+        };
+        action = "<cmd>DiffviewOpen<CR>";
+      }
+      {
+        mode = "n";
+        key = "<leader>dq";
+        options = {
+          silent = true;
+          desc = "[D]iffview [Q]uit";
+        };
+        action = "<cmd>DiffviewClose<CR>";
+      }
+      {
+        mode = "n";
+        key = "<leader>df";
+        options = {
+          silent = true;
+          desc = "[D]iffview [F]ile history (current file)";
+        };
+        action = "<cmd>DiffviewFileHistory %<CR>";
+      }
     ];
-
-    plugins.octo.enable = true;
   };
 }

@@ -6,70 +6,103 @@
       settings.picker.telescope.use_default_mappings = true;
     };
 
+    # fff.nvim crashes with SIGILL (AVX-512 on non-AVX-512 CPU)
+    # plugins.fff.enable = true;
+    # keymaps = [
+    #   {
+    #     mode = "n";
+    #     key = "<leader>pf";
+    #     action.__raw = "function() require('fff').find_files() end";
+    #     options = {
+    #       silent = true;
+    #       desc = "FF[F]ind files";
+    #     };
+    #   }
+    #   {
+    #     mode = "n";
+    #     key = "<leader>pg";
+    #     action.__raw = "function() require('fff').live_grep({grep = {modes = { 'fuzzy', 'plain', 'regex' }}}) end";
+    #     options = {
+    #       silent = true;
+    #       desc = "FFF Live [G]rep";
+    #     };
+    #   }
+    #   {
+    #     mode = "n";
+    #     key = "<leader>pm";
+    #     action.__raw = "function() require('fff').live_grep({ query = vim.fn.expand(\"<cword>\") }) end";
+    #     options = {
+    #       silent = true;
+    #       desc = "FFF String [M]atch";
+    #     };
+    #   }
+    # ];
+
+    # Telescope kept for extensions (yanky, noice, dap) that don't have snacks equivalents
     plugins.telescope = {
       enable = true;
       enabledExtensions = [
         "notify"
       ];
 
-      keymaps = {
-        "<leader>pf" = {
-          action = "find_files";
-          options.desc = "Telescope [F]ind files";
-        };
-        "<leader>ob" = {
-          action = "buffers";
-          options.desc = "Telescope [O]pen [B]uffers";
-        };
-        "<leader>po" = {
-          action = "oldfiles";
-          options.desc = "Telescope [O]ld files";
-        };
-        "<leader>pe" = {
-          action = "commands";
-          options.desc = "Telescope commands ([E]xecutables)";
-        };
-        "<leader>pl" = {
-          action = "command_history";
-          options.desc = "Telescope command history ([L]og)";
-        };
-        "<leader>pj" = {
-          action = "jumplist";
-          options.desc = "Telescope [J]umplist";
-        };
-        "<leader>pr" = {
-          action = "resume";
-          options.desc = "Telescope [R]esume previous picker";
-        };
-        "<C-p>" = {
-          action = "git_files";
-          options.desc = "Telescope Git Files";
-        };
-        "<leader>pg" = {
-          action = "live_grep";
-          options.desc = "Telescope Live [G]rep";
-        };
-        "<leader>pm" = {
-          action = "grep_string";
-          options.desc = "Telescope Grep String [M]atch";
-        };
-        "<leader>ph" = {
-          action = "help_tags";
-          options.desc = "Telescope [H]elp tags";
-        };
-        "<leader>pb" = {
-          action = "git_branches";
-          options.desc = "Telescope git [B]ranches";
-        };
-        "<leader>pc" = {
-          action = "git_commits";
-          options.desc = "Telescope git [C]ommits";
-        };
-        "<leader>ps" = {
-          action = "git_status";
-          options.desc = "Telescope git [S]tatus";
-        };
-      };
+      # keymaps = {
+      #   "<leader>pf" = {
+      #     action = "find_files";
+      #     options.desc = "Telescope [F]ind files";
+      #   };
+      #   "<leader>ob" = {
+      #     action = "buffers";
+      #     options.desc = "Telescope [O]pen [B]uffers";
+      #   };
+      #   "<leader>po" = {
+      #     action = "oldfiles";
+      #     options.desc = "Telescope [O]ld files";
+      #   };
+      #   "<leader>pe" = {
+      #     action = "commands";
+      #     options.desc = "Telescope commands ([E]xecutables)";
+      #   };
+      #   "<leader>pl" = {
+      #     action = "command_history";
+      #     options.desc = "Telescope command history ([L]og)";
+      #   };
+      #   "<leader>pj" = {
+      #     action = "jumplist";
+      #     options.desc = "Telescope [J]umplist";
+      #   };
+      #   "<leader>pr" = {
+      #     action = "resume";
+      #     options.desc = "Telescope [R]esume previous picker";
+      #   };
+      #   "<C-p>" = {
+      #     action = "git_files";
+      #     options.desc = "Telescope Git Files";
+      #   };
+      #   "<leader>pg" = {
+      #     action = "live_grep";
+      #     options.desc = "Telescope Live [G]rep";
+      #   };
+      #   "<leader>pm" = {
+      #     action = "grep_string";
+      #     options.desc = "Telescope Grep String [M]atch";
+      #   };
+      #   "<leader>ph" = {
+      #     action = "help_tags";
+      #     options.desc = "Telescope [H]elp tags";
+      #   };
+      #   "<leader>pb" = {
+      #     action = "git_branches";
+      #     options.desc = "Telescope git [B]ranches";
+      #   };
+      #   "<leader>pc" = {
+      #     action = "git_commits";
+      #     options.desc = "Telescope git [C]ommits";
+      #   };
+      #   "<leader>ps" = {
+      #     action = "git_status";
+      #     options.desc = "Telescope git [S]tatus";
+      #   };
+      # };
 
       settings = {
         pickers = {

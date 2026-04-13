@@ -13,6 +13,7 @@
     ./misc.nix
     ./noice.nix
     ./oil.nix
+    ./snacks.nix
     ./telescope.nix
     ./treesitter.nix
     ./trouble.nix

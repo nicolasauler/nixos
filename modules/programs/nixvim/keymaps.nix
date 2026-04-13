@@ -50,13 +50,7 @@
         action = "Nzzzv";
       }
       {
-        mode = "n";
-        key = "<leader>y";
-        options.silent = true;
-        action = "\"+y";
-      }
-      {
-        mode = "v";
+        mode = ["n" "v"];
         key = "<leader>y";
         options.silent = true;
         action = "\"+y";
@@ -68,14 +62,8 @@
         action = "\"+Y";
       }
       {
-        mode = "n";
-        key = "<leader>d";
-        options.silent = true;
-        action = "\"_d";
-      }
-      {
-        mode = "v";
-        key = "<leader>d";
+        mode = ["n" "v"];
+        key = "<leader>x";
         options.silent = true;
         action = "\"_d";
       }
@@ -118,12 +106,12 @@
         };
         action = "[[:%s/\<<C-r><C-w>\>/<C-r><C-w>/gI<Left><Left><Left>]]";
       }
-      {
-        mode = "n";
-        key = "<leader>x";
-        options.silent = true;
-        action = "<cmd>!chmod +x %<CR>";
-      }
+      # {
+      #   mode = "n";
+      #   key = "<leader>x";
+      #   options.silent = true;
+      #   action = "<cmd>!chmod +x %<CR>";
+      # }
       # just a reminder for my future self that C-k is a way to type :digraphs
       # like '<C-k>cH' ♡
     ];

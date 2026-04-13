@@ -17,7 +17,7 @@
       {
         mode = "n";
         key = "<leader>td";
-        action = "<cmd>Trouble diagnostics toogle filter.buf=0<CR>";
+        action = "<cmd>Trouble diagnostics toggle filter.buf=0<CR>";
         options = {
           silent = true;
           desc = "[T]rouble buffer diagnostic";

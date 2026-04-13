@@ -24,6 +24,10 @@
 
     # ... and even highlights and autocommands !
     highlight.ExtraWhitespace.bg = "red";
+    highlightOverride.NotifyBackground = {
+      bg = "#000000";
+    };
+
     match.ExtraWhitespace = "\\s\\+$";
     autoCmd = [
       {

@@ -39,6 +39,18 @@
           autoload_configurations = true;
         };
         server = {
+          cmd = {
+            __raw = ''
+              function()
+                -- resolve from current $PATH, not the nix wrapper's
+                local ra = vim.fn.exepath("rust-analyzer")
+                if ra ~= "" then
+                  return { ra }
+                end
+                return { "rust-analyzer" }
+              end
+            '';
+          };
           on_attach = ''
             function(_, bufnr)
               vim.keymap.set("n", "<leader>rd", function()
@@ -56,8 +68,32 @@
               };
               inlayHints = {
                 lifetimeElisionHints = {
-                  enable = "always";
+                  enable = "skip_trivial";
                 };
+
+                # show intermediate types in method chains
+                chainingHints.enable = true;
+
+                # parameter names at call sites
+                parameterHints.enable = false;
+
+                typeHints = {
+                  enable = false; # you mostly know your types; hover when you don't
+                  hideClosureInitialization = true; # hide when obvious from RHS
+                  hideNamedConstructor = true; # hide Vec::new() -> Vec<T>
+                };
+
+                # closure return types only on block bodies
+                closureReturnTypeHints.enable = "with_block";
+
+                # implicit ref/ref mut in pattern matching
+                bindingModeHints.enable = true;
+
+                # everything below is off — too noisy for daily use
+                closureCaptureHints.enable = false;
+                expressionAdjustmentHints.enable = "never";
+                discriminantHints.enable = "never";
+                rangeExclusiveHints.enable = false;
               };
             };
           };
