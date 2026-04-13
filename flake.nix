@@ -35,7 +35,7 @@
     sentinelone.url = "github:devusb/sentinelone-nix";
 
     certus-infra.url = "git+ssh://git@github.com/nicolasauler/certus_infra.git";
-    # certus-infra.url = "git+file:///home/nic/certus/certus_infra.git/bencher";
+    # certus-infra.url = "git+file:///home/nic/certus/certus_infra.git/main";
   };
 
   outputs = {
