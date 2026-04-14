@@ -20,6 +20,39 @@
       mapleader = " ";
     };
 
+    extraConfigLuaPre = ''
+      if vim.env.SSH_CONNECTION then
+        local osc52 = require('vim.ui.clipboard.osc52')
+        local clipboard_cache = {
+          ['+'] = { {}, 'v' },
+          ['*'] = { {}, 'v' },
+        }
+
+        vim.g.clipboard = {
+          name = 'OSC52 copy-only',
+          copy = {
+            ['+'] = function(lines, regtype)
+              clipboard_cache['+'] = { lines, regtype }
+              osc52.copy('+')(lines)
+            end,
+            ['*'] = function(lines, regtype)
+              clipboard_cache['*'] = { lines, regtype }
+              osc52.copy('*')(lines)
+            end,
+          },
+          paste = {
+            ['+'] = function()
+              return clipboard_cache['+']
+            end,
+            ['*'] = function()
+              return clipboard_cache['*']
+            end,
+          },
+          cache_enabled = 0,
+        }
+      end
+    '';
+
     colorschemes.gruvbox.enable = true;
 
     # ... and even highlights and autocommands !
