@@ -8,6 +8,9 @@
       directory = {
         truncation_length = 4;
       };
+      gcloud = {
+        disabled = true;
+      };
     };
   };
 }

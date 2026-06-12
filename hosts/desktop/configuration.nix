@@ -72,11 +72,11 @@
       users = ["nic"];
       commands = [
         {
-          command = "/home/nic/certus/ninja.git/main/target/debug/ninja";
+          command = "/home/nic/certus/ninja.git/*/target/debug/ninja";
           options = ["NOPASSWD" "SETENV"];
         }
         {
-          command = "/home/nic/certus/ninja.git/main/target/release/ninja";
+          command = "/home/nic/certus/ninja.git/*/target/release/ninja";
           options = ["NOPASSWD" "SETENV"];
         }
       ];
@@ -276,6 +276,13 @@
     clean.enable = true;
     clean.extraArgs = "--keep-since 7d --keep 10";
     flake = "/home/nic/nixos";
+  };
+
+  programs.steam = {
+    enable = true;
+    remotePlay.openFirewall = true; # Open ports in the firewall for Steam Remote Play
+    dedicatedServer.openFirewall = true; # Open ports in the firewall for Source Dedicated Server
+    localNetworkGameTransfers.openFirewall = true; # Open ports in the firewall for Steam Local Network Game Transfers
   };
 
   hardware.uinput.enable = true;
