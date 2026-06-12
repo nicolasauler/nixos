@@ -2,6 +2,10 @@
   wayland.windowManager.hyprland = {
     enable = true;
 
+    # Hyprland's lua config is the new default for stateVersion >= 26.05;
+    # this config is written in classic hyprlang, so pin it.
+    configType = "hyprlang";
+
     extraConfig = ''
       monitor=HDMI-A-1,1366x768,0x0,1
       monitor=DP-1,1920x1080,1366x0,1,transform,3
@@ -101,7 +105,7 @@
 
       dwindle = {
         # See https://wiki.hyprland.org/Configuring/Dwindle-Layout/ for more
-        pseudotile = true; # master switch for pseudotiling. Enabling is bound to mainMod + P in the keybinds section below
+        # pseudotile option removed in Hyprland >= 0.50; the pseudo dispatcher (mainMod + P) works without it
         preserve_split = true; # you probably want this
       };
 
@@ -117,6 +121,8 @@
 
       misc = {
         disable_hyprland_logo = true;
+        # splash quote renders independently of the logo since ~0.50
+        disable_splash_rendering = true;
         force_default_wallpaper = 0;
       };
 
@@ -136,7 +142,7 @@
           "ALT, XF86LaunchA, exec, loginctl lock-session" # Alt F3
           "$mainMod, D, exec, rofi -modi drun,run -show drun"
           "$mainMod, P, pseudo," # dwindle
-          "$mainMod, t, togglesplit," # dwindle
+          "$mainMod, t, layoutmsg, togglesplit" # dwindle; togglesplit dispatcher became a layoutmsg in Hyprland >= 0.50
 
           "$mainMod SHIFT, Print, exec, grim -g \"$(slurp -d)\" - | wl-copy -t image/png"
           "$mainMod CTRL, Print, exec, grim -g \"$(slurp)\" $HOME/Pictures/$(date +'%s_grim.png')"
@@ -167,8 +173,8 @@
           "$mainMod SHIFT, S, movetoworkspace, special:magic"
 
           # Scroll through existing workspaces with mainMod + scroll
-          "bind = $mainMod, mouse_down, workspace, e+1"
-          "bind = $mainMod, mouse_up, workspace, e-1"
+          "$mainMod, mouse_down, workspace, e+1"
+          "$mainMod, mouse_up, workspace, e-1"
         ]
         ++ map
         (n: "$mainMod SHIFT, ${toString n}, movetoworkspace, ${toString (

@@ -198,7 +198,8 @@
 
   xdg.userDirs = {
     enable = true;
-    setSessionVariables = true;
+    # nothing reads the XDG_*_DIR env vars; apps use user-dirs.dirs, which is still generated
+    setSessionVariables = false;
   };
   xdg.mimeApps = {
     enable = true;

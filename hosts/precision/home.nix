@@ -178,7 +178,11 @@
   #   style.name = "adwaita-dark";
   # };
 
-  xdg.userDirs.enable = true;
+  xdg.userDirs = {
+    enable = true;
+    # nothing reads the XDG_*_DIR env vars; apps use user-dirs.dirs, which is still generated
+    setSessionVariables = false;
+  };
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {

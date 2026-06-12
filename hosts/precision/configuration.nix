@@ -133,8 +133,8 @@
   services.sentinelone = {
     enable = true;
     sentinelOneManagementTokenPath = /home/nic/bipa/sentinel_one_token;
-    email = "nicolas@bipa.app";
-    serialNumber = "nicolas_precision";
+    # the module built "<email>-<serialNumber>" from the deprecated options; same value, new option
+    customerId = "nicolas@bipa.app-nicolas_precision";
     package = pkgs.sentinelone.overrideAttrs (old: {
       version = "v25_2_1_20";
       src = /home/nic/bipa/SentinelAgent_linux_x86_64_v25_2_1_20.deb;
