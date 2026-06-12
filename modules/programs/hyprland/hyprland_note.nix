@@ -8,4 +8,7 @@
     configType = "lua";
     extraLuaFiles."main" = ./hyprland_note.lua;
   };
+
+  # polkit authentication agent (wiki "must-have"; GUI apps can't escalate without one)
+  services.hyprpolkitagent.enable = true;
 }

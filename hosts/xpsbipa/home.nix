@@ -8,10 +8,13 @@
   imports = [
     inputs.nix-colors.homeManagerModules.default
     ../../modules/programs/alacritty.nix
+    ../../modules/programs/cliphist.nix
     ../../modules/programs/direnv.nix
     ../../modules/programs/git
     # ../../modules/programs/gtk.nix
     ../../modules/programs/hyprland/hyprland_note.nix
+    ../../modules/programs/hyprlock.nix
+    ../../modules/programs/hypridle_note.nix
     ../../modules/programs/mako.nix
     ../../modules/programs/nixvim
     ../../modules/programs/nushell.nix
@@ -47,6 +50,7 @@
   # The home.packages option allows you to install Nix packages into your
   # environment.
   home.packages = [
+    # pkgs.brightnessctl # for the commented-out brightness binds + hypridle dim listeners
     # # Adds the 'hello' command to your environment. It prints a friendly
     # # "Hello, world!" when run.
     # pkgs.hello
@@ -129,48 +133,6 @@
     # eval "$(zoxide init bash)"
     # eval "$(starship init bash)"
   };
-
-  # programs.hyprlock = {
-  #   enable = true;
-  #   settings = {
-  #     general = {
-  #       ignore_empty_input = true;
-  #       hide_cursor = true;
-  #     };
-  #   };
-  # };
-
-  # services.hypridle = {
-  #   enable = true;
-  #   settings = {
-  #     general = {
-  #       lockCmd = "pidof hyprlock || ${lib.getExe pkgs.hyprlock}";
-  #       beforeSleepCmd = "loginctl lock-session"; #lock before suspend
-  #       afterSleepCmd = "hyprctl dispatch dpms on";
-  #     };
-  #     listener = [
-  #       {
-  #         timeout = 150;
-  #         onTimeout = "brightnessctl -s set 10"; #monitor backlight minimum
-  #         onResume = "brightnessctl -r"; # monitor backlight restore
-  #       }
-  #       {
-  #         timeout = 150;
-  #         onTimeout = "brightnessctl -sd rgb:kbd_backlight set 0"; #keyboard backlight
-  #         onResume = "brightnessctl -rd rgb:kbd_backlight";
-  #       }
-  #       {
-  #         timeout = 300;
-  #         onTimeout = "loginctl lock-session";
-  #       }
-  #       {
-  #         timeout = 330;
-  #         onTimeout = "hyprctl dispatch dpms off"; #screen off
-  #         onResume = "hyprctl dispatch dpms on"; #screen on
-  #       }
-  #     ];
-  #   };
-  # };
 
   # qt = {
   #   enable = true;

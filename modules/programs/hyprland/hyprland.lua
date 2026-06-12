@@ -8,11 +8,13 @@ hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1 })
 
 hl.on("hyprland.start", function()
 	hl.exec_cmd("waybar")
+	hl.exec_cmd("mako")
 end)
 
 hl.env("XCURSOR_SIZE", "24")
-hl.env("WLR_NO_HARDWARE_CURSORS", "1")
-hl.env("GBM_BACKEND", "nvidia-drm")
+hl.env("HYPRCURSOR_SIZE", "24")
+-- WLR_NO_HARDWARE_CURSORS is dead since the wlroots removal (cursor:no_hardware_cursors
+-- defaults to auto now); GBM_BACKEND is no longer in the wiki's recommended nvidia set
 hl.env("__GLX_VENDOR_LIBRARY_NAME", "nvidia")
 hl.env("LIBVA_DRIVER_NAME", "nvidia")
 hl.env("XDG_SESSION_TYPE", "wayland")
@@ -71,8 +73,10 @@ hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen())
 hl.bind(mainMod .. " + W", hl.dsp.exec_cmd("rofi -show window"))
 hl.bind(mainMod .. " + B", hl.dsp.exec_cmd("pkill --signal USR1 waybar"))
 hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.float())
-hl.bind("ALT + XF86LaunchA", hl.dsp.exec_cmd("loginctl lock-session")) -- Alt F3
+hl.bind("ALT + XF86LaunchA", hl.dsp.exec_cmd("loginctl lock-session")) -- Alt F3 (Apple-style keyboards)
+hl.bind(mainMod .. " + Escape", hl.dsp.exec_cmd("loginctl lock-session")) -- layout-agnostic (firmware-remapped boards)
 hl.bind(mainMod .. " + D", hl.dsp.exec_cmd("rofi -modi drun,run -show drun"))
+hl.bind(mainMod .. " + V", hl.dsp.exec_cmd("cliphist list | rofi -dmenu | cliphist decode | wl-copy"))
 hl.bind(mainMod .. " + P", hl.dsp.window.pseudo()) -- dwindle
 hl.bind(mainMod .. " + T", hl.dsp.layout("togglesplit")) -- dwindle
 

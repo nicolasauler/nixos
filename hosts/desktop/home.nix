@@ -8,10 +8,13 @@
   imports = [
     inputs.nix-colors.homeManagerModules.default
     ../../modules/programs/alacritty.nix
+    ../../modules/programs/cliphist.nix
     ../../modules/programs/direnv.nix
     ../../modules/programs/git
     #../../modules/programs/gtk.nix
     ../../modules/programs/hyprland/hyprland.nix
+    ../../modules/programs/hyprlock.nix
+    ../../modules/programs/hypridle.nix
     ../../modules/programs/mako.nix
     ../../modules/programs/nix-index.nix
     ../../modules/programs/nixvim
@@ -136,59 +139,6 @@
   };
 
   services.ssh-agent.enable = true;
-
-  # programs.hyprlock = {
-  #   enable = true;
-  #   settings = {
-  #     general = {
-  #       ignore_empty_input = true;
-  #       hide_cursor = true;
-  #     };
-  #     background = [
-  #       {
-  #         color = "rgba(0, 0, 0, 1.0)";
-  #       }
-  #     ];
-  #     input-fields = [
-  #       {
-  #         fade_on_empty = true;
-  #         placeholder_text = "<i>Input Password...</i>";
-  #       }
-  #     ];
-  #   };
-  # };
-
-  # services.hypridle = {
-  #   enable = true;
-  #   settings = {
-  #     general = {
-  #       lockCmd = "pidof hyprlock || ${lib.getExe pkgs.hyprlock}";
-  #       beforeSleepCmd = "loginctl lock-session"; #lock before suspend
-  #       afterSleepCmd = "hyprctl dispatch dpms on";
-  #     };
-  #     listener = [
-  #       {
-  #         timeout = 150;
-  #         onTimeout = "brightnessctl -s set 10"; #monitor backlight minimum
-  #         onResume = "brightnessctl -r"; # monitor backlight restore
-  #       }
-  #       {
-  #         timeout = 150;
-  #         onTimeout = "brightnessctl -sd rgb:kbd_backlight set 0"; #keyboard backlight
-  #         onResume = "brightnessctl -rd rgb:kbd_backlight";
-  #       }
-  #       {
-  #         timeout = 300;
-  #         onTimeout = "loginctl lock-session";
-  #       }
-  #       {
-  #         timeout = 330;
-  #         onTimeout = "hyprctl dispatch dpms off"; #screen off
-  #         onResume = "hyprctl dispatch dpms on"; #screen on
-  #       }
-  #     ];
-  #   };
-  # };
 
   # qt = {
   #   enable = true;

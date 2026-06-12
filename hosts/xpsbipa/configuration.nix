@@ -154,8 +154,11 @@
   programs.hyprland = {
     enable = true;
     xwayland.enable = true;
-    package = inputs.hyprland.packages."${pkgs.system}".hyprland;
+    package = inputs.hyprland.packages."${pkgs.stdenv.hostPlatform.system}".hyprland;
   };
+
+  # hyprlock cannot authenticate without its pam service (HM only installs the binary)
+  security.pam.services.hyprlock = {};
 
   hardware = {
     graphics = {

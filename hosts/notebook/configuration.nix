@@ -157,7 +157,7 @@
     enable = true;
     xwayland.enable = true;
   };
-  programs.hyprland.package = inputs.hyprland.packages."${pkgs.system}".hyprland;
+  programs.hyprland.package = inputs.hyprland.packages."${pkgs.stdenv.hostPlatform.system}".hyprland;
 
   hardware = {
     opengl.enable = true;

@@ -223,6 +223,9 @@
     portalPackage = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.xdg-desktop-portal-hyprland;
   };
 
+  # hyprlock cannot authenticate without its pam service (HM only installs the binary)
+  security.pam.services.hyprlock = {};
+
   services.xserver.videoDrivers = ["nvidia"];
   hardware = {
     enableAllFirmware = true;
