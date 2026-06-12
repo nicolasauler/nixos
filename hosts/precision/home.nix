@@ -134,6 +134,8 @@
     # eval "$(starship init bash)"
   };
 
+  services.ssh-agent.enable = true;
+
   # qt = {
   #   enable = true;
   #   platformTheme.name = "gtk";
