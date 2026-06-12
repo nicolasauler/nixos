@@ -1,7 +1,9 @@
 -- Laptop Hyprland config (Lua API; stubs for lua-language-server are wired
 -- via the generated ~/.config/hypr/.luarc.json)
 
-hl.monitor({ output = "DP-2", mode = "preferred", position = "1920x0", scale = 1 })
+-- dual vertical externals: transform 1 = 90deg, 3 = 270deg
+hl.monitor({ output = "DP-2", mode = "preferred", position = "1920x0", scale = 1, transform = 1 })
+hl.monitor({ output = "HDMI-A-1", mode = "preferred", position = "4080x0", scale = 1, transform = 3 })
 hl.monitor({ output = "eDP-1", mode = "preferred", position = "0x0", scale = 1 })
 hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1 })
 
