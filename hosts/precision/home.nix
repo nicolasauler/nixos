@@ -11,6 +11,7 @@
     ../../modules/programs/cliphist.nix
     ../../modules/programs/direnv.nix
     ../../modules/programs/git
+    ../../modules/programs/jujutsu.nix
     # ../../modules/programs/gtk.nix
     ../../modules/programs/hyprland/hyprland_note.nix
     ../../modules/programs/hyprlock.nix

@@ -7,7 +7,8 @@
   imports = [
     inputs.nix-colors.homeManagerModules.default
     ../../modules/programs/alacritty.nix
-    ../../modules/programs/git.nix
+    ../../modules/programs/git
+    ../../modules/programs/jujutsu.nix
     ../../modules/programs/gtk.nix
     ../../modules/programs/hyprland.nix
     ../../modules/programs/mako.nix

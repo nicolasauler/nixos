@@ -25,7 +25,7 @@ in {
 
     settings = {
       user.name = "Nicolas Auler";
-      user.email = "nicolasauler@usp.br";
+      user.email = "nickvarauler@gmail.com";
 
       commit = {
         template = "/home/nic/.config/git/commit_template";
