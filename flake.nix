@@ -25,15 +25,6 @@
       # no nixpkgs follows: nixvim recommends building against its own tested nixpkgs pin
     };
 
-    zig = {
-      url = "github:mitchellh/zig-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    zls-overlay = {
-      url = "github:zigtools/zls";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     # sops-nix.url = "github:Mic92/sops-nix";
     # agenix.url = "github:ryantm/agenix";
 
