@@ -22,6 +22,7 @@
     ../../modules/programs/nushell.nix
     ../../modules/programs/qutebrowser.nix
     ../../modules/programs/rofi.nix
+    ../../modules/programs/shell-aliases.nix
     ../../modules/programs/starship.nix
     ../../modules/programs/waybar/waybar.nix
     ../../modules/programs/zathura.nix
@@ -110,16 +111,6 @@
     # EDITOR = "emacs";
     BROWSER = "firefox";
     # BROWSER = "${lib.getExe pkgs.firefox-wayland}";
-  };
-
-  home.shellAliases = {
-    cd = "z";
-    ls = "eza --icons";
-    g = "git";
-    n = "nvim";
-    vi = "nvim .";
-    cat = "bat";
-    ps = "procs";
   };
 
   programs.home-manager.enable = true;
