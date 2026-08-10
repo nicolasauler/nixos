@@ -5,6 +5,7 @@
   config,
   pkgs,
   inputs,
+  lib,
   ...
 }: {
   imports = [
@@ -139,6 +140,30 @@
       version = "v25_2_1_20";
       src = /home/nic/bipa/SentinelAgent_linux_x86_64_v25_2_1_20.deb;
     });
+  };
+
+  # Constrain the agent's resource footprint. This limits impact on the machine, not
+  # what the agent monitors — the deep visibility is inherent to EDR and reducing it
+  # would only make the agent report unhealthy to the console, which defeats the point
+  # of having it. The module leaves all of this unbounded (TasksMax = infinity, no CPU
+  # or memory ceiling). Sized from measured usage: ~300 MB peak, ~73 threads, ~12% of
+  # one core average with scan spikes.
+  systemd.services.sentinelone.serviceConfig = {
+    # Pin it to the E-cores (12-21 on this Meteor Lake), so it stays off the P-cores
+    # you actually work on. Widen this if scans feel slow.
+    AllowedCPUs = "12-21";
+    # Yield to foreground work under contention (default weight is 100).
+    CPUWeight = 20;
+    # Hard cap on runaway. Generous (2 cores) so it never starves past the 30s
+    # watchdog and flaps.
+    CPUQuota = "200%";
+    # Soft throttle above the observed peak; hard ceiling at ~3x so it never OOM-flaps.
+    MemoryHigh = "512M";
+    MemoryMax = "1G";
+    # Deprioritise its disk IO against yours.
+    IOWeight = 20;
+    # Module sets infinity; it uses ~73, so this is 7x headroom, not a squeeze.
+    TasksMax = lib.mkForce 512;
   };
 
   # Enable the OpenSSH daemon.
