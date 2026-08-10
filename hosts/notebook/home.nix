@@ -15,15 +15,12 @@
     ../../modules/programs/nixvim
     ../../modules/programs/qutebrowser.nix
     ../../modules/programs/rofi.nix
+    ../../modules/home/nixpkgs.nix
     ../../modules/programs/shell-aliases.nix
     ../../modules/programs/starship.nix
     ../../modules/programs/waybar.nix
     ../../modules/programs/zathura.nix
     ../../modules/programs/zellij.nix
-  ];
-
-  nixpkgs.overlays = [
-    inputs.neovim-nightly-overlay.overlay
   ];
 
   colorScheme = inputs.nix-colors.colorSchemes.gruvbox-dark-medium;

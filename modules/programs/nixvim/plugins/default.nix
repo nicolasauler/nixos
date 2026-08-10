@@ -1,7 +1,6 @@
 {
   imports = [
     ./cmp.nix
-    ./copilot.nix
     ./debug.nix
     ./flash.nix
     ./format.nix
