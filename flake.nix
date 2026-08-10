@@ -28,7 +28,12 @@
     # sops-nix.url = "github:Mic92/sops-nix";
     # agenix.url = "github:ryantm/agenix";
 
-    sentinelone.url = "github:devusb/sentinelone-nix";
+    # Pinned: 54f75733 (2026-08-10) moved the bind mounts from fileSystems to
+    # systemd.mounts with After=sentinelone-init.service. That service is ordered
+    # after sysinit.target, which is after local-fs.target, which pulls in the mount
+    # itself -- so activation dies with "Transaction order is cyclic" and systemd
+    # drops local-fs.target. Unpin once upstream breaks that loop.
+    sentinelone.url = "github:devusb/sentinelone-nix/1e58fdcd464ef0b3929c5fd181c837d2d8eaf0d3";
 
     certus-infra.url = "git+ssh://git@github.com/nicolasauler/certus_infra.git";
     # certus-infra.url = "git+file:///home/nic/certus/certus_infra.git/main";
