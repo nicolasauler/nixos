@@ -39,6 +39,28 @@
       prepend /home/myuser/.apps |
       append /usr/bin/env
       )
+
+      # rr counts retired branches, which only works on P-cores, so an unpinned
+      # `rr record` dies on an E-core with "Got 0 branch events" -- intermittently,
+      # since it picks one at random. From sysfs rather than hardcoded, to stay right
+      # on non-hybrid machines. Needs `rr` on PATH, i.e. the project devShell.
+      def rr-pcore [] {
+        if ("/sys/devices/cpu_core/cpus" | path exists) {
+          open --raw /sys/devices/cpu_core/cpus | str trim | split row "-" | first
+        } else { "0" }
+      }
+
+      # rr-record ./zig-out/bin/foo        args for the debuggee go after a second --
+      def rr-record [...args] {
+        rr record $"--bind-to-cpu=(rr-pcore)" -- ...$args
+      }
+
+      # Server for nvim-dap's "rr replay" config. -k is mandatory or it exits on the
+      # first client disconnect. It resumes where the last client left off; restart for
+      # a fresh run.
+      def rr-replay [--port (-p): int = 50505] {
+        rr replay -s $port -k
+      }
     '';
   };
 

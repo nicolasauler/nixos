@@ -15,6 +15,7 @@
     ../../modules/programs/nixvim
     ../../modules/programs/qutebrowser.nix
     ../../modules/programs/rofi.nix
+    ../../modules/programs/shell-aliases.nix
     ../../modules/programs/starship.nix
     ../../modules/programs/waybar.nix
     ../../modules/programs/zathura.nix
@@ -100,16 +101,6 @@
   #
   home.sessionVariables = {
     # EDITOR = "emacs";
-  };
-
-  home.shellAliases = {
-    cd = "z";
-    ls = "eza";
-    g = "git";
-    n = "nvim";
-    vi = "nvim .";
-    cat = "bat";
-    ps = "procs";
   };
 
   programs.home-manager.enable = true;
