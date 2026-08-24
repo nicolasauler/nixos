@@ -280,6 +280,13 @@ in {
       end
     '';
 
+    # Suffix, don't prefix, rust-analyzer onto the wrapper's PATH so a project
+    # devshell's toolchain-paired RA wins while non-nix projects still get one
+    # (verified via headless probe: as a prefix the wrapper's RA 2026-06-15
+    # shadowed bipa's nightly-2026-07-27). rustaceanvim's default server.cmd
+    # already resolves rust-analyzer through $PATH, so this is the only knob.
+    dependencies.rust-analyzer.packageFallback = true;
+
     plugins.rustaceanvim = {
       enable = true;
       settings.tools.hover_actions.replace_builtin_hover = true; # want to test lspsaga's impl
@@ -298,18 +305,6 @@ in {
           autoload_configurations = true;
         };
         server = {
-          cmd = {
-            __raw = ''
-              function()
-                -- resolve from current $PATH, not the nix wrapper's
-                local ra = vim.fn.exepath("rust-analyzer")
-                if ra ~= "" then
-                  return { ra }
-                end
-                return { "rust-analyzer" }
-              end
-            '';
-          };
           on_attach = ''
             function(_, bufnr)
               vim.keymap.set("n", "<leader>rd", function()
