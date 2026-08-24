@@ -10,6 +10,7 @@
   imports = [
     # Include the results of the hardware scan.
     ./hardware-configuration.nix
+    ../../modules/services/atticd.nix
     inputs.home-manager.nixosModules.default
     # inputs.sops-nix.nixosModules.sops
     # inputs.agenix.nixosModules.default
