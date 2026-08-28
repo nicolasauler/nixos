@@ -5,6 +5,7 @@ from typing import Any
 
 from buildbot.changes.filter import ChangeFilter
 from buildbot.configurators import ConfiguratorBase
+from buildbot.locks import MasterLock
 from buildbot.schedulers.basic import BaseBasicScheduler
 
 
@@ -43,7 +44,7 @@ class WorkstationPolicyConfigurator(ConfiguratorBase):
         *,
         pr_authors: Iterable[str],
         build_pushes: bool,
-        max_builds_per_worker: int | None = None,
+        max_concurrent_nix_builds: int | None = None,
     ) -> None:
         super().__init__()
         self.pr_authors = frozenset(
@@ -52,9 +53,9 @@ class WorkstationPolicyConfigurator(ConfiguratorBase):
         if not self.pr_authors:
             raise ValueError("pr_authors must not be empty")
         self.build_pushes = build_pushes
-        if max_builds_per_worker is not None and max_builds_per_worker < 1:
-            raise ValueError("max_builds_per_worker must be >= 1 when set")
-        self.max_builds_per_worker = max_builds_per_worker
+        if max_concurrent_nix_builds is not None and max_concurrent_nix_builds < 1:
+            raise ValueError("max_concurrent_nix_builds must be >= 1 when set")
+        self.max_concurrent_nix_builds = max_concurrent_nix_builds
 
     def _with_author_filter(self, scheduler: BaseBasicScheduler) -> BaseBasicScheduler:
         scheduler_config = scheduler.getConfigDict()
@@ -99,15 +100,44 @@ class WorkstationPolicyConfigurator(ConfiguratorBase):
             or scheduler in replacements
         ]
 
-        # buildbot-nix constructs workers as `worker.Worker(name, password)`
-        # (buildbot_nix/__init__.py:116) and never passes max_builds, whose
-        # default means UNLIMITED concurrent builds per worker. So a workersFile
-        # `cores: N` caps worker *processes*, not builds: this box ran 8 builds
-        # on 4 workers and starved. buildbot reads max_builds at decision time
-        # (worker/base.py canStartBuild), so setting it here is honoured, and
-        # configurators re-run on reconfig. Applied to every worker without
-        # inspecting names or types, so an upstream rename cannot silently
-        # un-cap us (contrast the -prs guard above).
-        if self.max_builds_per_worker is not None:
-            for configured_worker in self.workers:
-                configured_worker.max_builds = self.max_builds_per_worker
+        self._limit_nix_build_concurrency()
+
+    def _limit_nix_build_concurrency(self) -> None:
+        # Bound how many nix builds compile at once, WITHOUT bounding how many
+        # builds a worker may run.
+        #
+        # Worker.max_builds is the wrong knob here and deadlocks buildbot-nix.
+        # Every builder of a project shares one worker list
+        # (buildbot_nix/project_config.py:160-199), and a nix-eval build parks
+        # in its BuildTrigger step until the nix-build builds it triggered have
+        # finished (buildbot_nix/build_trigger.py:771) -- holding its slot the
+        # whole time (measured: 619s on desktop-001, build 1461 step "build
+        # flake"). Worker.canStartBuild counts busy builds across ALL builders
+        # (buildbot worker/base.py:657-659), so a worker capped at N builds
+        # cannot admit the child its own N parked parents are waiting for.
+        # Nothing bounds how many eval builds park at once -- one per open PR --
+        # so no finite per-worker cap is safe.
+        #
+        # A master lock is the mechanism buildbot provides for this. Builder
+        # locks are checked in Builder.canStartBuild (buildbot process/
+        # builder.py:359-367) *before* a worker is marked busy, so a build that
+        # cannot take the lock simply stays queued and consumes no slot. One
+        # build per (builder, worker) pair is already guaranteed by buildbot
+        # (process/builder.py:319-320), so this lock is what keeps the several
+        # projects on this master from compiling at the same time.
+        if self.max_concurrent_nix_builds is None:
+            return
+
+        nix_build_builders = [
+            builder
+            for builder in self.builders
+            if getattr(builder, "name", "").endswith("/nix-build")
+        ]
+        if self.builders and not nix_build_builders:
+            raise RuntimeError("buildbot-nix created builders but no */nix-build builder")
+
+        access = MasterLock(
+            "nix-build-concurrency", maxCount=self.max_concurrent_nix_builds
+        ).access("counting")
+        for builder in nix_build_builders:
+            builder.locks = [*builder.locks, access]

@@ -17,20 +17,31 @@
 # the daemon honours a client's cores/max-jobs even from an untrusted user, so
 # the cap lands on CI alone and global nix.settings stay free for you.
 #
-# Aggravating factors on this host, worth knowing: no swap at all (memory
-# pressure goes to reclaim stalls / OOM, never to swap), and min-free=20GiB means
-# a build can trigger a store GC mid-compile if the disk sits near that mark.
+# Aggravating factor worth knowing: min-free=20GiB means a build can trigger a
+# store GC mid-compile if the disk sits near that mark. (There IS a swap
+# partition on this host — hosts/desktop/hardware-configuration.nix:31 — so
+# memory pressure degrades to swap thrash before it reaches the OOM killer.)
 #
-# Concurrency is one build at a time, enforced in three independent places:
-#   * buildbot slots — workersFile `cores` + worker.workers, which must agree
-#     (buildbot_nix/__init__.py:114)
-#   * max_builds_per_worker in buildbot-pr-policy.nix — slots alone do NOT bound
-#     builds, since buildbot-nix leaves max_builds unset (= unlimited)
-#   * max-jobs in the worker's NIX_CONFIG, which bounds what nix itself will run
-# Want CI faster? Raise all three together, and expect the desktop to feel it.
-# The next lever, if CPU/IO priority still bites: a second nix-daemon instance
-# with its own cgroup limits on a private socket (NIX_REMOTE=unix://…), sharing
-# this store — real isolation without degrading your daemon. Not done yet.
+# Concurrency is one compiling build at a time, from two knobs that bound
+# different things:
+#   * max_concurrent_nix_builds in buildbot-pr-policy.nix — a buildbot master
+#     lock on every */nix-build builder, so at most one nix build runs across
+#     all projects. This is NOT the worker slot count: buildbot already runs at
+#     most one build per (builder, worker) pair (process/builder.py:319), and
+#     capping Worker.max_builds instead DEADLOCKS buildbot-nix — the nix-eval
+#     build parks in its BuildTrigger step holding a slot until the nix-build
+#     builds it triggered finish (buildbot_nix/build_trigger.py:771), and those
+#     need a slot on the same worker.
+#   * max-jobs in the worker's NIX_CONFIG, which bounds derivations *within*
+#     one nix build.
+# workersFile `cores` and worker.workers still must agree (the master spawns one
+# slot per `cores`, buildbot_nix/__init__.py:114); they set how many builds may
+# be in flight at all, not how many compile.
+# Want CI faster? Raise max_concurrent_nix_builds and cores together, and expect
+# the desktop to feel it. The next lever, if CPU/IO priority still bites: a
+# second nix-daemon instance with its own cgroup limits on a private socket
+# (NIX_REMOTE=unix://… + NIX_DAEMON_SOCKET_PATH on the service), sharing this
+# store — real isolation without degrading your daemon. Not done yet.
 {
   lib,
   pkgs,
@@ -46,6 +57,9 @@
       { "name": "desktop", "pass": "certus-worker-local", "cores": 1 }
     ]
   '');
+  # Slots are not the compile cap (see the header). One is enough: buildbot
+  # gives each (builder, worker) pair its own slot, so this single worker still
+  # runs the parked nix-eval build and the nix-build it triggered side by side.
   services.buildbot-nix.worker.workers = lib.mkForce 1;
 
   # evalWorkerCount was null => one worker per core (~16), each allowed
