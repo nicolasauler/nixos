@@ -1,0 +1,81 @@
+--- a/buildbot_nix/project_config.py
++++ b/buildbot_nix/project_config.py
+@@ -2,6 +2,7 @@
+ 
+ from __future__ import annotations
+ 
++import os
+ from dataclasses import dataclass, field
+ from typing import TYPE_CHECKING, Any
+ 
+@@ -27,6 +28,41 @@
+     from .projects import GitProject
+ 
+ 
++def _allowlist_from_env(name: str) -> frozenset[str]:
++    """Parse a comma-separated env var into a lowercased set. Empty = no filter."""
++    return frozenset(
++        entry.strip().lower()
++        for entry in os.environ.get(name, "").split(",")
++        if entry.strip()
++    )
++
++
++def _flag_from_env(name: str, *, default: bool) -> bool:
++    raw = os.environ.get(name, "").strip().lower()
++    if not raw:
++        return default
++    return raw not in {"0", "false", "no", "off"}
++
++
++# Read once at import time; the master must be restarted to pick up changes.
++PR_AUTHOR_ALLOWLIST = _allowlist_from_env("BUILDBOT_PR_AUTHORS")
++BUILD_PUSHES = _flag_from_env("BUILDBOT_BUILD_PUSHES", default=True)
++
++
++def pr_author_allowed(author: str | None) -> bool:
++    """Whether a pull-request change's author is allowed to trigger builds.
++
++    For pull-request changes the forge hooks record the bare login as the
++    author (e.g. "nicolasauler"), unlike push changes which carry a git
++    identity ("Nicolas Auler <nicolas@example.com>"), so an exact
++    case-insensitive match is unambiguous here. An empty allowlist preserves
++    upstream behaviour: every pull request builds.
++    """
++    if not PR_AUTHOR_ALLOWLIST:
++        return True
++    return (author or "").strip().lower() in PR_AUTHOR_ALLOWLIST
++
++
+ def resolve_effects_secret(
+     per_repo_effects_secrets: dict[str, str],
+     forge_type: str,
+@@ -65,7 +101,8 @@
+                 change_filter=util.ChangeFilter(
+                     repository=project.url,
+                     filter_fn=lambda c: (
+-                        project_config.build_config.branch_config_dict.do_run(
++                        BUILD_PUSHES
++                        and project_config.build_config.branch_config_dict.do_run(
+                             project.default_branch, c.branch
+                         )
+                     ),
+@@ -84,15 +121,17 @@
+                     # TODO add filter
+                     repository=project.url,
+                     branch_re="(gh-readonly-queue/.*|staging|trying)",
++                    filter_fn=lambda c: BUILD_PUSHES,
+                 ),
+                 builderNames=[f"{project.name}/nix-eval"],
+             ),
+-            # build all pull requests
++            # build pull requests, optionally restricted to an author allowlist
+             schedulers.SingleBranchScheduler(
+                 name=f"{project.project_id}-prs",
+                 change_filter=util.ChangeFilter(
+                     repository=project.url,
+                     category="pull",
++                    filter_fn=lambda c: pr_author_allowed(c.author),
+                 ),
+                 builderNames=[f"{project.name}/nix-eval"],
+             ),
