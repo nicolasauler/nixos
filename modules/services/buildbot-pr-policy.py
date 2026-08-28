@@ -16,11 +16,24 @@ class PullRequestAuthorFilter(ChangeFilter):
         self.inner_filter = inner_filter
         self.pr_authors = pr_authors
 
+    @staticmethod
+    def _author_of(change: Any) -> str:
+        # Schedulers are handed a Change object (schedulers/base.py:212,
+        # `Change.fromChdict`), whose author field is named `who`
+        # (changes.py:110) — there is no `.author`. Only the data-API dict
+        # spells it `author`. Reading `.author` here raised AttributeError
+        # *inside* the filter, so every pull-request change was silently
+        # dropped: the change was recorded and no buildset was ever created.
+        author = getattr(change, "who", None)
+        if author is None:
+            author = getattr(change, "author", None)
+        return (author or "").strip().lower()
+
     def filter_change(self, change: Any) -> bool:
         return (
             self.inner_filter.filter_change(change)
             and change.category == "pull"
-            and (change.author or "").strip().lower() in self.pr_authors
+            and self._author_of(change) in self.pr_authors
         )
 
 

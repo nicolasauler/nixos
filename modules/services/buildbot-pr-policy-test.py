@@ -1,4 +1,4 @@
-from types import SimpleNamespace
+from buildbot.changes.changes import Change
 
 from buildbot.plugins import schedulers, util
 from buildbot.plugins import worker as worker_plugin
@@ -17,15 +17,29 @@ def basic(name: str, *, builder=BUILDER, **filter_args):
 
 
 def change(author, category, branch, repository=REPOSITORY):
-    return SimpleNamespace(
-        author=author,
-        category=category,
+    # A real Change, which is exactly what BaseScheduler._changeCallback
+    # passes to the filter. A SimpleNamespace(author=...) stub hid a bug:
+    # the attribute is `who`, so the filter raised AttributeError in
+    # production while every stubbed assertion here passed.
+    return Change(
+        who=author,
+        files=[],
+        comments="",
+        revision="0" * 40,
+        when=1787848101,
         branch=branch,
+        category=category,
+        revlink="",
+        properties={},
         repository=repository,
-        project="",
         codebase="",
-        properties=SimpleNamespace(getProperty=lambda _name, default="": default),
+        project="bipa-app/bipa",
     )
+
+
+# regression guard: the filter must read the attribute a real Change exposes
+assert not hasattr(change("nicolasauler", "pull", "refs/pull/1/merge"), "author")
+assert change("nicolasauler", "pull", "refs/pull/1/merge").who == "nicolasauler"
 
 
 def configured_filter():
