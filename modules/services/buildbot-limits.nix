@@ -7,11 +7,15 @@
 # dies, the worker survives) — these are the knobs it leaves wide open.
 #
 # Arithmetic, for a 16-thread box under a 75% quota (~12 threads of real CPU):
-#   4 slots x cores=3 = 12 threads requested = the quota. max-jobs=2 lets a
-#   slot's dependency graph parallelise a little without a slot ever behaving
-#   like it owns the machine. Want 5 concurrent builds instead of 4? Change
-#   both numbers below (workersFile `cores` and worker.workers must agree —
-#   the master spawns one slot per `cores`, buildbot_nix/__init__.py:114).
+#   2 slots x cores=3 = 6 threads requested, x max-jobs=2 for a slot's own
+#   dependency fan-out, and the quota is the backstop. Two concurrent builds is
+#   what keeps the workstation usable: 8 concurrent starved it outright (API
+#   connect 5s, tailscaled unresponsive), 4 was usable but sluggish.
+#   Want more concurrency? Change both numbers below — workersFile `cores` and
+#   worker.workers must agree, since the master spawns one slot per `cores`
+#   (buildbot_nix/__init__.py:114). NOTE: slots alone do NOT bound builds;
+#   buildbot-nix leaves max_builds unset (unlimited per worker), so the real cap
+#   is max_builds_per_worker in buildbot-pr-policy.nix. Both are required.
 {
   lib,
   pkgs,
@@ -24,10 +28,10 @@
   # fixing it belongs in that repo.
   services.buildbot-nix.master.workersFile = lib.mkForce (pkgs.writeText "workers.json" ''
     [
-      { "name": "desktop", "pass": "certus-worker-local", "cores": 4 }
+      { "name": "desktop", "pass": "certus-worker-local", "cores": 2 }
     ]
   '');
-  services.buildbot-nix.worker.workers = lib.mkForce 4;
+  services.buildbot-nix.worker.workers = lib.mkForce 2;
 
   # evalWorkerCount was null => one worker per core (~16), each allowed
   # evalMaxMemorySize (2048 MB) => up to ~32 GB of eval inside a 24 GB cgroup.

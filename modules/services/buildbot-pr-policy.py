@@ -25,7 +25,13 @@ class PullRequestAuthorFilter(ChangeFilter):
 
 
 class WorkstationPolicyConfigurator(ConfiguratorBase):
-    def __init__(self, *, pr_authors: Iterable[str], build_pushes: bool) -> None:
+    def __init__(
+        self,
+        *,
+        pr_authors: Iterable[str],
+        build_pushes: bool,
+        max_builds_per_worker: int | None = None,
+    ) -> None:
         super().__init__()
         self.pr_authors = frozenset(
             author.strip().lower() for author in pr_authors if author.strip()
@@ -33,6 +39,9 @@ class WorkstationPolicyConfigurator(ConfiguratorBase):
         if not self.pr_authors:
             raise ValueError("pr_authors must not be empty")
         self.build_pushes = build_pushes
+        if max_builds_per_worker is not None and max_builds_per_worker < 1:
+            raise ValueError("max_builds_per_worker must be >= 1 when set")
+        self.max_builds_per_worker = max_builds_per_worker
 
     def _with_author_filter(self, scheduler: BaseBasicScheduler) -> BaseBasicScheduler:
         scheduler_config = scheduler.getConfigDict()
@@ -76,3 +85,16 @@ class WorkstationPolicyConfigurator(ConfiguratorBase):
             or scheduler not in nix_eval_schedulers
             or scheduler in replacements
         ]
+
+        # buildbot-nix constructs workers as `worker.Worker(name, password)`
+        # (buildbot_nix/__init__.py:116) and never passes max_builds, whose
+        # default means UNLIMITED concurrent builds per worker. So a workersFile
+        # `cores: N` caps worker *processes*, not builds: this box ran 8 builds
+        # on 4 workers and starved. buildbot reads max_builds at decision time
+        # (worker/base.py canStartBuild), so setting it here is honoured, and
+        # configurators re-run on reconfig. Applied to every worker without
+        # inspecting names or types, so an upstream rename cannot silently
+        # un-cap us (contrast the -prs guard above).
+        if self.max_builds_per_worker is not None:
+            for configured_worker in self.workers:
+                configured_worker.max_builds = self.max_builds_per_worker

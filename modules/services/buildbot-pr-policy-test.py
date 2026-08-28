@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from buildbot.plugins import schedulers, util
+from buildbot.plugins import worker as worker_plugin
 from buildbot_pr_policy import WorkstationPolicyConfigurator
 
 REPOSITORY = "https://github.com/bipa-app/bipa"
@@ -103,3 +104,37 @@ except RuntimeError:
     pass
 else:
     raise AssertionError("changed upstream scheduler shape must fail closed")
+
+
+def worker_policy(**policy_args):
+    workers = [
+        worker_plugin.Worker("desktop-000", "pass"),
+        worker_plugin.Worker("desktop-001", "pass"),
+    ]
+    config = {
+        "schedulers": [basic("bipa-app-bipa-prs", category="pull")],
+        "workers": workers,
+    }
+    WorkstationPolicyConfigurator(
+        pr_authors=["nicolasauler"], build_pushes=False, **policy_args
+    ).configure(config)
+    return [configured.max_builds for configured in config["workers"]]
+
+
+# upstream shape: buildbot-nix leaves max_builds unset => unlimited per worker
+assert worker_policy() == [None, None]
+assert worker_policy(max_builds_per_worker=None) == [None, None]
+assert worker_policy(max_builds_per_worker=1) == [1, 1]
+assert worker_policy(max_builds_per_worker=3) == [3, 3]
+
+for invalid in (0, -1):
+    try:
+        WorkstationPolicyConfigurator(
+            pr_authors=["nicolasauler"],
+            build_pushes=False,
+            max_builds_per_worker=invalid,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("non-positive max_builds_per_worker must fail closed")
