@@ -15,6 +15,7 @@
     # /etc/secrets/atticd.env when it's attic's turn.
     # ../../modules/services/atticd.nix
     ../../modules/services/buildbot-limits.nix
+    ../../modules/services/buildbot-pr-policy.nix
     inputs.home-manager.nixosModules.default
     # inputs.sops-nix.nixosModules.sops
     # inputs.agenix.nixosModules.default
