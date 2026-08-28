@@ -85,6 +85,36 @@ pkgs.testers.runNixOSTest {
         jobs = machine.succeed("NIX_CONFIG='max-jobs = 1' nix config show max-jobs").strip()
         assert jobs == "1", f"NIX_CONFIG did not bind max-jobs: {jobs}"
 
+    with subtest("an untrusted client's cores REACHES THE BUILDER via the shared daemon"):
+        # The whole premise of the CI-scoped cap: compilers run under
+        # nix-daemon, and the daemon applies a client's buildCores even when
+        # that client is untrusted (daemon.cc ClientSettings::apply assigns it
+        # before the `trusted ||` gate). Probe it for real: a derivation that
+        # echoes $NIX_BUILD_CORES, built once uncapped and once as the
+        # buildbot-worker user carrying the cap. Distinct names, because
+        # NIX_BUILD_CORES is not part of the drv hash and a same-name build
+        # would just return the cached result.
+        def probe(name):
+            return (
+                'derivation { name = "' + name + '"; system = "x86_64-linux"; '
+                'builder = "/bin/sh"; args = [ "-c" "echo $NIX_BUILD_CORES > $out" ]; }'
+            )
+
+        out = machine.succeed(
+            "nix build --no-link --print-out-paths --expr '" + probe("cores-probe-uncapped") + "'"
+        ).strip()
+        uncapped = machine.succeed("cat " + out).strip()
+
+        out = machine.succeed(
+            "runuser -u buildbot-worker -- env HOME=/tmp NIX_CONFIG='cores = 4' "
+            "nix build --no-link --print-out-paths --expr '" + probe("cores-probe-ci") + "'"
+        ).strip()
+        capped = machine.succeed("cat " + out).strip()
+
+        # the VM has 2 vCPUs and global cores = 0, so an uncapped build sees 2
+        assert uncapped == "2", f"uncapped build saw {uncapped} cores, expected the VM's 2"
+        assert capped == "4", f"CI cap did not reach the builder: saw {capped}, expected 4"
+
     with subtest("global nix is left alone"):
         # the user's own builds must not inherit the CI cap
         cores = machine.succeed("nix config show cores").strip()
