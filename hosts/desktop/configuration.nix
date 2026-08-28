@@ -10,7 +10,10 @@
   imports = [
     # Include the results of the hardware scan.
     ./hardware-configuration.nix
-    ../../modules/services/atticd.nix
+    # attic: module is ready (tailnet-only on :8443, runbook in its header) but
+    # deliberately NOT active yet — buildbot lands first. Uncomment + create
+    # /etc/secrets/atticd.env when it's attic's turn.
+    # ../../modules/services/atticd.nix
     ../../modules/services/buildbot-bipa.nix
     inputs.home-manager.nixosModules.default
     # inputs.sops-nix.nixosModules.sops
