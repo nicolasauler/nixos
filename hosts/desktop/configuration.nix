@@ -14,7 +14,6 @@
     # deliberately NOT active yet — buildbot lands first. Uncomment + create
     # /etc/secrets/atticd.env when it's attic's turn.
     # ../../modules/services/atticd.nix
-    ../../modules/services/buildbot-bipa.nix
     ../../modules/services/buildbot-limits.nix
     inputs.home-manager.nixosModules.default
     # inputs.sops-nix.nixosModules.sops
