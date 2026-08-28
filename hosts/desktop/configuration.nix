@@ -11,6 +11,7 @@
     # Include the results of the hardware scan.
     ./hardware-configuration.nix
     ../../modules/services/atticd.nix
+    ../../modules/services/buildbot-bipa.nix
     inputs.home-manager.nixosModules.default
     # inputs.sops-nix.nixosModules.sops
     # inputs.agenix.nixosModules.default

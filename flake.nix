@@ -69,7 +69,10 @@
           # inputs.stylix.nixosModules.stylix
           inputs.certus-infra.nixosModules.observability
           inputs.certus-infra.nixosModules.buildbot
-          inputs.certus-infra.nixosModules.bencher
+          # bencher: disabled until certus-infra bumps it — its importCargoLock
+          # fetches async-stripe-1.0.0-rc.3 from the legacy crates.io download
+          # URL, which now returns 403 and blocks every desktop rebuild.
+          # inputs.certus-infra.nixosModules.bencher
           ./hosts/desktop/configuration.nix
         ];
       };
