@@ -85,6 +85,20 @@
   # on nix-daemon: that unit serves every `nix build` on this host, including
   # yours, and MemoryHigh in particular would reclaim-throttle your own builds
   # even while CI is idle.
+  #
+  # What this does NOT bound: substitution. The daemon runs the substitution
+  # goals for a daemon-store client, and max-substitution-jobs defaults to 16
+  # (nix worker-settings.hh:73-76). It is not one of the two fields the daemon
+  # takes unconditionally -- it rides the `overrides` map and dies at the
+  # `trusted ||` gate (daemon.cc:296-308), so this untrusted worker cannot lower
+  # it, and up to 16 NAR fetch+decompress jobs still run unbounded in the daemon
+  # cgroup. Do NOT fix that by adding buildbot-worker to trusted-users: a trusted
+  # client can also set substituters and turn off signature checking. Do not
+  # lower it globally either; it would slow your own fetches. The clean place is
+  # the second-daemon plan above -- nix applies NIX_CONFIG in any nix process,
+  # the daemon included (globals.cc:147-151), so that unit can carry its own
+  # `Environment=NIX_CONFIG=max-substitution-jobs = 4` next to its cgroup limits,
+  # and its CPUQuota bounds the decompression regardless.
   systemd.services.buildbot-worker.environment.NIX_CONFIG = ''
     cores = 4
     max-jobs = 1

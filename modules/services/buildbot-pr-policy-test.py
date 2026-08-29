@@ -194,6 +194,28 @@ else:
     raise AssertionError("a renamed nix-build builder must fail closed")
 
 
+def bootstrap_locks(builders):
+    # A master with no registered projects: buildbot-nix still adds its reload
+    # builder unconditionally (buildbot_nix/__init__.py:188,
+    # github_projects.py:659), but no project builders exist yet. This is the
+    # state after a fresh deploy, a wiped github-project-cache, or the App
+    # losing access -- the configurator must not abort master.cfg, or the
+    # master can never come back to discover projects.
+    config = {
+        "schedulers": [],
+        "workers": [worker_plugin.Worker("desktop-000", "pass")],
+        "builders": builders,
+    }
+    WorkstationPolicyConfigurator(
+        pr_authors=["nicolasauler"], build_pushes=False, max_concurrent_nix_builds=1
+    ).configure(config)
+    return [configured.locks for configured in config["builders"]]
+
+
+assert bootstrap_locks([builder("reload-github-projects")]) == [[]]
+assert bootstrap_locks([]) == []
+
+
 # Deadlock guard. This is why the cap is a builder lock and not Worker.max_builds.
 #
 # buildbot-nix puts every builder of a project on the same worker list

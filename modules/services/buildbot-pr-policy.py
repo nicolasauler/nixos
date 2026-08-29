@@ -133,8 +133,24 @@ class WorkstationPolicyConfigurator(ConfiguratorBase):
             for builder in self.builders
             if getattr(builder, "name", "").endswith("/nix-build")
         ]
-        if self.builders and not nix_build_builders:
-            raise RuntimeError("buildbot-nix created builders but no */nix-build builder")
+        if not nix_build_builders:
+            # A master with no registered projects legitimately has no per-project
+            # builders at all -- only buildbot-nix's own reload builder, which is
+            # created unconditionally (buildbot_nix/__init__.py:188,
+            # github_projects.py:659 -> "reload-github-projects"). That is the
+            # bootstrap state after a fresh deploy, a wiped project cache, or the
+            # App losing access, and aborting master.cfg there would mean the
+            # master can never come back. So fail closed only when the project
+            # builders ARE present and the nix-build one is missing, i.e. upstream
+            # renamed it -- the same shape as the -prs scheduler guard above.
+            if any(
+                getattr(builder, "name", "").endswith("/nix-eval")
+                for builder in self.builders
+            ):
+                raise RuntimeError(
+                    "buildbot-nix created project builders but no */nix-build builder"
+                )
+            return
 
         access = MasterLock(
             "nix-build-concurrency", maxCount=self.max_concurrent_nix_builds
