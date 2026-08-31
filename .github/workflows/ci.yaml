@@ -1,0 +1,55 @@
+# Public checks only. The desktop and buildbot-workstation outputs still depend
+# on the private certus-infra module and remain local until that module is public.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vm-checks:
+    name: NixOS VM checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Enable and verify KVM
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -c /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+          stat -c '%A %U:%G %n' /dev/kvm
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Evaluate the public check
+        run: |
+          set -euo pipefail
+          nix --version
+          nix eval --raw '.#checks.x86_64-linux.buildbot-fanout.drvPath'
+
+      - name: checks.buildbot-fanout
+        run: |
+          set -euo pipefail
+          nix build -L --no-link '.#checks.x86_64-linux.buildbot-fanout'

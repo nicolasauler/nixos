@@ -77,7 +77,6 @@
         "flake-parts": "flake-parts",
         "hercules-ci-effects": "hercules-ci-effects",
         "nixpkgs": [
-          "certus-infra",
           "nixpkgs"
         ],
         "treefmt-nix": "treefmt-nix"
@@ -93,13 +92,16 @@
       "original": {
         "owner": "nix-community",
         "repo": "buildbot-nix",
+        "rev": "19a89fd4c890433dab7062672ff95efe0128db3c",
         "type": "github"
       }
     },
     "certus-infra": {
       "inputs": {
         "bencher": "bencher",
-        "buildbot-nix": "buildbot-nix",
+        "buildbot-nix": [
+          "buildbot-nix"
+        ],
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
@@ -135,7 +137,6 @@
     "flake-parts": {
       "inputs": {
         "nixpkgs-lib": [
-          "certus-infra",
           "buildbot-nix",
           "nixpkgs"
         ]
@@ -217,12 +218,10 @@
     "hercules-ci-effects": {
       "inputs": {
         "flake-parts": [
-          "certus-infra",
           "buildbot-nix",
           "flake-parts"
         ],
         "nixpkgs": [
-          "certus-infra",
           "buildbot-nix",
           "nixpkgs"
         ]
@@ -774,6 +773,7 @@
     },
     "root": {
       "inputs": {
+        "buildbot-nix": "buildbot-nix",
         "certus-infra": "certus-infra",
         "home-manager": "home-manager",
         "hyprland": "hyprland",
@@ -873,7 +873,6 @@
     "treefmt-nix": {
       "inputs": {
         "nixpkgs": [
-          "certus-infra",
           "buildbot-nix",
           "nixpkgs"
         ]
