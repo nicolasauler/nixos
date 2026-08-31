@@ -33,8 +33,17 @@
   # One-time setup per machine, and again whenever the agent version bumps.
   # BOTH commands matter — the second one is not optional:
   #
-  #   P=$(nix-store --add-fixed sha256 /home/nic/bipa/SentinelAgent_linux_x86_64_v25_2_1_20.deb)
-  #   nix-store --realise --add-root ~/.cache/gcroots/sentinelone-deb "$P"
+  #   nix-store --add-fixed sha256 /home/nic/bipa/SentinelAgent_linux_x86_64_v25_2_1_20.deb
+  #   nix-store --realise --add-root ~/.cache/gcroots/sentinelone-deb \
+  #     /nix/store/4scz5sxd8jjcvw0hqr03q9g1868mvhvd-SentinelAgent_linux_x86_64_v25_2_1_20.deb
+  #
+  # Deliberately no shell variable and no command substitution: this store path
+  # is deterministic for that name + hash, so it is identical on every machine,
+  # and the commands then work in ANY shell. The previous spelling used
+  # `P=$(...)`, which is a syntax error in nushell — the shell this host's owner
+  # actually uses. After a version bump, print the new expected path with:
+  #
+  #   nix eval --raw '.#nixosConfigurations.precision.config.services.sentinelone.package.src'
   #
   # then switch normally — no --impure, no environment variables:
   #
@@ -78,12 +87,18 @@
       without the root, the next garbage collection deletes it and you will land
       back here:
 
-        P=$(nix-store --add-fixed sha256 /path/to/SentinelAgent_linux_x86_64_v25_2_1_20.deb)
-        nix-store --realise --add-root ~/.cache/gcroots/sentinelone-deb "$P"
+        nix-store --add-fixed sha256 /path/to/SentinelAgent_linux_x86_64_v25_2_1_20.deb
+        nix-store --realise --add-root ~/.cache/gcroots/sentinelone-deb \
+          /nix/store/4scz5sxd8jjcvw0hqr03q9g1868mvhvd-SentinelAgent_linux_x86_64_v25_2_1_20.deb
 
-      Use exactly that. `nix store add` defaults to NAR/recursive hashing and
-      produces a different path that will NOT satisfy this derivation, and
-      passing --add-root to --add-fixed is silently ignored.
+      Both lines as written - no shell variable, so this works in nushell/fish
+      too. That second path is deterministic for this name and hash, which is why
+      it can be quoted literally.
+
+      Two traps: `nix store add` defaults to NAR/recursive hashing and produces a
+      different path that will NOT satisfy this derivation (use `--add-fixed
+      sha256` as above, or `nix store add --mode flat`), and passing --add-root to
+      --add-fixed is silently ignored, so it has to be two commands.
 
       If you are already sure the file is in the store, the hash did not match:
       the file is not the version this host pins. Do not "fix" that by editing
