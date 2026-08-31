@@ -54,6 +54,12 @@
       };
     };
   in {
+    checks.${system} = {
+      buildbot-workstation = import ./tests/buildbot-workstation.nix {
+        inherit pkgs inputs;
+      };
+    };
+
     nixosConfigurations = {
       notebook = nixpkgs.lib.nixosSystem {
         inherit pkgs;

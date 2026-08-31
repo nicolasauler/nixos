@@ -120,35 +120,134 @@ else:
     raise AssertionError("changed upstream scheduler shape must fail closed")
 
 
-def worker_policy(**policy_args):
-    workers = [
-        worker_plugin.Worker("desktop-000", "pass"),
-        worker_plugin.Worker("desktop-001", "pass"),
-    ]
+def builder(name):
+    return util.BuilderConfig(
+        name=name, workernames=["desktop-000"], factory=util.BuildFactory()
+    )
+
+
+def build_locks(**policy_args):
     config = {
         "schedulers": [basic("bipa-app-bipa-prs", category="pull")],
-        "workers": workers,
+        "workers": [worker_plugin.Worker("desktop-000", "pass")],
+        "builders": [
+            builder("bipa-app/bipa/nix-eval"),
+            builder("bipa-app/bipa/nix-build"),
+            builder("bipa-app/bipa/nix-register-gcroot"),
+            builder("nicolasauler/ninja/nix-build"),
+        ],
     }
     WorkstationPolicyConfigurator(
         pr_authors=["nicolasauler"], build_pushes=False, **policy_args
     ).configure(config)
-    return [configured.max_builds for configured in config["workers"]]
+    assert [configured.max_builds for configured in config["workers"]] == [None], (
+        "worker build slots must stay uncapped; see the deadlock guard below"
+    )
+    return {configured.name: configured.locks for configured in config["builders"]}
 
 
-# upstream shape: buildbot-nix leaves max_builds unset => unlimited per worker
-assert worker_policy() == [None, None]
-assert worker_policy(max_builds_per_worker=None) == [None, None]
-assert worker_policy(max_builds_per_worker=1) == [1, 1]
-assert worker_policy(max_builds_per_worker=3) == [3, 3]
+# upstream shape: no locks anywhere
+assert all(locks == [] for locks in build_locks().values())
+assert all(locks == [] for locks in build_locks(max_concurrent_nix_builds=None).values())
+
+locks = build_locks(max_concurrent_nix_builds=1)
+# only the compiling builders are serialised; eval and gcroot must stay free,
+# or the eval build can never reach the step that triggers a nix build
+assert locks["bipa-app/bipa/nix-eval"] == []
+assert locks["bipa-app/bipa/nix-register-gcroot"] == []
+# and every project shares ONE semaphore of one, across the whole master
+[bipa_access] = locks["bipa-app/bipa/nix-build"]
+[ninja_access] = locks["nicolasauler/ninja/nix-build"]
+assert bipa_access.mode == "counting"
+assert bipa_access.lockid.maxCount == 1
+# identity, not equality: buildbot rejects a config where two locks share a
+# name but are different objects (config/master.py:948-950)
+assert bipa_access.lockid is ninja_access.lockid
+assert build_locks(max_concurrent_nix_builds=2)[
+    "bipa-app/bipa/nix-build"
+][0].lockid.maxCount == 2
 
 for invalid in (0, -1):
     try:
         WorkstationPolicyConfigurator(
             pr_authors=["nicolasauler"],
             build_pushes=False,
-            max_builds_per_worker=invalid,
+            max_concurrent_nix_builds=invalid,
         )
     except ValueError:
         pass
     else:
-        raise AssertionError("non-positive max_builds_per_worker must fail closed")
+        raise AssertionError("non-positive max_concurrent_nix_builds must fail closed")
+
+try:
+    WorkstationPolicyConfigurator(
+        pr_authors=["nicolasauler"], build_pushes=False, max_concurrent_nix_builds=1
+    ).configure(
+        {
+            "schedulers": [basic("bipa-app-bipa-prs", category="pull")],
+            "builders": [builder("bipa-app/bipa/nix-eval")],
+        }
+    )
+except RuntimeError:
+    pass
+else:
+    raise AssertionError("a renamed nix-build builder must fail closed")
+
+
+def bootstrap_locks(builders):
+    # A master with no registered projects: buildbot-nix still adds its reload
+    # builder unconditionally (buildbot_nix/__init__.py:188,
+    # github_projects.py:659), but no project builders exist yet. This is the
+    # state after a fresh deploy, a wiped github-project-cache, or the App
+    # losing access -- the configurator must not abort master.cfg, or the
+    # master can never come back to discover projects.
+    config = {
+        "schedulers": [],
+        "workers": [worker_plugin.Worker("desktop-000", "pass")],
+        "builders": builders,
+    }
+    WorkstationPolicyConfigurator(
+        pr_authors=["nicolasauler"], build_pushes=False, max_concurrent_nix_builds=1
+    ).configure(config)
+    return [configured.locks for configured in config["builders"]]
+
+
+assert bootstrap_locks([builder("reload-github-projects")]) == [[]]
+assert bootstrap_locks([]) == []
+
+
+# Deadlock guard. This is why the cap is a builder lock and not Worker.max_builds.
+#
+# buildbot-nix puts every builder of a project on the same worker list
+# (buildbot_nix/project_config.py:160-199), and a nix-eval build parks in its
+# BuildTrigger step until the nix-build builds it triggered have finished
+# (buildbot_nix/build_trigger.py:771), holding its slot the whole time. So the
+# worker must be able to run the eval build and the build it triggered at once.
+# Worker.canStartBuild counts busy builds across ALL builders
+# (buildbot worker/base.py:657-659) -- with max_builds=1 it never can.
+class BusyForBuilder:
+    def __init__(self, busy):
+        self.busy = busy
+
+    def isBusy(self):
+        return self.busy
+
+
+def admits_triggered_build(max_builds):
+    configured = worker_plugin.Worker("desktop-000", "pass")
+    configured.max_builds = max_builds
+    configured.locks = []
+    configured.workerforbuilders = {
+        # parked in BuildTrigger, waiting for the build below
+        "bipa-app/bipa/nix-eval": BusyForBuilder(True),
+        "bipa-app/bipa/nix-build": BusyForBuilder(False),
+    }
+    return configured.canStartBuild()
+
+
+assert not admits_triggered_build(1), "max_builds=1 deadlocks buildbot-nix fan-out"
+# raising the cap only moves the wall: max_builds=2 admits this build, but a
+# second open PR parks a second eval build and the wall is back. Nothing bounds
+# how many eval builds park, so no finite per-worker cap is safe.
+assert admits_triggered_build(2)
+assert admits_triggered_build(None), "uncapped workers must admit the triggered build"

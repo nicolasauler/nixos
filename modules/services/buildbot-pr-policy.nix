@@ -28,7 +28,7 @@ in {
         WorkstationPolicyConfigurator(
           pr_authors={"nicolasauler"},
           build_pushes=False,
-          max_builds_per_worker=1,
+          max_concurrent_nix_builds=1,
         )
       ''
     ];
