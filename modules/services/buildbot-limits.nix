@@ -67,6 +67,16 @@
   # bipa's flake is large enough for that to be the first thing to OOM.
   services.buildbot-nix.master.evalWorkerCount = 2;
 
+  # This host's policy. The module itself (buildbot-pr-policy.nix) only declares
+  # the options, so the fan-out VM test can exercise it with buildPushes = true
+  # (pull-based changes are push-category and would otherwise be filtered out).
+  services.workstationCiPolicy = {
+    enable = true;
+    prAuthors = ["nicolasauler"];
+    buildPushes = false;
+    maxConcurrentNixBuilds = 1;
+  };
+
   # CI's build parallelism, scoped to the worker ONLY — this is the knob that
   # bounds compilation without touching your own nix at all.
   #
