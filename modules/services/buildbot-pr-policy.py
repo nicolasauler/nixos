@@ -118,13 +118,14 @@ class WorkstationPolicyConfigurator(ConfiguratorBase):
         # Nothing bounds how many eval builds park at once -- one per open PR --
         # so no finite per-worker cap is safe.
         #
-        # A master lock is the mechanism buildbot provides for this. Builder
-        # locks are checked in Builder.canStartBuild (buildbot process/
-        # builder.py:359-367) *before* a worker is marked busy, so a build that
-        # cannot take the lock simply stays queued and consumes no slot. One
-        # build per (builder, worker) pair is already guaranteed by buildbot
-        # (process/builder.py:319-320), so this lock is what keeps the several
-        # projects on this master from compiling at the same time.
+        # A master lock is the mechanism buildbot provides for this. The
+        # distributor checks it in Builder.canStartBuild (process/builder.py:
+        # 359-367), but that check is advisory: two workers can pass before
+        # either build claims the lock. The second build then starts and waits
+        # in its locks_acquire step, consuming that (builder, worker) pair. The
+        # lock still bounds the Build flake attr steps themselves, which is the
+        # resource-heavy part. Worker.max_builds must remain uncapped so a
+        # parked eval and any lock waiter cannot block the child that may run.
         if self.max_concurrent_nix_builds is None:
             return
 

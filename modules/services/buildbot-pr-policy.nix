@@ -50,7 +50,6 @@
     if b
     then "True"
     else "False";
-  pyStrSet = xs: "{" + lib.concatMapStringsSep ", " (x: ''"${x}"'') xs + "}";
   pyOptInt = n:
     if n == null
     then "None"
@@ -93,8 +92,9 @@ in {
         This is deliberately NOT `Worker.max_builds`: a `nix-eval` build parks
         in its BuildTrigger step holding a worker slot until the `nix-build`
         builds it triggered finish, so capping slots deadlocks the fan-out.
-        Builder locks are evaluated before a slot is committed, so a
-        lock-blocked build waits without occupying one.
+        The master lock bounds the heavy build steps. Under simultaneous
+        dispatch a lock waiter may still occupy one `(builder, worker)` pair,
+        so worker-wide slots must remain uncapped.
       '';
     };
   };
@@ -115,7 +115,8 @@ in {
       configurators = lib.mkAfter [
         ''
           WorkstationPolicyConfigurator(
-            pr_authors=${pyStrSet cfg.prAuthors},
+            # JSON arrays are valid Python and escape quotes/backslashes.
+            pr_authors=${builtins.toJSON cfg.prAuthors},
             build_pushes=${pyBool cfg.buildPushes},
             max_concurrent_nix_builds=${pyOptInt cfg.maxConcurrentNixBuilds},
           )
