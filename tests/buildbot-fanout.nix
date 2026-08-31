@@ -1,39 +1,15 @@
-# End-to-end rehearsal of the thing that actually broke: a nix-eval build that
-# fans out to several nix-build children, on ONE worker, with the concurrency
-# lock in force.
-#
-# Why this test exists. The deadlock that killed PR #12 was found by review, and
-# is otherwise disproven only by unit assertions against a hand-built Worker
-# object with stubbed `workerforbuilders` — the same shape of evidence that let
-# the `Change.who` bug through. Here the real master schedules real builds:
-#   * if the cap were `Worker.max_builds` again, the parked parent would hold the
-#     only slot and its children could never start: this test would hang and fail
-#   * if the MasterLock were attached to the eval or gcroot builders instead of
-#     */nix-build, the parent could never reach its trigger step — same failure
-#   * the lock's effect is measured, not assumed: live builds are sampled once a
-#     second while the fan-out runs, and the peak is asserted
-#   * and the deadlock is disproven directly, by observing a parked eval build
-#     and one of its triggered children alive in the same sample
-#
-# GitHub is never contacted. buildbot-nix hardcodes a tokenised
-# https://git:<token>@github.com/... clone URL for GitHub projects
-# (github_projects.py:723), so a GitHub-backed project can never build offline;
-# a pull-based repository uses its configured url verbatim, which is what makes
-# this possible. Recipe adapted from buildbot-nix's own checks/poller.nix.
-#
-# Note buildPushes = true here: git-poller changes are push-category, so the
-# desktop's `buildPushes = false` would filter them out and nothing would build.
-# The author allowlist is therefore not what is under test — the lock and the
-# fan-out are. checks/buildbot-workstation covers the policy wiring.
+# End-to-end proof that the master lock, rather than Buildbot's per-pair worker
+# constraint, serialises fanned-out nix build commands. Two workers are required:
+# with one worker, the real nix-build builder has one WorkerForBuilder and peak 1
+# holds even without a lock. The locked node is compared with an unlocked control.
+# Active Build rows are not the metric either: simultaneous admission can start a
+# second build that waits in locks_acquire while consuming its builder/worker pair.
 {
   pkgs,
   inputs,
   ...
-}:
-pkgs.testers.runNixOSTest {
-  name = "buildbot-fanout";
-
-  nodes.machine = {
+}: let
+  node = maxConcurrentNixBuilds: {
     config,
     lib,
     pkgs,
@@ -44,6 +20,7 @@ pkgs.testers.runNixOSTest {
       inputs.certus-infra.inputs.buildbot-nix.nixosModules.buildbot-worker
       ../modules/services/buildbot-pr-policy.nix
     ];
+
     virtualisation = {
       memorySize = 6144;
       cores = 4;
@@ -60,13 +37,12 @@ pkgs.testers.runNixOSTest {
       admins = ["admin"];
       workersFile = pkgs.writeText "workers.json" ''
         [
-          { "name": "local-worker", "pass": "test-password", "cores": 1 }
+          { "name": "local-worker", "pass": "test-password", "cores": 2 }
         ]
       '';
       pullBased = {
         pollInterval = 5;
         repositories.test-flake = {
-          # a plain local path: git fetches it directly, no ssh setup needed
           url = "/srv/repos/test-flake.git";
           defaultBranch = "master";
         };
@@ -76,41 +52,48 @@ pkgs.testers.runNixOSTest {
     services.buildbot-nix.worker = {
       enable = true;
       name = "local-worker";
-      workers = 1;
+      workers = 2;
       workerPasswordFile = pkgs.writeText "worker-password" "test-password";
     };
 
-    # The policy under test. One nix build at a time, across all projects.
     services.workstationCiPolicy = {
       enable = true;
       prAuthors = ["nobody"];
       buildPushes = true;
-      maxConcurrentNixBuilds = 1;
+      inherit maxConcurrentNixBuilds;
     };
 
-    # the CI-scoped nix cap, as the desktop applies it
     systemd.services.buildbot-worker.environment.NIX_CONFIG = ''
       cores = 1
       max-jobs = 1
     '';
 
     environment.systemPackages = with pkgs; [curl jq git];
-
-    # The fixture repo is created by root but cloned by the buildbot-worker
-    # user, and git refuses to touch a repository owned by someone else
-    # ("detected dubious ownership") — the clone exits 128 in ~30ms and the
-    # eval build fails before it ever evaluates the flake.
     programs.git = {
       enable = true;
       config.safe.directory = "*";
     };
 
-    # Samples the live-build list once a second so the lock's effect can be
-    # measured after the fan-out finishes.
     environment.etc."fanout-probe.sh".source = pkgs.writeShellScript "fanout-probe" ''
       while true; do
-        ${pkgs.curl}/bin/curl -sf localhost:8010/api/v2/builds?complete=false \
-          | ${pkgs.jq}/bin/jq -c '[.builds[].builderid]' >> /tmp/live.jsonl 2>/dev/null || true
+        live=$(
+          ${pkgs.curl}/bin/curl -sf localhost:8010/api/v2/builds?complete=false \
+            | ${pkgs.jq}/bin/jq -c '[.builds[] | {buildid, builderid}]'
+        ) || live='[]'
+        commands=0
+        while read -r buildid; do
+          if ${pkgs.curl}/bin/curl -sf \
+            "localhost:8010/api/v2/builds/$buildid/steps" \
+            | ${pkgs.jq}/bin/jq -e \
+              'any(.steps[]; .name == "Build flake attr" and .started_at != null and .complete == false)' \
+              >/dev/null; then
+            commands=$((commands + 1))
+          fi
+        done < <(printf '%s' "$live" | ${pkgs.jq}/bin/jq -r '.[].buildid')
+        ${pkgs.jq}/bin/jq -nc \
+          --argjson builds "$live" \
+          --argjson commands "$commands" \
+          '{builds: $builds, commands: $commands}' >> /tmp/live.jsonl
         ${pkgs.coreutils}/bin/sleep 1
       done
     '';
@@ -138,8 +121,6 @@ pkgs.testers.runNixOSTest {
         git config user.email 'test@example.com'
 
         system=$(nix config show system)
-        # Three checks that each take long enough to overlap if the lock let
-        # them. No nixpkgs dependency: /bin/sh always exists in the sandbox.
         cat > flake.nix << EOF
         {
           outputs = { self }: {
@@ -171,121 +152,143 @@ pkgs.testers.runNixOSTest {
         git commit -m 'fan-out fixture'
         git remote add origin /srv/repos/test-flake.git
         git push -u origin master
-
-        # the eval step clones this as the buildbot-worker user
         chmod -R a+rX /srv/repos
       '';
     };
   };
+in
+  pkgs.testers.runNixOSTest {
+    name = "buildbot-fanout";
+    nodes = {
+      locked = node 1;
+      unlocked = node null;
+    };
 
-  testScript = ''
-    import json
+    testScript = ''
+      import json
 
-    machine.wait_for_unit("setup-git-repo.service")
-    machine.wait_for_unit("buildbot-master.service")
-    machine.wait_for_open_port(8010)
-    machine.wait_for_unit("buildbot-worker.service")
+      def api(machine, path):
+          return json.loads(machine.succeed(f"curl -sf 'localhost:8010/api/v2/{path}'"))
 
-    def api(path):
-        return json.loads(machine.succeed(f"curl -sf 'localhost:8010/api/v2/{path}'"))
+      def run_fanout(machine):
+          machine.wait_for_unit("setup-git-repo.service")
+          machine.wait_for_unit("buildbot-master.service")
+          machine.wait_for_open_port(8010)
+          machine.wait_for_unit("buildbot-worker.service")
 
-    # sample live builds for the whole run, so concurrency can be measured
-    machine.succeed("systemd-run --unit=fanout-probe --collect /etc/fanout-probe.sh")
+          machine.wait_until_succeeds(
+              "curl -sf localhost:8010/api/v2/projects | grep -q test-flake", timeout=180
+          )
+          machine.wait_until_succeeds(
+              "curl -sf localhost:8010/api/v2/builders | grep -q nix-build", timeout=180
+          )
+          machine.wait_until_succeeds(
+              "curl -sf localhost:8010/api/v2/workers | grep -q local-worker-001", timeout=180
+          )
 
-    with subtest("the pull-based project registers and the poller sees the commit"):
-        machine.wait_until_succeeds(
-            "curl -sf localhost:8010/api/v2/projects | grep -q test-flake", timeout=180
-        )
-        machine.wait_until_succeeds(
-            "curl -sf localhost:8010/api/v2/builders | grep -q nix-build", timeout=180
-        )
+          names = {b["builderid"]: b["name"] for b in api(machine, "builders")["builders"]}
+          assert any(name.endswith("/nix-build") for name in names.values()), names
+          assert any(name.endswith("/nix-eval") for name in names.values()), names
 
-    names = {b["builderid"]: b["name"] for b in api("builders")["builders"]}
-    assert any(n.endswith("/nix-build") for n in names.values()), names
-    assert any(n.endswith("/nix-eval") for n in names.values()), names
+          machine.succeed(
+              "systemd-run --unit=fanout-probe --collect /etc/fanout-probe.sh"
+          )
+          machine.succeed(
+              "cd /tmp/test-flake && env HOME=/root git commit -q --allow-empty "
+              "-m 'trigger the fan-out' && env HOME=/root git push -q origin master"
+          )
 
-    with subtest("a new commit reaches the poller"):
-        # A git poller records the head it first sees without building it, so the
-        # fixture commit alone triggers nothing — push a second one, as
-        # buildbot-nix's own checks/poller.nix does.
-        machine.succeed(
-            "cd /tmp/test-flake && env HOME=/root git commit -q --allow-empty "
-            "-m 'trigger the fan-out' && env HOME=/root git push -q origin master"
-        )
+          machine.wait_until_succeeds(
+              "curl -sf 'localhost:8010/api/v2/builds?complete=true&limit=100' "
+              "| jq -e '[.builds[]] | length >= 4'",
+              timeout=900,
+          )
+          machine.wait_until_succeeds(
+              "curl -sf 'localhost:8010/api/v2/builds?complete=false' "
+              "| jq -e '.builds | length == 0'",
+              timeout=300,
+          )
+          machine.succeed("systemctl stop fanout-probe.service || true")
 
-    # THE ASSERTION THIS TEST EXISTS FOR: the fan-out must complete on one
-    # worker. A per-worker cap, or a lock on the wrong builder, hangs here.
-    with subtest("the fan-out completes on a single worker (no deadlock)"):
-        # wait for the work to APPEAR and then finish; waiting only for an empty
-        # live list passes instantly before anything has started
-        machine.wait_until_succeeds(
-            "curl -sf 'localhost:8010/api/v2/builds?complete=true&limit=100' "
-            "| jq -e '[.builds[]] | length >= 4'",
-            timeout=900,
-        )
-        machine.wait_until_succeeds(
-            "curl -sf 'localhost:8010/api/v2/builds?complete=false' | jq -e '.builds | length == 0'",
-            timeout=300,
-        )
+          names = {b["builderid"]: b["name"] for b in api(machine, "builders")["builders"]}
+          attr_ids = {builder_id for builder_id, name in names.items() if "#" in name}
+          eval_ids = {
+              builder_id
+              for builder_id, name in names.items()
+              if name.endswith("/nix-eval")
+          }
 
-        # Re-read the builder list: the fanned-out builds are recorded against
-        # VIRTUAL builders that only exist once the trigger runs. buildbot-nix
-        # sets virtual_builder_name = "<ref>:<project>#<attr_prefix>.<attr>"
-        # (build_trigger.py:199), so the request is scheduled on the real
-        # */nix-build builder — which is where the lock lives — while the build
-        # itself appears under the per-attribute name. Classifying on the real
-        # builder alone finds nothing.
-        names = {b["builderid"]: b["name"] for b in api("builders")["builders"]}
-        attr_ids = {i for i, n in names.items() if "#" in n}
-        eval_ids = {i for i, n in names.items() if n.endswith("/nix-eval")}
+          builds = api(machine, "builds?complete=true&limit=100")["builds"]
+          by_name = {}
+          for build in builds:
+              by_name.setdefault(names.get(build["builderid"], "?"), []).append(
+                  build["results"]
+              )
 
-        builds = api("builds?complete=true&limit=100")["builds"]
-        by_name = {}
-        for b in builds:
-            by_name.setdefault(names.get(b["builderid"], "?"), []).append(b["results"])
+          fanned = [
+              result
+              for name, results in by_name.items()
+              if "#" in name
+              for result in results
+          ]
+          nix_eval = [
+              result
+              for name, results in by_name.items()
+              if name.endswith("/nix-eval")
+              for result in results
+          ]
+          assert len(fanned) >= 3, f"expected 3 fanned-out builds, got {by_name}"
+          assert all(result == 0 for result in fanned), by_name
+          assert nix_eval and all(result in (0, 1) for result in nix_eval), by_name
 
-        fanned = [r for n, rs in by_name.items() if "#" in n for r in rs]
-        nix_eval = [r for n, rs in by_name.items() if n.endswith("/nix-eval") for r in rs]
+          samples = [
+              json.loads(line)
+              for line in machine.succeed("cat /tmp/live.jsonl").splitlines()
+              if line.strip()
+          ]
+          active_peaks = [
+              len(
+                  [
+                      build
+                      for build in sample["builds"]
+                      if build["builderid"] in attr_ids
+                  ]
+              )
+              for sample in samples
+          ]
+          active_peak = max(active_peaks, default=0)
+          command_peak = max((sample["commands"] for sample in samples), default=0)
+          assert active_peak >= 1, (
+              f"never observed a fanned-out build in {len(samples)} samples"
+          )
+          assert command_peak >= 1, (
+              f"never observed a running Build flake attr step in {len(samples)} samples"
+          )
 
-        assert len(fanned) >= 3, f"expected 3 fanned-out builds, got {by_name}"
-        # 0 = SUCCESS, 1 = WARNINGS, 2 = FAILURE, 4 = RETRY
-        assert all(r == 0 for r in fanned), f"a fanned-out build did not succeed: {by_name}"
-        # The eval build is allowed to WARN: its "Evaluate scheduled effects"
-        # step shells out to `buildbot-effects list-schedules`, which exits 1 on
-        # a flake with no herculesCI output. That step is warnOnFailure, and the
-        # fixture deliberately stays minimal rather than growing an effects
-        # output just to keep it quiet. A real failure (2) still fails the test.
-        assert nix_eval and all(r in (0, 1) for r in nix_eval), f"eval did not pass: {by_name}"
+          coexisted = any(
+              any(build["builderid"] in eval_ids for build in sample["builds"])
+              and any(build["builderid"] in attr_ids for build in sample["builds"])
+              for sample in samples
+          )
+          assert coexisted, "never observed the parked eval beside a triggered child"
+          return active_peak, command_peak
 
-    machine.succeed("systemctl stop fanout-probe.service || true")
+      with subtest("two workers remain serialised by maxConcurrentNixBuilds=1"):
+          locked_active, locked_commands = run_fanout(locked)
+          assert locked_commands == 1, (
+              f"counting lock admitted {locked_commands} running build commands"
+          )
+          assert locked_active >= 2, (
+              "the locked case never exposed an active lock waiter; it does not "
+              "demonstrate why counting Build rows is the wrong metric"
+          )
+      locked.shutdown()
 
-    samples = [
-        json.loads(line)
-        for line in machine.succeed("cat /tmp/live.jsonl").splitlines()
-        if line.strip()
-    ]
-
-    with subtest("the lock actually bounded concurrent nix builds"):
-        peaks = [len([i for i in s if i in attr_ids]) for s in samples]
-        peak = max(peaks, default=0)
-        assert peak >= 1, f"never observed a running fanned-out build in {len(samples)} samples"
-        assert peak <= 1, (
-            f"maxConcurrentNixBuilds=1 exceeded: observed {peak} concurrent "
-            "fanned-out builds, so the master lock on */nix-build does not reach "
-            "the virtual builders the children actually run under"
-        )
-
-    with subtest("the parked eval and its triggered child were alive together"):
-        # the direct disproof of the max_builds deadlock: with ONE worker, the
-        # parent parks in BuildTrigger while a child it triggered runs
-        coexisted = any(
-            any(i in eval_ids for i in s) and any(i in attr_ids for i in s)
-            for s in samples
-        )
-        assert coexisted, (
-            "never saw a parked eval build and a triggered child in the same "
-            f"sample across {len(samples)} samples; the fan-out may have "
-            "serialised for the wrong reason"
-        )
-  '';
-}
+      with subtest("without the lock the same two workers overlap build commands"):
+          _, unlocked_commands = run_fanout(unlocked)
+          assert unlocked_commands >= 2, (
+              f"control peaked at {unlocked_commands}; the experiment does not "
+              "distinguish the master lock from Buildbot's per-pair constraint"
+          )
+    '';
+  }
