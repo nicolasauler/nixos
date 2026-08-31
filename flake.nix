@@ -58,6 +58,9 @@
       buildbot-workstation = import ./tests/buildbot-workstation.nix {
         inherit pkgs inputs;
       };
+      buildbot-fanout = import ./tests/buildbot-fanout.nix {
+        inherit pkgs inputs;
+      };
     };
 
     nixosConfigurations = {
