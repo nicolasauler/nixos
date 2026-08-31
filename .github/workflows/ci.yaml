@@ -83,6 +83,18 @@ jobs:
       #     green today while warning `hardware.opengl.enable` ->
       #     `hardware.graphics.enable`. That rot class survives until the alias
       #     is dropped upstream.
+      #   - A freeform systemd key is SILENTLY DROPPED. Measured: `AlowedCPUs`
+      #     for `AllowedCPUs` in precision's serviceConfig evaluates green, and
+      #     the agent just loses its E-core pinning with no error anywhere, ever.
+      #     Option NAMES are checked (`customrId` fails eval); keys inside a
+      #     freeform attrset are not.
+      #   - A fixed-output derivation is opaque until built, so `requireFile`
+      #     mistakes split two ways. Measured: a misspelled argument
+      #     (`hsah`) and a malformed SRI both FAIL eval here — but a wrong
+      #     `name`, or a well-formed-but-wrong `hash`, evaluate GREEN and only
+      #     fail when the host is really built. So this job validates the shape
+      #     of precision's sentinelone block, not the identity of the artifact it
+      #     pins.
       #   - Eval does not run build-time check derivations, so a host can be
       #     green here and still fail to build. Demonstrated: adding a bogus
       #     `services.postgresql.settings` key leaves this step green (exit 0)
@@ -112,7 +124,8 @@ jobs:
       #               for its buildbot half, by checks.buildbot-workstation.
       #               Public CI would need a deploy key; we are not doing that.
       #
-      # precision IS evaluated, fully — including its SentinelOne agent. Its
+      # precision IS evaluated, including its SentinelOne agent — structurally, per
+      # the limits above (the pinned artifact's identity is not checked here). Its
       # proprietary .deb comes from `pkgs.requireFile`, a fixed-output derivation
       # keyed on name + hash, so the host evaluates purely here and the .deb never
       # has to exist on a runner; only a real BUILD needs the file, and that fails
