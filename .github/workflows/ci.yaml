@@ -84,13 +84,26 @@ jobs:
       #     `hardware.graphics.enable`. That rot class survives until the alias
       #     is dropped upstream.
       #   - Eval does not run build-time check derivations, so a host can be
-      #     green here and still fail to build. Measured: a bogus
-      #     `services.postgresql.settings` key evaluates fine and only fails when
-      #     postgresql-configfile-check is built. That is what the second step
-      #     below closes — `system.checks` builds exactly those check drvs (a few
-      #     seconds) without building the ~24-92 other local drvs per host.
+      #     green here and still fail to build. Demonstrated: adding a bogus
+      #     `services.postgresql.settings` key leaves this step green (exit 0)
+      #     and only fails when postgresql-configfile-check is built, with
+      #     `unrecognized configuration parameter`.
       #
-      # No KVM needed, so neither step is subject to the runner KVM lottery the
+      #     I tried to close that here by realising each host's `system.checks`
+      #     and REVERTED it, because the cost is not what it looks like. Warm it
+      #     takes 9s; cold on a hosted runner it spent 17 minutes compiling
+      #     Hyprland from source and hit the 20-minute timeout (run
+      #     33432543307). `ensure-all-wrappers-paths-exist` depends on every
+      #     wrapped program, so realising it drags in ~2870 derivations, and
+      #     notebook's Hyprland is not in the binary cache. This belongs on a
+      #     runner with a warm store, not here. The reproducer, if you want it:
+      #       nix eval --json ".#nixosConfigurations.$h.config.system.checks" \
+      #         --apply 'cs: map (c: c.drvPath) cs' | jq -r '.[]' \
+      #         | xargs -r nix-store --realise
+      #     (note `system.checks` is a LIST, so plain `nix build` on that
+      #     attribute path is rejected with "found a list".)
+      #
+      # No KVM needed, so this job is not subject to the runner KVM lottery the
       # VM check depends on.
       #
       # NOT evaluated here, deliberately:
@@ -113,22 +126,5 @@ jobs:
             echo "::group::$host"
             nix eval --raw ".#nixosConfigurations.$host.config.system.build.toplevel.drvPath"
             echo
-            echo "::endgroup::"
-          done
-
-      # `system.checks` is a LIST of derivations, so `nix build` on that attribute
-      # path is rejected ("found a list"). Realise each element's drvPath instead.
-      # Measured: ~9s for all three hosts warm, and it catches what eval cannot —
-      # a bogus services.postgresql.settings key evaluates green above and fails
-      # here with `unrecognized configuration parameter`.
-      - name: Build each host's assertion/config checks
-        run: |
-          set -euo pipefail
-          for host in notebook xpsbipa precision; do
-            echo "::group::$host"
-            nix eval --json ".#nixosConfigurations.$host.config.system.checks" \
-              --apply 'cs: map (c: c.drvPath) cs' \
-              | jq -r '.[]' \
-              | xargs -r nix-store --realise
             echo "::endgroup::"
           done
