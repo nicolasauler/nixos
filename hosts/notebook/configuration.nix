@@ -83,9 +83,9 @@
   environment.systemPackages = with pkgs; [
     alacritty
     bat
-    du-dust
+    dust
     eza
-    firefox-wayland
+    firefox
     fzf
     git
     grim

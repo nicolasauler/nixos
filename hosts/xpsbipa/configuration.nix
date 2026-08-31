@@ -87,8 +87,8 @@
   # $ nix search wget
   environment.systemPackages = with pkgs; [
     bat
-    du-dust
-    firefox-wayland
+    dust
+    firefox
     fzf
     grim
     htop
