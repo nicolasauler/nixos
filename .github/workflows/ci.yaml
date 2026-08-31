@@ -72,12 +72,25 @@ jobs:
             accept-flake-config = true
 
       # Evaluating a host's toplevel catches the breakage that actually happens
-      # to this repo: nixpkgs renames and moved/deleted module paths. Both hosts
-      # below had rotted silently — notebook imported two modules that no longer
-      # existed at those paths, and both carried `du-dust` and `firefox-wayland`
-      # after upstream renamed them. Nothing built them, so nothing complained.
+      # to this repo: module paths that moved or vanished, and nixpkgs attributes
+      # that were REMOVED or renamed without an alias. Both hosts below had
+      # rotted silently — notebook imported two modules that no longer existed at
+      # those paths, and both carried `du-dust` and `firefox-wayland` after
+      # upstream renamed them. Nothing built them, so nothing complained.
       #
-      # No KVM needed, so this job is not subject to the runner KVM lottery the
+      # Know the limits of eval, because this is a required check:
+      #   - A rename that leaves an ALIAS only warns, and exits 0. notebook is
+      #     green today while warning `hardware.opengl.enable` ->
+      #     `hardware.graphics.enable`. That rot class survives until the alias
+      #     is dropped upstream.
+      #   - Eval does not run build-time check derivations, so a host can be
+      #     green here and still fail to build. Measured: a bogus
+      #     `services.postgresql.settings` key evaluates fine and only fails when
+      #     postgresql-configfile-check is built. That is what the second step
+      #     below closes — `system.checks` builds exactly those check drvs (a few
+      #     seconds) without building the ~24-92 other local drvs per host.
+      #
+      # No KVM needed, so neither step is subject to the runner KVM lottery the
       # VM check depends on.
       #
       # NOT evaluated here, deliberately:
@@ -86,11 +99,13 @@ jobs:
       #               for its buildbot half, by checks.buildbot-workstation.
       #               Public CI would need a deploy key; we are not doing that.
       #
-      # precision IS evaluated, but with its SentinelOne agent unconfigured: the
-      # proprietary .deb and the management token are absolute local paths that
-      # pure evaluation forbids, so hosts/precision/configuration.nix takes both
-      # from the environment (unset here => agent off). CI therefore checks the
-      # rest of that host and explicitly NOT its sentinelone block.
+      # precision IS evaluated, with its SentinelOne agent unconfigured: the
+      # proprietary .deb is an absolute local path that pure evaluation forbids,
+      # so hosts/precision/configuration.nix takes it from the environment (unset
+      # here => agent off). The blind spot is narrower than "not validated": the
+      # module system checks option NAMES even under `mkIf false`, so an upstream
+      # sentinelone option rename still fails here. Only its option VALUES go
+      # unchecked.
       - name: Evaluate CI-able hosts
         run: |
           set -euo pipefail
@@ -98,5 +113,22 @@ jobs:
             echo "::group::$host"
             nix eval --raw ".#nixosConfigurations.$host.config.system.build.toplevel.drvPath"
             echo
+            echo "::endgroup::"
+          done
+
+      # `system.checks` is a LIST of derivations, so `nix build` on that attribute
+      # path is rejected ("found a list"). Realise each element's drvPath instead.
+      # Measured: ~9s for all three hosts warm, and it catches what eval cannot —
+      # a bogus services.postgresql.settings key evaluates green above and fails
+      # here with `unrecognized configuration parameter`.
+      - name: Build each host's assertion/config checks
+        run: |
+          set -euo pipefail
+          for host in notebook xpsbipa precision; do
+            echo "::group::$host"
+            nix eval --json ".#nixosConfigurations.$host.config.system.checks" \
+              --apply 'cs: map (c: c.drvPath) cs' \
+              | jq -r '.[]' \
+              | xargs -r nix-store --realise
             echo "::endgroup::"
           done

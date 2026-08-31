@@ -8,30 +8,61 @@
   lib,
   ...
 }: let
-  # SentinelOne's agent cannot be referenced by absolute path in a flake: pure
-  # evaluation forbids it, which made this host the only one CI could not check
-  # at all. The .deb also cannot be vendored here — it is proprietary EDR under
-  # a customer agreement, nixpkgs does not carry it, and the community flake
-  # only works by fetching it from a third-party mirror. So both local paths come
-  # from the environment instead.
+  # SentinelOne's agent cannot be referenced by an absolute path in a flake:
+  # pure evaluation forbids it, and that is what made precision the only host
+  # CI could not evaluate at all.
   #
-  # Unset (CI, and any pure evaluation): the agent is simply not configured, and
-  # the other ~300 lines of this host are checked. Note that CI therefore does
-  # NOT validate the sentinelone block.
+  # The .deb is not vendored here. The dispositive reason is the customer
+  # agreement: it licenses us to USE the agent, not to redistribute it. (nixpkgs
+  # does not package it, and the community flake's package.nix carries no `meta`
+  # at all — but note this host overrides `src` below, so it never actually
+  # fetches from that flake's third-party mirror.)
   #
-  # On the machine, pass them — this host is already switched with --impure:
+  # So the .deb path comes from the environment. Unset — CI, and any pure
+  # evaluation — the agent is not configured and the rest of this host is still
+  # checked. `builtins.getEnv` returns "" under pure evaluation rather than
+  # failing, which is what makes that work in both directions; the flake eval
+  # cache keys the two modes separately, so a pure consumer is never served an
+  # impure result.
+  #
+  # CI's blindness here is narrower than it looks: the module system's
+  # checkUnmatched runs even under `mkIf false`, so an upstream option RENAME
+  # inside the gated block still fails CI. Only the option VALUES go unchecked.
+  #
+  # On the machine — this host is switched with --impure anyway:
   #   SENTINELONE_DEB=/home/nic/bipa/SentinelAgent_linux_x86_64_v25_2_1_20.deb \
-  #   SENTINELONE_TOKEN=/home/nic/bipa/sentinel_one_token \
   #     nh os switch -a -- --impure
   #
-  # `builtins.getEnv` returns "" under pure evaluation rather than failing, which
-  # is what makes this work in both directions. The token belongs in the secret
-  # manager once agenix lands; this is a purity fix, not a secrets fix.
-  sentinelOneDeb = let p = builtins.getEnv "SENTINELONE_DEB"; in
-    if p == "" then null else /. + p;
-  sentinelOneToken = let p = builtins.getEnv "SENTINELONE_TOKEN"; in
-    if p == "" then null else /. + p;
-  sentinelOneEnabled = sentinelOneDeb != null && sentinelOneToken != null;
+  # `nh` is safe: it evaluates unelevated as the invoking user and refuses to run
+  # as root. Do NOT substitute `sudo nixos-rebuild ... --impure` — sudo's
+  # env_reset drops SENTINELONE_DEB (this host keeps only NIXOS_NO_CHECK and
+  # TERMINFO* in env_keep) and the agent would be silently omitted.
+  sentinelOneDeb = let
+    p = builtins.getEnv "SENTINELONE_DEB";
+  in
+    if p == ""
+    then null
+    else if lib.hasPrefix "/" p
+    then /. + p
+    # `/. + "foo"` silently becomes `/foo`, and the failure would otherwise
+    # surface much later as `path '/foo' does not exist` from inside the
+    # sentinelone module, naming neither the variable nor the real mistake.
+    else throw "SENTINELONE_DEB must be an absolute path, got: ${p}";
+
+  # Deliberately a STRING, not a Nix path. `types.path` accepts an absolute
+  # string and interpolates it literally; a path VALUE is copied into the Nix
+  # store, where every uid on this machine can read it — which is what was
+  # happening to this token. Upstream's README prescribes the string form for
+  # exactly this reason. It also means the token needs no environment variable
+  # and no impurity at all.
+  #
+  # This is an exposure fix, not secret management: the token still sits in a
+  # plaintext file, and the upstream module additionally writes it to
+  # /var/lib/sentinelone/configuration/install_config and chmod -R 0755's it,
+  # which no change here can prevent. agenix will not fix that either.
+  sentinelOneToken = "/home/nic/bipa/sentinel_one_token";
+
+  sentinelOneEnabled = sentinelOneDeb != null;
 in {
   imports = [
     # Include the results of the hardware scan.
@@ -173,24 +204,33 @@ in {
   # of having it. The module leaves all of this unbounded (TasksMax = infinity, no CPU
   # or memory ceiling). Sized from measured usage: ~300 MB peak, ~73 threads, ~12% of
   # one core average with scan spikes.
-  # Also gated: with the agent unconfigured there is no unit to constrain, and
-  # defining serviceConfig for a non-existent unit would synthesise one.
-  systemd.services.sentinelone.serviceConfig = lib.mkIf sentinelOneEnabled {
-    # Pin it to the E-cores (12-21 on this Meteor Lake), so it stays off the P-cores
-    # you actually work on. Widen this if scans feel slow.
-    AllowedCPUs = "12-21";
-    # Yield to foreground work under contention (default weight is 100).
-    CPUWeight = 20;
-    # Hard cap on runaway. Generous (2 cores) so it never starves past the 30s
-    # watchdog and flaps.
-    CPUQuota = "200%";
-    # Soft throttle above the observed peak; hard ceiling at ~3x so it never OOM-flaps.
-    MemoryHigh = "512M";
-    MemoryMax = "1G";
-    # Deprioritise its disk IO against yours.
-    IOWeight = 20;
-    # Module sets infinity; it uses ~73, so this is 7x headroom, not a squeeze.
-    TasksMax = lib.mkForce 512;
+  # The `mkIf` sits on `systemd.services`, NOT on
+  # `systemd.services.sentinelone.serviceConfig`. That distinction is load-bearing:
+  # `systemd.services` is an `attrsOf` submodule, so naming the `sentinelone`
+  # element at all instantiates it, and `serviceConfig = mkIf false {…}` would
+  # leave the element defined and NixOS would render a unit from submodule
+  # defaults — a stray, ExecStart-less `sentinelone.service`, in the closure of
+  # every vars-unset system including the one CI validates. Gating one level up
+  # makes the element itself conditional. Verified: pure eval yields no sentinel
+  # units, and the impure system derivation is bit-identical either way.
+  systemd.services = lib.mkIf sentinelOneEnabled {
+    sentinelone.serviceConfig = {
+      # Pin it to the E-cores (12-21 on this Meteor Lake), so it stays off the P-cores
+      # you actually work on. Widen this if scans feel slow.
+      AllowedCPUs = "12-21";
+      # Yield to foreground work under contention (default weight is 100).
+      CPUWeight = 20;
+      # Hard cap on runaway. Generous (2 cores) so it never starves past the 30s
+      # watchdog and flaps.
+      CPUQuota = "200%";
+      # Soft throttle above the observed peak; hard ceiling at ~3x so it never OOM-flaps.
+      MemoryHigh = "512M";
+      MemoryMax = "1G";
+      # Deprioritise its disk IO against yours.
+      IOWeight = 20;
+      # Module sets infinity; it uses ~73, so this is 7x headroom, not a squeeze.
+      TasksMax = lib.mkForce 512;
+    };
   };
 
   # Enable the OpenSSH daemon.
