@@ -30,6 +30,7 @@ pkgs.testers.runNixOSTest {
     imports = [
       inputs.certus-infra.nixosModules.buildbot
       ../modules/services/buildbot-limits.nix
+      ../modules/services/nix-daemon-ci.nix
       ../modules/services/buildbot-pr-policy.nix
     ];
 
@@ -127,6 +128,74 @@ pkgs.testers.runNixOSTest {
         assert high == "infinity", f"MemoryHigh set on nix-daemon: {high}"
         nice = machine.succeed("systemctl show nix-daemon.service -p Nice --value").strip()
         assert nice == "0", f"Nice set on nix-daemon: {nice}"
+
+    with subtest("the CI daemon carries the limits instead, and only it"):
+        machine.wait_for_unit("nix-daemon-ci.socket")
+        for prop, expected in [
+            # systemd normalises sizes to bytes
+            ("MemoryHigh", str(12 * 1024**3)),
+            ("Nice", "19"),
+        ]:
+            got = machine.succeed(
+                f"systemctl show nix-daemon-ci.service -p {prop} --value"
+            ).strip()
+            assert got == expected, f"CI daemon {prop}={got}, expected {expected}"
+        # the setting the untrusted client provably cannot set for itself
+        env = machine.succeed("systemctl show nix-daemon-ci.service -p Environment --value")
+        assert "max-substitution-jobs = 4" in env, f"CI daemon env missing the cap: {env}"
+        # and the socket is reachable only by CI's group
+        mode = machine.succeed("stat -c '%a %G' /run/nix-daemon-ci/socket").strip()
+        assert mode == "660 buildbot-worker", f"unexpected socket mode/group: {mode}"
+
+    with subtest("CI builds run in the CI daemon's cgroup, not the system one"):
+        # This is the whole point of the second daemon, so prove it at the
+        # cgroup level rather than by inference. Note a daemon does NOT log the
+        # builds it performs to its journal — daemon.cc tunnels build output to
+        # the client — so the observable is cgroup membership: the daemon forks
+        # the builder, so builder processes live in the daemon's subtree.
+        # The CI daemon is socket-activated, so before the first connection its
+        # cgroup does not exist at all — that is the cleanest possible baseline.
+        def cg_procs(unit):
+            out = machine.succeed(
+                f"( find /sys/fs/cgroup/system.slice/{unit} -name cgroup.procs "
+                "-exec cat {} + 2>/dev/null || true ) | wc -l"
+            )
+            return int(out.strip())
+
+        base_ci = cg_procs("nix-daemon-ci.service")
+        base_sys = cg_procs("nix-daemon.service")
+
+        routing_probe = (
+            'derivation { name = "ci-daemon-routing-probe"; system = "x86_64-linux"; '
+            'builder = "/bin/sh"; args = [ "-c" "sleep 8; echo routed > $out" ]; }'
+        )
+        machine.succeed(
+            "systemd-run --unit=ci-probe-build --collect --uid=buildbot-worker "
+            "--setenv=HOME=/tmp --setenv=NIX_REMOTE=unix:///run/nix-daemon-ci/socket "
+            "/run/current-system/sw/bin/nix build --no-link --extra-experimental-features "
+            f"nix-command --expr '{routing_probe}'"
+        )
+
+        peak_ci, peak_sys = base_ci, base_sys
+        for _ in range(30):
+            peak_ci = max(peak_ci, cg_procs("nix-daemon-ci.service"))
+            peak_sys = max(peak_sys, cg_procs("nix-daemon.service"))
+            if peak_ci > base_ci:
+                break
+            machine.succeed("sleep 1")
+
+        machine.wait_until_fails("systemctl is-active ci-probe-build.service", timeout=120)
+
+        assert peak_ci > base_ci, (
+            f"no processes appeared in the CI daemon's cgroup (base {base_ci}, "
+            f"peak {peak_ci}) — the build was not served by it"
+        )
+        assert peak_sys == base_sys, (
+            f"the system daemon's cgroup grew ({base_sys} -> {peak_sys}), so CI "
+            "work is still landing in the daemon that serves interactive builds"
+        )
+        # and the build really did happen
+        machine.succeed("journalctl -u ci-probe-build --no-pager | grep -qv 'error'")
 
     with subtest("the worker cgroup limits still apply to the eval step"):
         quota = machine.succeed("systemctl show buildbot-worker.service -p CPUQuotaPerSecUSec --value").strip()
