@@ -112,13 +112,13 @@ jobs:
       #               for its buildbot half, by checks.buildbot-workstation.
       #               Public CI would need a deploy key; we are not doing that.
       #
-      # precision IS evaluated, with its SentinelOne agent unconfigured: the
-      # proprietary .deb is an absolute local path that pure evaluation forbids,
-      # so hosts/precision/configuration.nix takes it from the environment (unset
-      # here => agent off). The blind spot is narrower than "not validated": the
-      # module system checks option NAMES even under `mkIf false`, so an upstream
-      # sentinelone option rename still fails here. Only its option VALUES go
-      # unchecked.
+      # precision IS evaluated, fully — including its SentinelOne agent. Its
+      # proprietary .deb comes from `pkgs.requireFile`, a fixed-output derivation
+      # keyed on name + hash, so the host evaluates purely here and the .deb never
+      # has to exist on a runner; only a real BUILD needs the file, and that fails
+      # loudly with instructions if it is missing. An earlier version took the
+      # path from an environment variable, which made the agent's absence the
+      # silent default and left this job unable to check that block at all.
       - name: Evaluate CI-able hosts
         run: |
           set -euo pipefail
