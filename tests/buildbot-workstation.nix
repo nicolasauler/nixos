@@ -46,6 +46,13 @@ pkgs.testers.runNixOSTest {
     networking.firewall.enable = lib.mkForce false;
 
     # the desktop enables these; the node needs them for `nix config show`
+
+    # buildbot-limits.nix sets min-free = 20GiB, which exceeds this VM's whole
+    # 8 GB disk, so nix runs a full auto-GC before every build ("running auto-GC
+    # to free 62370164736 bytes") and deletes the outputs earlier subtests just
+    # produced. Scope it down here; the value itself is a real question for the
+    # desktop, not something this test should assert.
+    nix.settings.min-free = lib.mkForce 0;
     nix.settings.experimental-features = ["nix-command" "flakes"];
 
     # The certus module points at two secrets outside the store. Their contents
@@ -148,54 +155,37 @@ pkgs.testers.runNixOSTest {
         assert mode == "660 buildbot-worker", f"unexpected socket mode/group: {mode}"
 
     with subtest("CI builds run in the CI daemon's cgroup, not the system one"):
-        # This is the whole point of the second daemon, so prove it at the
-        # cgroup level rather than by inference. Note a daemon does NOT log the
-        # builds it performs to its journal — daemon.cc tunnels build output to
-        # the client — so the observable is cgroup membership: the daemon forks
-        # the builder, so builder processes live in the daemon's subtree.
-        # The CI daemon is socket-activated, so before the first connection its
-        # cgroup does not exist at all — that is the cleanest possible baseline.
-        def cg_procs(unit):
-            out = machine.succeed(
-                f"( find /sys/fs/cgroup/system.slice/{unit} -name cgroup.procs "
-                "-exec cat {} + 2>/dev/null || true ) | wc -l"
-            )
-            return int(out.strip())
-
-        base_ci = cg_procs("nix-daemon-ci.service")
-        base_sys = cg_procs("nix-daemon.service")
-
-        routing_probe = (
+        # Ask the BUILDER which cgroup it is in, rather than counting processes.
+        #
+        # An earlier version of this test counted PIDs in each daemon's cgroup
+        # subtree and was confounded: the CI daemon is socket-activated, so
+        # merely connecting starts its main process and grows the count before
+        # any builder runs. It also ended with `journalctl | grep -qv error`,
+        # which passes as long as ANY line lacks the word — worthless. A
+        # derivation that writes /proc/self/cgroup into its own output cannot be
+        # fooled either way: the daemon forks the builder, so the builder's
+        # cgroup IS the serving daemon's.
+        # NB: only shell builtins. The nix sandbox provides /bin/sh and nothing
+        # else — an earlier version used `cat` and died with exit 127, while the
+        # other probes in this file work only because `echo` is a builtin.
+        cgroup_probe = (
             'derivation { name = "ci-daemon-routing-probe"; system = "x86_64-linux"; '
-            'builder = "/bin/sh"; args = [ "-c" "sleep 8; echo routed > $out" ]; }'
+            'builder = "/bin/sh"; args = [ "-c" '
+            '"while IFS= read -r l; do echo $l; done < /proc/self/cgroup > $out" ]; }'
         )
-        machine.succeed(
-            "systemd-run --unit=ci-probe-build --collect --uid=buildbot-worker "
-            "--setenv=HOME=/tmp --setenv=NIX_REMOTE=unix:///run/nix-daemon-ci/socket "
-            "/run/current-system/sw/bin/nix build --no-link --extra-experimental-features "
-            f"nix-command --expr '{routing_probe}'"
-        )
+        out = machine.succeed(
+            "runuser -u buildbot-worker -- env HOME=/tmp "
+            "NIX_REMOTE=unix:///run/nix-daemon-ci/socket "
+            f"nix build --no-link --print-out-paths --expr '{cgroup_probe}'"
+        ).strip()
+        cgroup = machine.succeed(f"cat {out}").strip()
 
-        peak_ci, peak_sys = base_ci, base_sys
-        for _ in range(30):
-            peak_ci = max(peak_ci, cg_procs("nix-daemon-ci.service"))
-            peak_sys = max(peak_sys, cg_procs("nix-daemon.service"))
-            if peak_ci > base_ci:
-                break
-            machine.succeed("sleep 1")
-
-        machine.wait_until_fails("systemctl is-active ci-probe-build.service", timeout=120)
-
-        assert peak_ci > base_ci, (
-            f"no processes appeared in the CI daemon's cgroup (base {base_ci}, "
-            f"peak {peak_ci}) — the build was not served by it"
+        assert "nix-daemon-ci.service" in cgroup, (
+            f"the builder did not run under the CI daemon: {cgroup}"
         )
-        assert peak_sys == base_sys, (
-            f"the system daemon's cgroup grew ({base_sys} -> {peak_sys}), so CI "
-            "work is still landing in the daemon that serves interactive builds"
+        assert "/nix-daemon.service" not in cgroup, (
+            f"the builder ran under the system daemon: {cgroup}"
         )
-        # and the build really did happen
-        machine.succeed("journalctl -u ci-probe-build --no-pager | grep -qv 'error'")
 
     with subtest("the worker cgroup limits still apply to the eval step"):
         quota = machine.succeed("systemctl show buildbot-worker.service -p CPUQuotaPerSecUSec --value").strip()

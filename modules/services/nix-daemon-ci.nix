@@ -71,14 +71,24 @@ in {
         CPUWeight = 20;
         IOWeight = 20;
         Nice = 19;
+        # MemoryHigh alone is NOT a bound: it applies reclaim pressure but
+        # allows growth past the value. This host has swap
+        # (hosts/desktop/hardware-configuration.nix:31-33), so without a hard
+        # limit CI can still push into swap and reproduce the original stall —
+        # which is the failure this whole module exists to prevent. So: throttle
+        # at 12G, refuse past 16G, and forbid swapping the daemon's own work.
         MemoryHigh = "12G";
+        MemoryMax = "16G";
+        MemorySwapMax = 0;
+        # a single build being OOM-killed must not take the daemon down
         OOMPolicy = "continue";
       };
       description = ''
         Resource controls for the CI daemon's cgroup. Unlike the same settings
         on `nix-daemon.service`, these only affect CI: `Nice`/`CPUWeight`/
-        `IOWeight` make CI yield to anything interactive, and `MemoryHigh`
-        throttles by reclaim rather than by the OOM killer.
+        `IOWeight` make CI yield to anything interactive, `MemoryHigh` throttles
+        by reclaim first, and `MemoryMax`/`MemorySwapMax` are the hard stops
+        that keep a runaway build out of swap.
       '';
     };
   };
@@ -99,7 +109,16 @@ in {
       description = "Nix Daemon (CI)";
       requires = ["nix-daemon-ci.socket"];
       after = ["nix-daemon-ci.socket"];
-      path = [config.nix.package];
+      # ssh is needed for remote builders / git+ssh fetches, exactly as the
+      # nixpkgs nix-daemon module provides it
+      path = [config.nix.package config.programs.ssh.package];
+
+      # a changed nix.conf must restart this daemon too, or it keeps serving
+      # builds under stale settings
+      restartTriggers = [config.environment.etc."nix/nix.conf".source];
+      # keep the socket available across a switch, for the same reason nixpkgs
+      # sets it on nix-daemon: clients do not retry a failed socket connect
+      stopIfChanged = false;
 
       environment =
         config.nix.envVars
@@ -108,6 +127,12 @@ in {
           NIX_CONFIG = cfg.nixConfig;
         }
         // config.networking.proxy.envVars;
+
+      unitConfig = {
+        # mirrors the unit nix ships: do not start before the store is usable
+        RequiresMountsFor = ["/nix/store" "/nix/var" "/nix/var/nix/db"];
+        ConditionPathIsReadWrite = socketDir;
+      };
 
       serviceConfig =
         {
