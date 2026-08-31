@@ -1,18 +1,5 @@
-# CI for this repo, on GitHub's hosted runners — free and unmetered for public
-# repositories, and the compute is theirs.
-#
-# Why not Hercules CI, which is also free for open source: its free tier is free
-# *orchestration*, not free compute — "Hercules CI Agent runs on your
-# infrastructure and executes tasks for your Hercules CI account". That would
-# have put a third builder on the desktop, which is the opposite of the point.
-# Garnix is genuinely hosted but caps the free tier at 1500 min/month and its own
-# benchmark page brackets NixOS VM tests as "tests without virtualization", so
-# support is unclear. GitHub's runners do provide KVM to public projects, which
-# is what these tests need.
-#
-# What runs here: the VM checks that do not need the private `certus-infra`
-# input. See ci/stub-certus/flake.nix for how that is arranged, and what is
-# deliberately left out (nixosConfigurations.desktop, checks.buildbot-workstation).
+# Public checks only. The desktop and buildbot-workstation outputs still depend
+# on the private certus-infra module and remain local until that module is public.
 name: CI
 
 on:
@@ -21,6 +8,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -28,40 +18,38 @@ concurrency:
 jobs:
   vm-checks:
     name: NixOS VM checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      # NixOS tests need /dev/kvm. GitHub documents KVM as a larger-runner
-      # feature but provides it to public projects on the standard Ubuntu image;
-      # it only needs the device to be group-accessible.
-      - name: Enable KVM
+      - name: Enable and verify KVM
         run: |
+          set -euo pipefail
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-          ls -l /dev/kvm
+          test -c /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+          stat -c '%A %U:%G %n' /dev/kvm
 
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
             accept-flake-config = true
 
-      - name: Show what CI can see
+      - name: Evaluate the public check
         run: |
+          set -euo pipefail
           nix --version
-          nix flake metadata --override-input certus-infra path:./ci/stub-certus \
-            --json | nix run nixpkgs#jq -- -r '.locks.nodes | keys | join(" ")'
+          nix eval --raw '.#checks.x86_64-linux.buildbot-fanout.drvPath'
 
-      # The fan-out test: a real buildbot master fans an eval out to three
-      # children on ONE worker, asserting no deadlock, that concurrent nix
-      # builds stay within the master lock, and that a parked eval and its own
-      # child were alive simultaneously.
       - name: checks.buildbot-fanout
         run: |
-          nix build -L --no-link \
-            --override-input certus-infra path:./ci/stub-certus \
-            '.#checks.x86_64-linux.buildbot-fanout'
+          set -euo pipefail
+          nix build -L --no-link '.#checks.x86_64-linux.buildbot-fanout'

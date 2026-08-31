@@ -35,13 +35,20 @@
     # drops local-fs.target. Unpin once upstream breaks that loop.
     sentinelone.url = "github:devusb/sentinelone-nix/1e58fdcd464ef0b3929c5fd181c837d2d8eaf0d3";
 
-    certus-infra.url = "git+ssh://git@github.com/nicolasauler/certus_infra.git";
+    certus-infra = {
+      url = "git+ssh://git@github.com/nicolasauler/certus_infra.git";
+      # One source of truth: the private module and the public VM check use the
+      # same buildbot-nix revision and API.
+      inputs.buildbot-nix.follows = "buildbot-nix";
+    };
 
-    # Same rev certus-infra pins, taken directly from the PUBLIC upstream so
-    # that checks.buildbot-fanout does not reach buildbot-nix *through* the
-    # private certus-infra input. That is what makes it runnable in this public
-    # repo's CI without a deploy key.
-    buildbot-nix.url = "github:nix-community/buildbot-nix/19a89fd4c890433dab7062672ff95efe0128db3c";
+    # Public direct input: checks.buildbot-fanout can evaluate without fetching
+    # certus-infra. Keep the revision explicit; follows above gives the private
+    # module this exact source too.
+    buildbot-nix = {
+      url = "github:nix-community/buildbot-nix/19a89fd4c890433dab7062672ff95efe0128db3c";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     # certus-infra.url = "git+file:///home/nic/certus/certus_infra.git/main";
   };
 
