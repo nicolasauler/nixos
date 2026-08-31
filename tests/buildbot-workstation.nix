@@ -85,6 +85,14 @@ pkgs.testers.runNixOSTest {
         env = machine.succeed("systemctl show buildbot-worker.service -p Environment --value")
         assert "cores = 4" in env, f"worker NIX_CONFIG missing cores: {env}"
         assert "max-jobs = 1" in env, f"worker NIX_CONFIG missing max-jobs: {env}"
+        # The single line that makes this whole module do anything: without it the
+        # worker talks to the SYSTEM daemon and every cap below is decoration.
+        # Two reviewers independently showed the suite went 10/10 green with this
+        # broken — one by deleting it, one by mkForce-ing it back to the system
+        # socket — because the routing subtest below supplies NIX_REMOTE itself.
+        assert "NIX_REMOTE=unix:///run/nix-daemon-ci/socket" in env, (
+            f"worker is not pointed at the CI daemon: {env}"
+        )
 
     with subtest("NIX_CONFIG actually binds cores/max-jobs on this nix"):
         # proves the mechanism the cap relies on, in situ
@@ -129,20 +137,51 @@ pkgs.testers.runNixOSTest {
         assert cores == "0", f"global cores was capped: {cores}"
         jobs = machine.succeed("nix config show max-jobs").strip()
         assert jobs != "1", f"global max-jobs was capped: {jobs}"
+        # `!= "1"` is weak on its own — a reviewer noted it also holds for a
+        # regression that set global max-jobs to some other value. A literal
+        # cannot be pinned instead, because this is the EFFECTIVE value and it is
+        # environment-dependent: "2" in this 2-vCPU VM, "auto" on desktop, and
+        # the test framework writes its own max-jobs into global nix.conf. So
+        # assert the invariant that does not vary — the CI cap's exact values
+        # must appear in the worker's environment and nowhere in global config.
+        conf = machine.succeed("cat /etc/nix/nix.conf")
+        assert "max-jobs = 1" not in conf, f"CI max-jobs cap leaked globally:\n{conf}"
+        assert "cores = 4" not in conf, f"CI cores cap leaked globally:\n{conf}"
+
+    # These two loops are deliberately the SAME property list. Every limit this
+    # module introduces has to be present on the CI daemon and absent from the
+    # system one; asserting only the two properties that predate the fix let a
+    # reviewer delete MemoryMax and MemorySwapMax — the entire substance of the
+    # memory fix — and still see 10/10 green, and let the #12 regression (limits
+    # leaking onto the user's daemon) pass for the four newer properties.
+    ci_limits = [
+        # (property, expected on the CI daemon, expected on the SYSTEM daemon).
+        # systemd normalises sizes to bytes and reports unset weights as
+        # "[not set]". None means "shared with upstream, do not guard": nixpkgs'
+        # own nix-daemon.service already sets OOMPolicy=continue, so asserting it
+        # absent there fails for a reason that has nothing to do with this module
+        # — found by running this test rather than reasoning about it.
+        ("MemoryHigh", str(12 * 1024**3), "infinity"),
+        ("MemoryMax", str(16 * 1024**3), "infinity"),
+        ("MemorySwapMax", "0", "infinity"),
+        ("CPUWeight", "20", "[not set]"),
+        ("IOWeight", "20", "[not set]"),
+        ("OOMPolicy", "continue", None),
+        ("Nice", "19", "0"),
+    ]
 
     with subtest("nix-daemon carries no limits of ours"):
-        high = machine.succeed("systemctl show nix-daemon.service -p MemoryHigh --value").strip()
-        assert high == "infinity", f"MemoryHigh set on nix-daemon: {high}"
-        nice = machine.succeed("systemctl show nix-daemon.service -p Nice --value").strip()
-        assert nice == "0", f"Nice set on nix-daemon: {nice}"
+        for prop, _ci, unset in ci_limits:
+            if unset is None:
+                continue
+            got = machine.succeed(
+                f"systemctl show nix-daemon.service -p {prop} --value"
+            ).strip()
+            assert got == unset, f"{prop} set on the system daemon: {got}"
 
     with subtest("the CI daemon carries the limits instead, and only it"):
         machine.wait_for_unit("nix-daemon-ci.socket")
-        for prop, expected in [
-            # systemd normalises sizes to bytes
-            ("MemoryHigh", str(12 * 1024**3)),
-            ("Nice", "19"),
-        ]:
+        for prop, expected, _unset in ci_limits:
             got = machine.succeed(
                 f"systemctl show nix-daemon-ci.service -p {prop} --value"
             ).strip()

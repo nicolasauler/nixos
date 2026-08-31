@@ -57,11 +57,27 @@ in {
       type = lib.types.lines;
       default = ''
         max-substitution-jobs = 4
+        min-free = 0
+        max-free = 0
       '';
       description = ''
         NIX_CONFIG for the CI daemon itself. This is where settings the
         untrusted client cannot set belong — `max-substitution-jobs` above all,
-        which the trust gate keeps out of a client's reach.
+        which the trust gate keeps out of a client's reach. Verified at the
+        mechanism level, not just as a string in a unit: a daemon started with
+        `NIX_CONFIG='post-build-hook = …'` runs that hook daemon-side.
+
+        `min-free`/`max-free` are zeroed here on purpose. Those are global in
+        `nix.settings`, and a store's auto-GC bookkeeping (`gcRunning`,
+        `lastGCCheck`, `availAfterGC`) is PER PROCESS, so two daemons otherwise
+        become two independent auto-GC actors: both decide to collect, the second
+        computes its budget from its own stale free-space reading, and one waits
+        on the store-global exclusive lock behind the other. Worse here than in
+        general, because a GC triggered by CI runs at `Nice=19` inside this
+        16G cgroup while holding that lock, so the user's own daemon blocks behind
+        a deliberately deprioritised collection. Leaving exactly one auto-GC actor
+        (the system daemon) avoids all of it; builds are unaffected either way
+        since `addTempRoot` falls back to the gc-socket.
       '';
     };
 
@@ -77,6 +93,16 @@ in {
         # limit CI can still push into swap and reproduce the original stall —
         # which is the failure this whole module exists to prevent. So: throttle
         # at 12G, refuse past 16G, and forbid swapping the daemon's own work.
+        #
+        # The denominator, which this file used to omit: desktop has 32 GiB. So
+        # 12G is reclaim pressure at 37.5% and 16G is a hard ceiling at exactly
+        # half the machine, leaving the interactive user >=16 GiB guaranteed.
+        # Sized against the real workload rather than a guess: bipa builds with
+        # the dev profile and mold, `[profile.release]` sets no LTO, and its
+        # ~4500 tests run as `cores`-bounded parallel processes rather than one
+        # giant one, so a single >16G step is unlikely. If CI ever switches to
+        # release + LTO, revisit this — an LTO link of that workspace can exceed
+        # 16G and `OOMPolicy = "continue"` would make it fail quietly.
         MemoryHigh = "12G";
         MemoryMax = "16G";
         MemorySwapMax = 0;
@@ -85,10 +111,22 @@ in {
       };
       description = ''
         Resource controls for the CI daemon's cgroup. Unlike the same settings
-        on `nix-daemon.service`, these only affect CI: `Nice`/`CPUWeight`/
-        `IOWeight` make CI yield to anything interactive, `MemoryHigh` throttles
-        by reclaim first, and `MemoryMax`/`MemorySwapMax` are the hard stops
-        that keep a runaway build out of swap.
+        on `nix-daemon.service`, these only affect CI: `Nice`/`CPUWeight` make CI
+        yield to anything interactive, `MemoryHigh` throttles by reclaim first,
+        and `MemoryMax`/`MemorySwapMax` are the hard stops that keep a runaway
+        build out of swap.
+
+        Two honest caveats. `IOWeight` is very likely INERT on these hosts:
+        cgroup-v2 `io.weight` is consumed only by BFQ or by the blk-iocost
+        controller, and measured on this hardware the NVMe scheduler is `none`
+        with `io.cost.qos`/`io.cost.model` empty, so the value is accepted and
+        ignored. The real IO reduction comes from `max-substitution-jobs = 4`
+        and the worker's `max-jobs = 1`. And a hard `MemoryMax` with
+        `MemorySwapMax = 0` is a deliberate behaviour CHANGE, not just a bound: a
+        build that previously finished slowly by swapping is now OOM-killed
+        instead. That is the trade this module was written to make — it converts
+        "the machine becomes unusable" into "the CI build fails" — but it is a
+        trade, so it belongs in writing.
       '';
     };
   };
@@ -129,9 +167,15 @@ in {
         // config.networking.proxy.envVars;
 
       unitConfig = {
-        # mirrors the unit nix ships: do not start before the store is usable
+        # mirrors the unit nix ships: do not start before the store is usable.
+        # The condition deliberately names upstream's path, not `socketDir`: the
+        # point is to be skipped when /nix is read-only, and `socketDir` is on
+        # tmpfs and gets created both by the tmpfiles rule below and by systemd's
+        # own ListenStream parent-directory handling, so a condition on it is
+        # unconditionally true and protects nothing. `RequiresMountsFor` only
+        # guarantees the mounts exist, not that they are writable.
         RequiresMountsFor = ["/nix/store" "/nix/var" "/nix/var/nix/db"];
-        ConditionPathIsReadWrite = socketDir;
+        ConditionPathIsReadWrite = "/nix/var/nix/daemon-socket";
       };
 
       serviceConfig =

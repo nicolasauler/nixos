@@ -119,6 +119,16 @@
     NIX_REMOTE = "unix:///run/nix-daemon-ci/socket";
   };
 
+  # The swap argument that justifies MemorySwapMax on the CI daemon applies here
+  # too, and used not to be made. certus gives this unit MemoryMax=24G and
+  # OOMPolicy=continue but no swap bound, so the EVAL step kept an unbounded swap
+  # allowance inside a 24G cgroup — and eval is the known hog, not the compile:
+  # the note at :66 above records that nix-eval-jobs with evalMaxMemorySize=2048
+  # can want ~32 GB in that cgroup, on a 32 GiB machine. Bounding the compiler's
+  # swap while leaving eval's unbounded closes only half the failure this module
+  # is named after.
+  systemd.services.buildbot-worker.serviceConfig.MemorySwapMax = 0;
+
   nix.settings = {
     # CI churn makes an unbounded store a matter of time. min-free triggers a
     # GC mid-build when space runs low; max-free is how much to reclaim. Global
