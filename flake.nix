@@ -36,6 +36,12 @@
     sentinelone.url = "github:devusb/sentinelone-nix/1e58fdcd464ef0b3929c5fd181c837d2d8eaf0d3";
 
     certus-infra.url = "git+ssh://git@github.com/nicolasauler/certus_infra.git";
+
+    # Same rev certus-infra pins, taken directly from the PUBLIC upstream so
+    # that checks.buildbot-fanout does not reach buildbot-nix *through* the
+    # private certus-infra input. That is what makes it runnable in this public
+    # repo's CI without a deploy key.
+    buildbot-nix.url = "github:nix-community/buildbot-nix/19a89fd4c890433dab7062672ff95efe0128db3c";
     # certus-infra.url = "git+file:///home/nic/certus/certus_infra.git/main";
   };
 

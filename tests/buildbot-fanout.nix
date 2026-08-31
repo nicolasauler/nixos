@@ -16,8 +16,8 @@
     ...
   }: {
     imports = [
-      inputs.certus-infra.inputs.buildbot-nix.nixosModules.buildbot-master
-      inputs.certus-infra.inputs.buildbot-nix.nixosModules.buildbot-worker
+      inputs.buildbot-nix.nixosModules.buildbot-master
+      inputs.buildbot-nix.nixosModules.buildbot-worker
       ../modules/services/buildbot-pr-policy.nix
     ];
 
