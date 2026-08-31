@@ -10,7 +10,7 @@
     ../../modules/programs/git
     ../../modules/programs/jujutsu.nix
     ../../modules/programs/gtk.nix
-    ../../modules/programs/hyprland.nix
+    ../../modules/programs/hyprland/hyprland.nix
     ../../modules/programs/mako.nix
     ../../modules/programs/nixvim
     ../../modules/programs/qutebrowser.nix
@@ -18,7 +18,7 @@
     ../../modules/home/nixpkgs.nix
     ../../modules/programs/shell-aliases.nix
     ../../modules/programs/starship.nix
-    ../../modules/programs/waybar.nix
+    ../../modules/programs/waybar/waybar_note.nix
     ../../modules/programs/zathura.nix
     ../../modules/programs/zellij.nix
   ];
@@ -51,12 +51,12 @@
     # # overrides. You can do that directly here, just don't forget the
     # # parentheses. Maybe you want to install Nerd Fonts with a limited number of
     # # fonts?
-    (
-      pkgs.nerdfonts.override
-      {
-        fonts = ["Inconsolata" "InconsolataGo" "FiraCode"];
-      }
-    )
+    # nixpkgs split the single `nerdfonts` package into per-font packages under
+    # `nerd-fonts.*`, so the old `.override { fonts = [...]; }` form no longer
+    # evaluates. These three are the same fonts that form was asking for.
+    pkgs.nerd-fonts.inconsolata
+    pkgs.nerd-fonts.inconsolata-go
+    pkgs.nerd-fonts.fira-code
 
     # # You can also create simple shell scripts directly inside your
     # # configuration. For example, this adds a command 'my-hello' to your

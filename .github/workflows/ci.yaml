@@ -53,3 +53,47 @@ jobs:
         run: |
           set -euo pipefail
           nix build -L --no-link '.#checks.x86_64-linux.buildbot-fanout'
+
+  host-eval:
+    name: Host evaluation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      # Evaluating a host's toplevel catches the breakage that actually happens
+      # to this repo: nixpkgs renames and moved/deleted module paths. Both hosts
+      # below had rotted silently — notebook imported two modules that no longer
+      # existed at those paths, and both carried `du-dust` and `firefox-wayland`
+      # after upstream renamed them. Nothing built them, so nothing complained.
+      #
+      # No KVM needed, so this job is not subject to the runner KVM lottery the
+      # VM check depends on.
+      #
+      # NOT evaluated here, deliberately:
+      #   desktop   — genuinely consumes the private certus-infra input
+      #               (observability + buildbot modules). Verified locally and,
+      #               for its buildbot half, by checks.buildbot-workstation.
+      #               Public CI would need a deploy key; we are not doing that.
+      #   precision — impure by construction: it references
+      #               /home/nic/bipa/SentinelAgent_*.deb, an absolute path to a
+      #               proprietary local file, which pure evaluation forbids.
+      - name: Evaluate CI-able hosts
+        run: |
+          set -euo pipefail
+          for host in notebook xpsbipa; do
+            echo "::group::$host"
+            nix eval --raw ".#nixosConfigurations.$host.config.system.build.toplevel.drvPath"
+            echo
+            echo "::endgroup::"
+          done
