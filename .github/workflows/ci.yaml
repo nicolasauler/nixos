@@ -85,13 +85,16 @@ jobs:
       #               (observability + buildbot modules). Verified locally and,
       #               for its buildbot half, by checks.buildbot-workstation.
       #               Public CI would need a deploy key; we are not doing that.
-      #   precision — impure by construction: it references
-      #               /home/nic/bipa/SentinelAgent_*.deb, an absolute path to a
-      #               proprietary local file, which pure evaluation forbids.
+      #
+      # precision IS evaluated, but with its SentinelOne agent unconfigured: the
+      # proprietary .deb and the management token are absolute local paths that
+      # pure evaluation forbids, so hosts/precision/configuration.nix takes both
+      # from the environment (unset here => agent off). CI therefore checks the
+      # rest of that host and explicitly NOT its sentinelone block.
       - name: Evaluate CI-able hosts
         run: |
           set -euo pipefail
-          for host in notebook xpsbipa; do
+          for host in notebook xpsbipa precision; do
             echo "::group::$host"
             nix eval --raw ".#nixosConfigurations.$host.config.system.build.toplevel.drvPath"
             echo

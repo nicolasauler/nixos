@@ -7,7 +7,32 @@
   inputs,
   lib,
   ...
-}: {
+}: let
+  # SentinelOne's agent cannot be referenced by absolute path in a flake: pure
+  # evaluation forbids it, which made this host the only one CI could not check
+  # at all. The .deb also cannot be vendored here — it is proprietary EDR under
+  # a customer agreement, nixpkgs does not carry it, and the community flake
+  # only works by fetching it from a third-party mirror. So both local paths come
+  # from the environment instead.
+  #
+  # Unset (CI, and any pure evaluation): the agent is simply not configured, and
+  # the other ~300 lines of this host are checked. Note that CI therefore does
+  # NOT validate the sentinelone block.
+  #
+  # On the machine, pass them — this host is already switched with --impure:
+  #   SENTINELONE_DEB=/home/nic/bipa/SentinelAgent_linux_x86_64_v25_2_1_20.deb \
+  #   SENTINELONE_TOKEN=/home/nic/bipa/sentinel_one_token \
+  #     nh os switch -a -- --impure
+  #
+  # `builtins.getEnv` returns "" under pure evaluation rather than failing, which
+  # is what makes this work in both directions. The token belongs in the secret
+  # manager once agenix lands; this is a purity fix, not a secrets fix.
+  sentinelOneDeb = let p = builtins.getEnv "SENTINELONE_DEB"; in
+    if p == "" then null else /. + p;
+  sentinelOneToken = let p = builtins.getEnv "SENTINELONE_TOKEN"; in
+    if p == "" then null else /. + p;
+  sentinelOneEnabled = sentinelOneDeb != null && sentinelOneToken != null;
+in {
   imports = [
     # Include the results of the hardware scan.
     ./hardware-configuration.nix
@@ -131,14 +156,14 @@
 
   # List services that you want to enable:
 
-  services.sentinelone = {
+  services.sentinelone = lib.mkIf sentinelOneEnabled {
     enable = true;
-    sentinelOneManagementTokenPath = /home/nic/bipa/sentinel_one_token;
+    sentinelOneManagementTokenPath = sentinelOneToken;
     # the module built "<email>-<serialNumber>" from the deprecated options; same value, new option
     customerId = "nicolas@bipa.app-nicolas_precision";
     package = pkgs.sentinelone.overrideAttrs (old: {
       version = "v25_2_1_20";
-      src = /home/nic/bipa/SentinelAgent_linux_x86_64_v25_2_1_20.deb;
+      src = sentinelOneDeb;
     });
   };
 
@@ -148,7 +173,9 @@
   # of having it. The module leaves all of this unbounded (TasksMax = infinity, no CPU
   # or memory ceiling). Sized from measured usage: ~300 MB peak, ~73 threads, ~12% of
   # one core average with scan spikes.
-  systemd.services.sentinelone.serviceConfig = {
+  # Also gated: with the agent unconfigured there is no unit to constrain, and
+  # defining serviceConfig for a non-existent unit would synthesise one.
+  systemd.services.sentinelone.serviceConfig = lib.mkIf sentinelOneEnabled {
     # Pin it to the E-cores (12-21 on this Meteor Lake), so it stays off the P-cores
     # you actually work on. Widen this if scans feel slow.
     AllowedCPUs = "12-21";
