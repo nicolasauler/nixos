@@ -14,18 +14,40 @@
 # state, so it survives reboots without a unit here. Verify with:
 #   tailscale serve status     # must NOT say "Funnel on"
 #
-# One-time, before the first rebuild of this host:
+# One-time, before the first rebuild of this host. These are written for BASH
+# deliberately, and that matters here: this host's owner uses nushell, where
+# `$(...)` inside double quotes is NOT substituted, a trailing `\` is NOT a line
+# continuation, and `>/dev/null` in that position is passed as an argument rather
+# than a redirection. Run them under bash, or use the nushell forms below - if you
+# paste the bash form into nu, `atticd.env` receives the literal text
+# `$(nix run nixpkgs#openssl ...)` instead of a key, with NO error, and atticd
+# then starts with a garbage signing secret.
 #
-#   sudo mkdir -p /etc/secrets
-#   echo "ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64=\"$(nix run nixpkgs#openssl -- genrsa -traditional 4096 | base64 -w0)\"" \
-#     | sudo tee /etc/secrets/atticd.env >/dev/null
-#   sudo chmod 600 /etc/secrets/atticd.env
+#   bash:
+#     sudo mkdir -p /etc/secrets
+#     echo "ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64=\"$(nix run nixpkgs#openssl -- genrsa -traditional 4096 | base64 -w0)\"" | sudo tee /etc/secrets/atticd.env > /dev/null
+#     sudo chmod 600 /etc/secrets/atticd.env
+#
+#   nushell (measured on nu 0.115.0):
+#     sudo mkdir -p /etc/secrets
+#     let key = (nix run nixpkgs#openssl -- genrsa -traditional 4096 | base64 -w0 | str trim)
+#     $'ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64="($key)"' | sudo tee /etc/secrets/atticd.env | ignore
+#     sudo chmod 600 /etc/secrets/atticd.env
+#
+#   `sudo tee` is fine there because nu resolves `sudo` and passes `tee` as an
+#   argument. A bare `| tee /path` is NOT: nu has its own `tee` builtin that
+#   expects a closure, so it fails with "expected block, closure or record".
+#   Reach for `^tee` if you ever drop the sudo.
+#
+# Verify either way before rebuilding — the value must be one long base64 blob,
+# and must not contain the characters `$` or `(`:
+#
+#   sudo grep -c '\$(' /etc/secrets/atticd.env      # must print 0
 #
 # After `nixos-rebuild switch` (the module installs the atticd-atticadm wrapper,
 # which runs atticadm as the atticd user, plus the `attic` client):
 #
-#   sudo atticd-atticadm make-token --sub nic --validity 1y \
-#     --pull 'bipa*' --push 'bipa*' --create-cache 'bipa*'
+#   sudo atticd-atticadm make-token --sub nic --validity 1y --pull 'bipa*' --push 'bipa*' --create-cache 'bipa*'
 #   attic login bipa https://desktop.tailb7fb5e.ts.net:8443/ <token>
 #   attic cache create bipa
 #   attic use bipa        # per machine: writes substituter + public key + token

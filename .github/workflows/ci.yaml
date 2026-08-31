@@ -108,10 +108,15 @@ jobs:
       #     33432543307). `ensure-all-wrappers-paths-exist` depends on every
       #     wrapped program, so realising it drags in ~2870 derivations, and
       #     notebook's Hyprland is not in the binary cache. This belongs on a
-      #     runner with a warm store, not here. The reproducer, if you want it:
-      #       nix eval --json ".#nixosConfigurations.$h.config.system.checks" \
-      #         --apply 'cs: map (c: c.drvPath) cs' | jq -r '.[]' \
-      #         | xargs -r nix-store --realise
+      #     runner with a warm store, not here. The reproducer, if you want it —
+      #     note the `$h` in the loop below only exists inside that bash step, so
+      #     name a host explicitly. Measured: the jq/xargs pipeline works in bash
+      #     but dies with "write of 161 bytes: Broken pipe" in nushell, which is
+      #     what this repo's owner uses, so both forms are given.
+      #       bash:
+      #         nix eval --json '.#nixosConfigurations.precision.config.system.checks' --apply 'cs: map (c: c.drvPath) cs' | jq -r '.[]' | xargs -r nix-store --realise
+      #       nushell:
+      #         nix eval --json '.#nixosConfigurations.precision.config.system.checks' --apply 'cs: map (c: c.drvPath) cs' | from json | each { |d| nix-store --realise $d }
       #     (note `system.checks` is a LIST, so plain `nix build` on that
       #     attribute path is rejected with "found a list".)
       #
