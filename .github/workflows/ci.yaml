@@ -114,11 +114,12 @@ jobs:
           pushFilter: 'test-run-'
           skipPush: ${{ github.event_name != 'push' }}
 
-      - name: Evaluate the public check
+      - name: Evaluate the public checks
         run: |
           set -euo pipefail
           nix --version
           nix eval --raw '.#checks.x86_64-linux.buildbot-fanout.drvPath'
+          nix eval --raw '.#checks.x86_64-linux.nix-substitution-limit.drvPath'
 
       # Two commands, and the split is the structural guarantee that this check
       # actually RUNS rather than being substituted:
@@ -144,6 +145,17 @@ jobs:
         run: |
           set -euo pipefail
           drv=$(nix eval --raw '.#checks.x86_64-linux.buildbot-fanout.drvPath')
+          nix-store --query --references "$drv" | xargs -r nix-store --realise
+          nix build -L --no-link --no-substitute "$drv^*"
+
+      # Same two-command form, same reason. Both public checks live in this one
+      # job on purpose: the KVM guard above is a single gamble on a free runner
+      # (~half of runs fail it), so splitting them into two jobs would roll that
+      # die twice for no gain and make a red badge the common case.
+      - name: checks.nix-substitution-limit
+        run: |
+          set -euo pipefail
+          drv=$(nix eval --raw '.#checks.x86_64-linux.nix-substitution-limit.drvPath')
           nix-store --query --references "$drv" | xargs -r nix-store --realise
           nix build -L --no-link --no-substitute "$drv^*"
 
