@@ -48,8 +48,12 @@
       # no nixpkgs follows: nixvim recommends building against its own tested nixpkgs pin
     };
 
-    # sops-nix.url = "github:Mic92/sops-nix";
-    # agenix.url = "github:ryantm/agenix";
+    # agenix, not sops-nix: one admin, host keys that already exist, and the
+    # consumers here want whole files rather than fields out of a YAML document.
+    agenix = {
+      url = "github:ryantm/agenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     # Pinned: 54f75733 (2026-08-10) moved the bind mounts from fileSystems to
     # systemd.mounts with After=sentinelone-init.service. That service is ordered
@@ -111,6 +115,10 @@
         # Pushing to nicnixos. READ THE WARNING BELOW BEFORE YOU DO.
         cachix
         actionlint # .github/workflows/ci.yaml is a required-check surface
+        # Editing ../secrets/*.age. Here and not in any host's systemPackages:
+        # the admin key lives on the machine you edit from, not on the machine
+        # that decrypts. Needs `secrets.nix` at the repo root, so run it there.
+        inputs.agenix.packages.${system}.default
       ];
 
       # This — not a machine-wide substituter — is what makes the cache live
@@ -149,18 +157,19 @@
       # which is all of them.
       #
       # What must never reach a PUBLIC cache: `checks.buildbot-workstation` and any
-      # `nixosConfigurations.*.config.system.build.toplevel`. certus-infra puts the
-      # buildbot worker password and webhook secret in the store via
-      # `pkgs.writeText`. Measured on this machine:
-      # /nix/store/w8bvnl77ssir0g4ikvzar5aj0sjwmnhz-workers.json is mode 444 and
-      # contains the literal `certus-worker-local`, and is reachable from 169 paths
-      # in its referrers closure (19 direct referrers) including
-      # nixos-test-driver-buildbot-workstation and nixos-system-*. One push over any
-      # of those publishes it permanently.
+      # `nixosConfigurations.*.config.system.build.toplevel`. certus-infra puts its
+      # secrets in the store via `pkgs.writeText`. The worker password used to be
+      # the example here and no longer is — it moved to ./secrets/*.age, and both
+      # closures now contain the literal `certus-worker-local` zero times (measured
+      # before and after). The RULE IS UNCHANGED, because the webhook secret did
+      # not move: `…-webhook-secret` is still present in desktop's system closure
+      # AND in the workstation check's closure (measured, one path each). It guards
+      # an internet-facing funnel whose hostname is already published here, so one
+      # push over either closure publishes it permanently.
       #
       # `checks.buildbot-fanout` is safe to push, but note WHY: it is safe by
       # VALUE, not by structure — its writeText passwords are dummies
-      # (`tests/buildbot-fanout.nix:38,56`, "test-password"). Replace one with a
+      # (`tests/buildbot-fanout.nix:40,56`, "test-password"). Replace one with a
       # real credential and every push of this check publishes it to a PUBLIC
       # cache, permanently, with no other signal.
     };

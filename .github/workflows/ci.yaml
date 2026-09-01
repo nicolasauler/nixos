@@ -59,7 +59,7 @@ jobs:
       #   checks, `checks.buildbot-fanout` and `checks.nix-substitution-limit`.
       #   The fan-out is safe because #19 wired it to the PUBLIC buildbot-nix
       #   input rather than reaching through the private certus-infra, and its own
-      #   writeText passwords are dummies (`tests/buildbot-fanout.nix:38,56`,
+      #   writeText passwords are dummies (`tests/buildbot-fanout.nix:40,56`,
       #   "test-password"). The substitution node is safe because it declares no
       #   credential at all: it imports only ./modules/services/nix-daemon-ci.nix,
       #   and its closure paths that the fan-out does not already share carry no
@@ -68,15 +68,16 @@ jobs:
       #   Replace either dummy with a real credential and this job starts
       #   publishing it, with no other signal.
       #
-      #   READ THIS BEFORE ADDING A BUILD HERE. certus-infra puts the buildbot
-      #   worker password and webhook secret in the store via `pkgs.writeText`.
-      #   Measured: …-workers.json is mode 444, contains the literal
-      #   `certus-worker-local`, and is reachable from 169 paths in its referrers
-      #   closure (19 direct referrers) including
-      #   nixos-test-driver-buildbot-workstation and nixos-system-*. So
-      #   `checks.buildbot-workstation` and any host toplevel must NEVER be built
-      #   in a pushing job. If desktop ever joins public CI, put it in a job
-      #   without this step, or fix the secrets first.
+      #   READ THIS BEFORE ADDING A BUILD HERE. certus-infra puts its secrets in the
+      #   store via `pkgs.writeText`. The worker password used to be the example and
+      #   no longer is — it moved to ./secrets/*.age and now appears in these
+      #   closures zero times. The RULE IS UNCHANGED, because the webhook secret did
+      #   not move: `…-webhook-secret` is still present in both desktop's system
+      #   closure and the workstation check's closure (measured, one path each), and
+      #   it guards an internet-facing funnel whose hostname is already public. So
+      #   `checks.buildbot-workstation` and any host toplevel must NEVER be built in
+      #   a pushing job. If desktop ever joins public CI, put it in a job without
+      #   this step, or fix the secrets first.
       - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: nicnixos

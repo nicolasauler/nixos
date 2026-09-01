@@ -34,29 +34,19 @@
 #     need a slot on the same worker.
 #   * max-jobs in the worker's NIX_CONFIG, which bounds derivations *within*
 #     one nix build.
-# workersFile `cores` and worker.workers still must agree (the master spawns one
-# slot per `cores`, buildbot_nix/__init__.py:114); they set how many builds may
-# be in flight at all, not how many compile.
+# The worker list's `cores` and worker.workers still must agree (the master
+# spawns one slot per `cores`, buildbot_nix/__init__.py:114); they set how many
+# builds may be in flight at all, not how many compile. That list is no longer
+# here: it carries the worker password, so it moved into an encrypted file --
+# ./buildbot-secrets.nix for desktop, and a dummy pair by value in
+# ../../tests/buildbot-workstation.nix. Changing worker.workers below means
+# changing `cores` in BOTH, and ../../secrets.nix says how.
 # Want CI faster? Raise max_concurrent_nix_builds and cores together, and expect
 # the desktop to feel it. The next lever, if CPU/IO priority still bites: a
 # second nix-daemon instance with its own cgroup limits on a private socket
 # (NIX_REMOTE=unix://… + NIX_DAEMON_SOCKET_PATH on the service), sharing this
 # store — real isolation without degrading your daemon. Not done yet.
-{
-  lib,
-  pkgs,
-  ...
-}: {
-  # One slot per `cores`. mkForce because certus-infra sets 8.
-  # NOTE: the worker password is a plaintext literal in the store — inherited
-  # from certus-infra's module (writeText), not introduced here. It has to
-  # match worker.workerPasswordFile, so it is repeated rather than fixed;
-  # fixing it belongs in that repo.
-  services.buildbot-nix.master.workersFile = lib.mkForce (pkgs.writeText "workers.json" ''
-    [
-      { "name": "desktop", "pass": "certus-worker-local", "cores": 1 }
-    ]
-  '');
+{lib, ...}: {
   # Slots are not the compile cap (see the header). One is enough: buildbot
   # gives each (builder, worker) pair its own slot, so this single worker still
   # runs the parked nix-eval build and the nix-build it triggered side by side.

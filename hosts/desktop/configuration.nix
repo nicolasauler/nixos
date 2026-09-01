@@ -15,11 +15,14 @@
     # /etc/secrets/atticd.env when it's attic's turn.
     # ../../modules/services/atticd.nix
     ../../modules/services/buildbot-limits.nix
+    ../../modules/services/buildbot-secrets.nix
     ../../modules/services/nix-daemon-ci.nix
     ../../modules/services/buildbot-pr-policy.nix
     inputs.home-manager.nixosModules.default
-    # inputs.sops-nix.nixosModules.sops
-    # inputs.agenix.nixosModules.default
+    # Decrypts ../../secrets/*.age with this host's /etc/ssh/ssh_host_ed25519_key
+    # at activation. sops-nix was the alternative and was rejected: one admin,
+    # host keys that already exist, and every consumer here wants a whole file.
+    inputs.agenix.nixosModules.default
   ];
 
   # Bootloader.
@@ -117,7 +120,6 @@
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
-    # inputs.agenix.packages.${stdenv.hostPlatform.system}.default
     bat
     discord
     dust
