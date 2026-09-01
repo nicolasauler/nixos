@@ -96,23 +96,38 @@
   # yours, and MemoryHigh in particular would reclaim-throttle your own builds
   # even while CI is idle.
   #
-  # What this does NOT bound: substitution. The daemon runs the substitution
-  # goals for a daemon-store client, and max-substitution-jobs defaults to 16
-  # (nix worker-settings.hh:73-76). It is not one of the two fields the daemon
-  # takes unconditionally -- it rides the `overrides` map and dies at the
+  # Substitution is now bounded too, but NOT here: the daemon runs the
+  # substitution goals for a daemon-store client, and max-substitution-jobs
+  # (default 16, nix worker-settings.hh:73-76) is not one of the two fields the
+  # daemon takes unconditionally — it rides the `overrides` map and dies at the
   # `trusted ||` gate (daemon.cc:296-308), so this untrusted worker cannot lower
-  # it, and up to 16 NAR fetch+decompress jobs still run unbounded in the daemon
-  # cgroup. Do NOT fix that by adding buildbot-worker to trusted-users: a trusted
-  # client can also set substituters and turn off signature checking. Do not
-  # lower it globally either; it would slow your own fetches. The clean place is
-  # the second-daemon plan above -- nix applies NIX_CONFIG in any nix process,
-  # the daemon included (globals.cc:147-151), so that unit can carry its own
-  # `Environment=NIX_CONFIG=max-substitution-jobs = 4` next to its cgroup limits,
-  # and its CPUQuota bounds the decompression regardless.
-  systemd.services.buildbot-worker.environment.NIX_CONFIG = ''
-    cores = 4
-    max-jobs = 1
-  '';
+  # it. Adding buildbot-worker to trusted-users would also let it set
+  # substituters and skip signature checks, and lowering it globally would slow
+  # your own fetches. So CI gets its own daemon instead: see
+  # nix-daemon-ci.nix, which carries `max-substitution-jobs` in the daemon's own
+  # environment (nix reads NIX_CONFIG in any nix process, globals.cc:147-151)
+  # alongside real cgroup limits.
+  services.nixDaemonCi.enable = true;
+
+  systemd.services.buildbot-worker.environment = {
+    NIX_CONFIG = ''
+      cores = 4
+      max-jobs = 1
+    '';
+    # every CI `nix build` is served by the CI daemon, so its compilers land in
+    # that unit's cgroup instead of the one serving your interactive builds
+    NIX_REMOTE = "unix:///run/nix-daemon-ci/socket";
+  };
+
+  # The swap argument that justifies MemorySwapMax on the CI daemon applies here
+  # too, and used not to be made. certus gives this unit MemoryMax=24G and
+  # OOMPolicy=continue but no swap bound, so the EVAL step kept an unbounded swap
+  # allowance inside a 24G cgroup — and eval is the known hog, not the compile:
+  # the note at :66 above records that nix-eval-jobs with evalMaxMemorySize=2048
+  # can want ~32 GB in that cgroup, on a 32 GiB machine. Bounding the compiler's
+  # swap while leaving eval's unbounded closes only half the failure this module
+  # is named after.
+  systemd.services.buildbot-worker.serviceConfig.MemorySwapMax = 0;
 
   nix.settings = {
     # CI churn makes an unbounded store a matter of time. min-free triggers a

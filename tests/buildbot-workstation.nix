@@ -30,6 +30,7 @@ pkgs.testers.runNixOSTest {
     imports = [
       inputs.certus-infra.nixosModules.buildbot
       ../modules/services/buildbot-limits.nix
+      ../modules/services/nix-daemon-ci.nix
       ../modules/services/buildbot-pr-policy.nix
     ];
 
@@ -45,6 +46,13 @@ pkgs.testers.runNixOSTest {
     networking.firewall.enable = lib.mkForce false;
 
     # the desktop enables these; the node needs them for `nix config show`
+
+    # buildbot-limits.nix sets min-free = 20GiB, which exceeds this VM's whole
+    # 8 GB disk, so nix runs a full auto-GC before every build ("running auto-GC
+    # to free 62370164736 bytes") and deletes the outputs earlier subtests just
+    # produced. Scope it down here; the value itself is a real question for the
+    # desktop, not something this test should assert.
+    nix.settings.min-free = lib.mkForce 0;
     nix.settings.experimental-features = ["nix-command" "flakes"];
 
     # The certus module points at two secrets outside the store. Their contents
@@ -77,6 +85,14 @@ pkgs.testers.runNixOSTest {
         env = machine.succeed("systemctl show buildbot-worker.service -p Environment --value")
         assert "cores = 4" in env, f"worker NIX_CONFIG missing cores: {env}"
         assert "max-jobs = 1" in env, f"worker NIX_CONFIG missing max-jobs: {env}"
+        # The single line that makes this whole module do anything: without it the
+        # worker talks to the SYSTEM daemon and every cap below is decoration.
+        # Two reviewers independently showed the suite went 10/10 green with this
+        # broken — one by deleting it, one by mkForce-ing it back to the system
+        # socket — because the routing subtest below supplies NIX_REMOTE itself.
+        assert "NIX_REMOTE=unix:///run/nix-daemon-ci/socket" in env, (
+            f"worker is not pointed at the CI daemon: {env}"
+        )
 
     with subtest("NIX_CONFIG actually binds cores/max-jobs on this nix"):
         # proves the mechanism the cap relies on, in situ
@@ -121,12 +137,94 @@ pkgs.testers.runNixOSTest {
         assert cores == "0", f"global cores was capped: {cores}"
         jobs = machine.succeed("nix config show max-jobs").strip()
         assert jobs != "1", f"global max-jobs was capped: {jobs}"
+        # `!= "1"` is weak on its own — a reviewer noted it also holds for a
+        # regression that set global max-jobs to some other value. A literal
+        # cannot be pinned instead, because this is the EFFECTIVE value and it is
+        # environment-dependent: "2" in this 2-vCPU VM, "auto" on desktop, and
+        # the test framework writes its own max-jobs into global nix.conf. So
+        # assert the invariant that does not vary — the CI cap's exact values
+        # must appear in the worker's environment and nowhere in global config.
+        conf = machine.succeed("cat /etc/nix/nix.conf")
+        assert "max-jobs = 1" not in conf, f"CI max-jobs cap leaked globally:\n{conf}"
+        assert "cores = 4" not in conf, f"CI cores cap leaked globally:\n{conf}"
+
+    # These two loops are deliberately the SAME property list. Every limit this
+    # module introduces has to be present on the CI daemon and absent from the
+    # system one; asserting only the two properties that predate the fix let a
+    # reviewer delete MemoryMax and MemorySwapMax — the entire substance of the
+    # memory fix — and still see 10/10 green, and let the #12 regression (limits
+    # leaking onto the user's daemon) pass for the four newer properties.
+    ci_limits = [
+        # (property, expected on the CI daemon, expected on the SYSTEM daemon).
+        # systemd normalises sizes to bytes and reports unset weights as
+        # "[not set]". None means "shared with upstream, do not guard": nixpkgs'
+        # own nix-daemon.service already sets OOMPolicy=continue, so asserting it
+        # absent there fails for a reason that has nothing to do with this module
+        # — found by running this test rather than reasoning about it.
+        ("MemoryHigh", str(12 * 1024**3), "infinity"),
+        ("MemoryMax", str(16 * 1024**3), "infinity"),
+        ("MemorySwapMax", "0", "infinity"),
+        ("CPUWeight", "20", "[not set]"),
+        ("IOWeight", "20", "[not set]"),
+        ("OOMPolicy", "continue", None),
+        ("Nice", "19", "0"),
+    ]
 
     with subtest("nix-daemon carries no limits of ours"):
-        high = machine.succeed("systemctl show nix-daemon.service -p MemoryHigh --value").strip()
-        assert high == "infinity", f"MemoryHigh set on nix-daemon: {high}"
-        nice = machine.succeed("systemctl show nix-daemon.service -p Nice --value").strip()
-        assert nice == "0", f"Nice set on nix-daemon: {nice}"
+        for prop, _ci, unset in ci_limits:
+            if unset is None:
+                continue
+            got = machine.succeed(
+                f"systemctl show nix-daemon.service -p {prop} --value"
+            ).strip()
+            assert got == unset, f"{prop} set on the system daemon: {got}"
+
+    with subtest("the CI daemon carries the limits instead, and only it"):
+        machine.wait_for_unit("nix-daemon-ci.socket")
+        for prop, expected, _unset in ci_limits:
+            got = machine.succeed(
+                f"systemctl show nix-daemon-ci.service -p {prop} --value"
+            ).strip()
+            assert got == expected, f"CI daemon {prop}={got}, expected {expected}"
+        # the setting the untrusted client provably cannot set for itself
+        env = machine.succeed("systemctl show nix-daemon-ci.service -p Environment --value")
+        assert "max-substitution-jobs = 4" in env, f"CI daemon env missing the cap: {env}"
+        # and the socket is reachable only by CI's group
+        mode = machine.succeed("stat -c '%a %G' /run/nix-daemon-ci/socket").strip()
+        assert mode == "660 buildbot-worker", f"unexpected socket mode/group: {mode}"
+
+    with subtest("CI builds run in the CI daemon's cgroup, not the system one"):
+        # Ask the BUILDER which cgroup it is in, rather than counting processes.
+        #
+        # An earlier version of this test counted PIDs in each daemon's cgroup
+        # subtree and was confounded: the CI daemon is socket-activated, so
+        # merely connecting starts its main process and grows the count before
+        # any builder runs. It also ended with `journalctl | grep -qv error`,
+        # which passes as long as ANY line lacks the word — worthless. A
+        # derivation that writes /proc/self/cgroup into its own output cannot be
+        # fooled either way: the daemon forks the builder, so the builder's
+        # cgroup IS the serving daemon's.
+        # NB: only shell builtins. The nix sandbox provides /bin/sh and nothing
+        # else — an earlier version used `cat` and died with exit 127, while the
+        # other probes in this file work only because `echo` is a builtin.
+        cgroup_probe = (
+            'derivation { name = "ci-daemon-routing-probe"; system = "x86_64-linux"; '
+            'builder = "/bin/sh"; args = [ "-c" '
+            '"while IFS= read -r l; do echo $l; done < /proc/self/cgroup > $out" ]; }'
+        )
+        out = machine.succeed(
+            "runuser -u buildbot-worker -- env HOME=/tmp "
+            "NIX_REMOTE=unix:///run/nix-daemon-ci/socket "
+            f"nix build --no-link --print-out-paths --expr '{cgroup_probe}'"
+        ).strip()
+        cgroup = machine.succeed(f"cat {out}").strip()
+
+        assert "nix-daemon-ci.service" in cgroup, (
+            f"the builder did not run under the CI daemon: {cgroup}"
+        )
+        assert "/nix-daemon.service" not in cgroup, (
+            f"the builder ran under the system daemon: {cgroup}"
+        )
 
     with subtest("the worker cgroup limits still apply to the eval step"):
         quota = machine.succeed("systemctl show buildbot-worker.service -p CPUQuotaPerSecUSec --value").strip()
