@@ -43,27 +43,50 @@ jobs:
             experimental-features = nix-command flakes
             accept-flake-config = true
 
-      # Pull + push our own cache. cachix-action watches the store and pushes
-      # what this job realises, which is why WHAT this job builds matters:
+      # Pull + push our own cache. cachix-action registers a nix post-build-hook
+      # and pushes every path this job BUILDS, which drives both settings below.
       #
-      #   SAFE TODAY. This job builds only `checks.buildbot-fanout`, which #19
-      #   deliberately wired to the PUBLIC buildbot-nix input rather than reaching
-      #   through the private certus-infra, and the host-eval job only evaluates.
+      #   SAFE TODAY, but by VALUE not by structure. This job builds only
+      #   `checks.buildbot-fanout`, which #19 wired to the PUBLIC buildbot-nix
+      #   input rather than reaching through the private certus-infra — and whose
+      #   own writeText passwords are dummies (`tests/buildbot-fanout.nix:38,56`,
+      #   "test-password"). Replace one of those with a real credential and this
+      #   job starts publishing it, with no other signal.
       #
-      #   READ THIS BEFORE ADDING A BUILD HERE. certus-infra's modules put secrets
-      #   in the store via `pkgs.writeText` — the buildbot webhook secret and the
-      #   worker password. Any closure containing them, e.g.
-      #   `checks.buildbot-workstation` or the `desktop` toplevel, must NEVER be
-      #   built in this job while it pushes, because cachix would publish those
-      #   store paths to a PUBLIC cache. If desktop ever joins public CI, split it
-      #   into a job without the push step, or fix the secrets first.
+      #   READ THIS BEFORE ADDING A BUILD HERE. certus-infra puts the buildbot
+      #   worker password and webhook secret in the store via `pkgs.writeText`.
+      #   Measured: …-workers.json is mode 444, contains the literal
+      #   `certus-worker-local`, and has 169 referrers including
+      #   nixos-test-driver-buildbot-workstation and nixos-system-*. So
+      #   `checks.buildbot-workstation` and any host toplevel must NEVER be built
+      #   in a pushing job. If desktop ever joins public CI, put it in a job
+      #   without this step, or fix the secrets first.
       - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: nicnixos
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-          # Without the secret (e.g. a fork PR) this degrades to pull-only rather
-          # than failing the job.
-          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
+          # Never cache a test VERDICT. A check's output IS its pass, so once a
+          # `vm-test-run-*` path is in a trusted signed cache, `nix build`
+          # substitutes it and the VM never boots again for that closure —
+          # demonstrated by accident: one hand-push took this job from 9m20s to
+          # 39s, with the step at 0s and zero subtests run. It also means a single
+          # forged push would report success forever.
+          #
+          # Excluding verdicts costs little, because the time is in the build, not
+          # the run: measured on run 33453135443, the step spent 5m57s building the
+          # 68 closure paths cache.nixos.org lacks and only 2m43s running the VMs.
+          # So we keep the 5m57s and still execute the test every time.
+          #
+          # No leading dash: the post-build-hook interpolates this regex unquoted
+          # into `grep -vEe`.
+          pushFilter: 'vm-test-run-'
+          # Write only from `push`, i.e. from merged code. Pulling is unaffected —
+          # `cachix use` runs before this branch. Without it every same-repo PR
+          # branch carries a live write token, and that token now buys forged test
+          # verdicts as well as poisoned artifacts. Fork PRs get no secrets at all
+          # (the trigger is `pull_request`, never `pull_request_target`), so this
+          # narrows the insider surface, not the outsider one.
+          skipPush: ${{ github.event_name != 'push' || secrets.CACHIX_AUTH_TOKEN == '' }}
 
       - name: Evaluate the public check
         run: |

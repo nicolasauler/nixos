@@ -1,26 +1,29 @@
 {
   description = "Nixos config flake";
 
-  # For CI only, in practice. The workflow passes `accept-flake-config = true` to
-  # install-nix-action, so a runner picks this up with no extra step.
+  # NO `nixConfig` here, deliberately, and the reason is worth keeping because I
+  # got it wrong once and shipped the wrong comment.
   #
-  # It does NOT take effect locally: nix asks per-flake before trusting a
-  # `nixConfig`, and being in `trusted-users` does not waive that — measured,
-  # `nix develop --command nix config show substituters` shows no nicnixos and
-  # prints "Pass '--accept-flake-config' to trust it". Rather than granting
-  # `accept-flake-config` machine-wide (which would trust ANY flake's substituters
-  # — a supply-chain footgun), the devShell below exports `NIX_CONFIG` itself, so
-  # the cache is live exactly inside this repo's shell and nowhere else.
+  # A flake `nixConfig` looks like it scopes a substituter to this repo. It does
+  # not. Nix prompts once per (setting, VALUE) pair and then persists the answer
+  # user-globally in ~/.local/share/nix/trusted-settings.json — not per flake. So
+  # accepting it once arms the cache for every subsequent `nix` command against
+  # this flake, including `nixos-rebuild switch --flake .#precision` (whose
+  # nixos-system-* closure cache.nixos.org does not carry, so a forged toplevel
+  # would be accepted), AND for any OTHER flake that names the same substituter
+  # URL. Measured on this machine after a single acceptance: `nix eval` from an
+  # unrelated directory printed "Using saved setting for 'extra-substituters =
+  # https://nicnixos.cachix.org'". That is exactly the machine-wide trust this
+  # repo decided not to grant.
   #
-  # PULL only. Pushing needs a write token and stays explicit: cachix-action in
-  # CI, `cachix watch-exec` locally.
-  nixConfig = {
-    extra-substituters = ["https://nicnixos.cachix.org"];
-    extra-trusted-public-keys = [
-      "nicnixos.cachix.org-1:360nRdjlB+ydcwCGF3V17ojXcvyWqz/SJ3hTarX6Pqs="
-    ];
-  };
-
+  # It also bought nothing in CI: cachix-action runs `cachix use <name>` itself
+  # before any build step, writing the substituter and key into the runner's
+  # nix.conf (gated only by `skipAddingSubstituter`, which we leave at false).
+  #
+  # So the cache is armed in exactly one place: the devShell's own NIX_CONFIG
+  # below. On a machine that has never accepted it, a plain `nix build` against
+  # this flake correctly gets nothing — verified with a fresh HOME, which printed
+  # "ignoring untrusted flake configuration setting 'extra-substituters'".
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
@@ -99,24 +102,62 @@
       packages = with pkgs; [
         alejandra # formatter this repo is written with
         python3 # the VM tests' testScript is Python
-        cachix # push this repo's builds: cachix watch-exec nicnixos -- nix build ...
+        # Pushing to nicnixos. READ THE WARNING BELOW BEFORE YOU DO.
+        cachix
         actionlint # .github/workflows/ci.yaml is a required-check surface
       ];
 
       # This — not a machine-wide substituter — is what makes the cache live
       # locally. It applies to `nix` commands run inside this shell, which direnv
-      # enters on cd, and to nothing else: nicnixos only ever holds what this repo
+      # enters on cd (`nix print-dev-env` exports NIX_CONFIG, so nix-direnv picks
+      # it up), and to nothing else: nicnixos only ever holds what this repo
       # builds, so putting it in `nix.settings` would add a pointless lookup to
-      # every unrelated `nix build` on the machine. Measured: with this set,
-      # `nix config show substituters` lists nicnixos; outside the shell it does
-      # not. Honoured because `nic` is in `trusted-users`; substituters from an
-      # untrusted user are ignored.
+      # every unrelated `nix build` on the machine.
+      #
+      # NEVER put a secret in this attribute. It is a full nix config surface —
+      # `access-tokens`, `netrc-file`, `post-build-hook` all live here — and
+      # mkShell env attrs land VERBATIM in the devShell's derivation, which is
+      # world-readable in the store (mode 444) and gets pushed to the PUBLIC cache
+      # like any other built path. A URL and a public key are fine. An
+      # `access-tokens = github.com=…` for the private certus-infra input would be
+      # published. Note also that these are assignments, not appends: entering this
+      # shell REPLACES an inherited NIX_CONFIG rather than extending it.
       NIX_CONFIG = ''
         extra-substituters = https://nicnixos.cachix.org
         extra-trusted-public-keys = nicnixos.cachix.org-1:360nRdjlB+ydcwCGF3V17ojXcvyWqz/SJ3hTarX6Pqs=
       '';
+
+      # PUSHING, and the warning belongs HERE rather than only in ci.yaml, because
+      # this is the path a human actually takes and ci.yaml is not what they are
+      # reading when they take it.
+      #
+      #   cachix watch-exec nicnixos -- nix build .#checks.x86_64-linux.buildbot-fanout
+      #
+      # `watch-exec` pushes what that ONE command realises, which is why the
+      # installable matters. NEVER point it at `checks.buildbot-workstation` or at
+      # a `nixosConfigurations.*.config.system.build.toplevel`: certus-infra puts
+      # the buildbot worker password and webhook secret in the store via
+      # `pkgs.writeText`, and those paths are in those closures. Measured on this
+      # machine: /nix/store/w8bvnl77ssir0g4ikvzar5aj0sjwmnhz-workers.json is mode
+      # 444 and contains the literal `certus-worker-local`, with 169 referrers
+      # including nixos-test-driver-buildbot-workstation and nixos-system-*. One
+      # `watch-exec` over any of those publishes it to a PUBLIC cache permanently.
+      #
+      # `checks.buildbot-fanout` is safe to push, but note WHY: it is safe by
+      # VALUE, not by structure — its writeText passwords are dummies
+      # (`tests/buildbot-fanout.nix:38,56`, "test-password"). Replace one with a
     };
 
+    # Adding a check here? Two things to know before you also wire it into CI or
+    # push it to the cache:
+    #   - `buildbot-workstation` needs the PRIVATE certus-infra input, so it
+    #     cannot run on a public runner, and its closure carries certus's
+    #     `writeText` secrets (the worker password and webhook secret). It must
+    #     never be built by a job or command that pushes to nicnixos.
+    #   - `buildbot-fanout` is the public one, and it is safe by VALUE not by
+    #     structure: its writeText passwords are dummies. Keep them that way.
+    # The pushing side of this is enforced in .github/workflows/ci.yaml and
+    # explained next to the devShell's push instructions above.
     checks.${system} = {
       buildbot-workstation = import ./tests/buildbot-workstation.nix {
         inherit pkgs inputs;
