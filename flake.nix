@@ -153,7 +153,8 @@
       # buildbot worker password and webhook secret in the store via
       # `pkgs.writeText`. Measured on this machine:
       # /nix/store/w8bvnl77ssir0g4ikvzar5aj0sjwmnhz-workers.json is mode 444 and
-      # contains the literal `certus-worker-local`, with 169 referrers including
+      # contains the literal `certus-worker-local`, and is reachable from 169 paths
+      # in its referrers closure (19 direct referrers) including
       # nixos-test-driver-buildbot-workstation and nixos-system-*. One push over any
       # of those publishes it permanently.
       #

@@ -62,7 +62,8 @@ jobs:
       #   READ THIS BEFORE ADDING A BUILD HERE. certus-infra puts the buildbot
       #   worker password and webhook secret in the store via `pkgs.writeText`.
       #   Measured: …-workers.json is mode 444, contains the literal
-      #   `certus-worker-local`, and has 169 referrers including
+      #   `certus-worker-local`, and is reachable from 169 paths in its referrers
+      #   closure (19 direct referrers) including
       #   nixos-test-driver-buildbot-workstation and nixos-system-*. So
       #   `checks.buildbot-workstation` and any host toplevel must NEVER be built
       #   in a pushing job. If desktop ever joins public CI, put it in a job
