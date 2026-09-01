@@ -7,6 +7,11 @@
   imports = [
     inputs.nix-colors.homeManagerModules.default
     ../../modules/programs/alacritty.nix
+    # direnv, so this repo's tracked `.envrc` (`use flake`) actually loads here.
+    # Without it the devShell never activates, which means no alejandra and the
+    # repo's own `alejandra-system` pre-commit hook fails on every commit — the
+    # other three hosts already import this; notebook was the odd one out.
+    ../../modules/programs/direnv.nix
     ../../modules/programs/git
     ../../modules/programs/jujutsu.nix
     ../../modules/programs/gtk.nix

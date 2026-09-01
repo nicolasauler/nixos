@@ -472,4 +472,12 @@ in {
       "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw="
     ];
   };
+
+  # nicnixos deliberately does NOT appear here. It only ever holds what this repo
+  # builds, so a machine-wide substituter would add a lookup to every unrelated
+  # `nix build` for a cache that cannot have the path. The cache is armed by the
+  # flake devShell's own NIX_CONFIG instead — NOT by a flake `nixConfig`, which
+  # would not have scoped it at all (nix persists that acceptance user-globally;
+  # see the comment at the top of flake.nix). Likewise `cachix` is in that
+  # devShell, not in systemPackages.
 }

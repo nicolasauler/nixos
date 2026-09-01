@@ -39,9 +39,80 @@ jobs:
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
         with:
+          # No `accept-flake-config`: this flake carries no `nixConfig` (see the
+          # comment at the top of flake.nix for why it was deleted), and leaving
+          # the line would silently pre-authorise whatever `nixConfig` a future
+          # commit adds — extra-substituters, extra-trusted-public-keys,
+          # post-build-hook — on the one runner that also holds the cache write
+          # token. The substituter is armed by cachix-action's own `cachix use`,
+          # not by the flake.
           extra_nix_config: |
             experimental-features = nix-command flakes
-            accept-flake-config = true
+
+      # Pull + push our own cache. cachix-action registers a nix post-build-hook
+      # and pushes every path this job BUILDS, which drives both settings below.
+      #
+      #   SAFE TODAY, but by VALUE not by structure. This job builds only
+      #   `checks.buildbot-fanout`, which #19 wired to the PUBLIC buildbot-nix
+      #   input rather than reaching through the private certus-infra — and whose
+      #   own writeText passwords are dummies (`tests/buildbot-fanout.nix:38,56`,
+      #   "test-password"). Replace one of those with a real credential and this
+      #   job starts publishing it, with no other signal.
+      #
+      #   READ THIS BEFORE ADDING A BUILD HERE. certus-infra puts the buildbot
+      #   worker password and webhook secret in the store via `pkgs.writeText`.
+      #   Measured: …-workers.json is mode 444, contains the literal
+      #   `certus-worker-local`, and is reachable from 169 paths in its referrers
+      #   closure (19 direct referrers) including
+      #   nixos-test-driver-buildbot-workstation and nixos-system-*. So
+      #   `checks.buildbot-workstation` and any host toplevel must NEVER be built
+      #   in a pushing job. If desktop ever joins public CI, put it in a job
+      #   without this step, or fix the secrets first.
+      - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: nicnixos
+          # Withhold the secret entirely on anything but `push`. `skipPush` alone
+          # does NOT do this: cachix-action runs `cachix authtoken` unconditionally
+          # whenever authToken is non-empty and only afterwards computes pushMode,
+          # so a PR job would finish with a persisted writable token in
+          # ~/.config/cachix/cachix.dhall that any later step could use with no
+          # token argument. Measured on run 33457632177 (a pull_request run with
+          # skipPush true): the step logged `cachix authtoken ***` -> "Written to
+          # /home/runner/.config/cachix/cachix.dhall", and only the POST step said
+          # "Pushing is disabled".
+          #
+          # Note the limit of this control: a same-repo PR runs the workflow file
+          # FROM the PR branch, so its author can simply delete these lines. It
+          # stops accidents and shrinks the window; it is not an insider boundary.
+          # A real one needs a GitHub Environment with required reviewers.
+          authToken: ${{ github.event_name == 'push' && secrets.CACHIX_AUTH_TOKEN || '' }}
+          # Belt: never cache a test VERDICT. A check's output IS its pass, so once
+          # a `vm-test-run-*` path is in a trusted signed cache, `nix build`
+          # substitutes it and the VM never boots again for that closure —
+          # demonstrated by accident: a hand-push once took this job from 9m20s to
+          # 39s, with the step at 0s and zero subtests run. It also means a single
+          # forged push would report success forever.
+          #
+          # Excluding verdicts costs little, because the time is in the build, not
+          # the run: measured on run 33453135443, the step spent 5m57s building the
+          # 68 closure paths cache.nixos.org lacks and only 2m43s running the VMs.
+          #
+          # This is a DENYLIST, and the name it keys on is COMPUTED, not a literal.
+          # At the pinned nixpkgs (`nixos/lib/testing/run.nix`) the output name is
+          # `"${kind}-test-run-${config.name}"`, where kind comes from the node
+          # types — so a check declared with `containers` rather than `nodes` is
+          # `container-test-run-…`, which `vm-test-run-` would not have matched.
+          # `test-run-` covers all three spellings (vm-, container-,
+          # container-and-vm-) and still cannot match the driver
+          # (`nixos-test-driver-…`) or anything in its closure.
+          #
+          # It still does not generalise beyond nixos tests: a future
+          # `checks.fmt = runCommand "alejandra-check" …` would have its verdict
+          # cached again with no signal. The --no-substitute step below is the half
+          # that does generalise. No leading dash — the post-build-hook interpolates
+          # this regex unquoted into `grep -vEe`.
+          pushFilter: 'test-run-'
+          skipPush: ${{ github.event_name != 'push' }}
 
       - name: Evaluate the public check
         run: |
@@ -49,10 +120,32 @@ jobs:
           nix --version
           nix eval --raw '.#checks.x86_64-linux.buildbot-fanout.drvPath'
 
+      # Two commands, and the split is the structural guarantee that this check
+      # actually RUNS rather than being substituted:
+      #
+      #   1. Realise the check derivation's DIRECT REFERENCES with substitution, so
+      #      the expensive inputs come from a cache instead of being rebuilt. Dry-run
+      #      measures 27 paths / ~115 MiB.
+      #   2. Realise the check itself with --no-substitute, so the VM boots and the
+      #      subtests execute even if a cached verdict exists for this closure.
+      #
+      # It must be the drv's references, NOT just `.driver`. That was the first
+      # attempt and it is wrong in a way that only bites once the cache is warm:
+      # step 1 realises the driver's OUTPUT, and nix then fetches only that output's
+      # RUNTIME closure — 789 paths, which contains bash but NOT stdenv-linux
+      # (measured). With stdenv missing and substitution forbidden, step 2 builds
+      # 542 derivations: the full stage0-posix bootstrap, hex0-seed through
+      # gcc-4.6.4, gcc-10.4.0, binutils, musl, glibc. That needs hours against a
+      # 30-minute job timeout, so the check would fail by timeout while still never
+      # booting a VM — the same outcome this step exists to prevent. Adding only
+      # stdenv-linux to that store drops it to exactly one derivation, which is how
+      # the cause was isolated.
       - name: checks.buildbot-fanout
         run: |
           set -euo pipefail
-          nix build -L --no-link '.#checks.x86_64-linux.buildbot-fanout'
+          drv=$(nix eval --raw '.#checks.x86_64-linux.buildbot-fanout.drvPath')
+          nix-store --query --references "$drv" | xargs -r nix-store --realise
+          nix build -L --no-link --no-substitute "$drv^*"
 
   host-eval:
     name: Host evaluation
@@ -67,9 +160,18 @@ jobs:
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
         with:
+          # No `accept-flake-config` here either — and this is the job where it
+          # matters most, because `Host evaluation` is the REQUIRED check. Left in,
+          # a future flake `nixConfig` adding extra-substituters or
+          # extra-trusted-public-keys would be auto-accepted here with no prompt and
+          # no signal, silently changing where the required check's inputs come from.
           extra_nix_config: |
             experimental-features = nix-command flakes
-            accept-flake-config = true
+
+      # No cachix step here on purpose: this job only EVALUATES, so it realises
+      # nothing to push, and evaluation needs flake inputs rather than built store
+      # paths, so pulling would not speed it up either. If a build is ever added
+      # to this job, re-read the secret warning on the cachix step above first.
 
       # Evaluating a host's toplevel catches the breakage that actually happens
       # to this repo: module paths that moved or vanished, and nixpkgs attributes
