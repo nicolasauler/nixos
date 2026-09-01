@@ -1,15 +1,19 @@
 {
   description = "Nixos config flake";
 
-  # Anyone evaluating this flake — including CI, which already passes
-  # `accept-flake-config = true` to install-nix-action — pulls from our cache
-  # without further setup. `extra-*` rather than the plain settings, so this adds
-  # to whatever the machine already trusts instead of replacing it.
+  # For CI only, in practice. The workflow passes `accept-flake-config = true` to
+  # install-nix-action, so a runner picks this up with no extra step.
   #
-  # PULL only. Pushing needs a write token and is deliberately explicit: in CI via
-  # cachix-action, locally via `cachix watch-exec`. See the note in
-  # hosts/precision/configuration.nix for why a post-build-hook would be a
-  # mistake on a machine that also builds bipa.
+  # It does NOT take effect locally: nix asks per-flake before trusting a
+  # `nixConfig`, and being in `trusted-users` does not waive that — measured,
+  # `nix develop --command nix config show substituters` shows no nicnixos and
+  # prints "Pass '--accept-flake-config' to trust it". Rather than granting
+  # `accept-flake-config` machine-wide (which would trust ANY flake's substituters
+  # — a supply-chain footgun), the devShell below exports `NIX_CONFIG` itself, so
+  # the cache is live exactly inside this repo's shell and nowhere else.
+  #
+  # PULL only. Pushing needs a write token and stays explicit: cachix-action in
+  # CI, `cachix watch-exec` locally.
   nixConfig = {
     extra-substituters = ["https://nicnixos.cachix.org"];
     extra-trusted-public-keys = [
@@ -83,6 +87,36 @@
       };
     };
   in {
+    # Replaces the old shell.nix, which did `import <nixpkgs> {}` — the channel,
+    # so it was unpinned and impure and had nothing to do with the nixpkgs these
+    # hosts are actually built from. This shell uses the locked input.
+    #
+    # It is also the right scope for the cache: entering this shell (or running
+    # any `nix` command against this flake) picks up `nixConfig` above, so
+    # nicnixos is consulted exactly when it can help and never adds a lookup to
+    # unrelated `nix build`s on the machine.
+    devShells.${system}.default = pkgs.mkShell {
+      packages = with pkgs; [
+        alejandra # formatter this repo is written with
+        python3 # the VM tests' testScript is Python
+        cachix # push this repo's builds: cachix watch-exec nicnixos -- nix build ...
+        actionlint # .github/workflows/ci.yaml is a required-check surface
+      ];
+
+      # This — not a machine-wide substituter — is what makes the cache live
+      # locally. It applies to `nix` commands run inside this shell, which direnv
+      # enters on cd, and to nothing else: nicnixos only ever holds what this repo
+      # builds, so putting it in `nix.settings` would add a pointless lookup to
+      # every unrelated `nix build` on the machine. Measured: with this set,
+      # `nix config show substituters` lists nicnixos; outside the shell it does
+      # not. Honoured because `nic` is in `trusted-users`; substituters from an
+      # untrusted user are ignored.
+      NIX_CONFIG = ''
+        extra-substituters = https://nicnixos.cachix.org
+        extra-trusted-public-keys = nicnixos.cachix.org-1:360nRdjlB+ydcwCGF3V17ojXcvyWqz/SJ3hTarX6Pqs=
+      '';
+    };
+
     checks.${system} = {
       buildbot-workstation = import ./tests/buildbot-workstation.nix {
         inherit pkgs inputs;
