@@ -171,8 +171,10 @@
     #     cannot run on a public runner, and its closure carries certus's
     #     `writeText` secrets (the worker password and webhook secret). It must
     #     never be built by a job or command that pushes to nicnixos.
-    #   - `buildbot-fanout` is the public one, and it is safe by VALUE not by
-    #     structure: its writeText passwords are dummies. Keep them that way.
+    #   - `buildbot-fanout` and `nix-substitution-limit` are the public ones, and
+    #     they are safe by VALUE not by structure: fanout's writeText passwords are
+    #     dummies, and the substitution node has no secret-shaped values at all
+    #     (an unsigned local cache on loopback). Keep them that way.
     # The pushing side of this is enforced in .github/workflows/ci.yaml and
     # explained next to the devShell's push instructions above.
     checks.${system} = {
@@ -181,6 +183,11 @@
       };
       buildbot-fanout = import ./tests/buildbot-fanout.nix {
         inherit pkgs inputs;
+      };
+      # Takes only `pkgs`: it imports ./modules/services/nix-daemon-ci.nix
+      # directly and needs no flake input, private or otherwise.
+      nix-substitution-limit = import ./tests/nix-substitution-limit.nix {
+        inherit pkgs;
       };
     };
 
