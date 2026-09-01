@@ -48,8 +48,12 @@
       # no nixpkgs follows: nixvim recommends building against its own tested nixpkgs pin
     };
 
-    # sops-nix.url = "github:Mic92/sops-nix";
-    # agenix.url = "github:ryantm/agenix";
+    # agenix, not sops-nix: one admin, host keys that already exist, and the
+    # consumers here want whole files rather than fields out of a YAML document.
+    agenix = {
+      url = "github:ryantm/agenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     # Pinned: 54f75733 (2026-08-10) moved the bind mounts from fileSystems to
     # systemd.mounts with After=sentinelone-init.service. That service is ordered
@@ -111,6 +115,10 @@
         # Pushing to nicnixos. READ THE WARNING BELOW BEFORE YOU DO.
         cachix
         actionlint # .github/workflows/ci.yaml is a required-check surface
+        # Editing ../secrets/*.age. Here and not in any host's systemPackages:
+        # the admin key lives on the machine you edit from, not on the machine
+        # that decrypts. Needs `secrets.nix` at the repo root, so run it there.
+        inputs.agenix.packages.${system}.default
       ];
 
       # This — not a machine-wide substituter — is what makes the cache live
