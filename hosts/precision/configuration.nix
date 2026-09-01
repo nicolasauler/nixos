@@ -231,6 +231,9 @@ in {
   # $ nix search wget
   environment.systemPackages = with pkgs; [
     bat
+    # for pushing this repo's builds to nicnixos.cachix.org — see the note next
+    # to nix.settings below for why pushing is explicit and not a build hook
+    cachix
     dust
     firefox
     fzf
