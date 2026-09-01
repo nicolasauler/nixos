@@ -39,9 +39,15 @@ jobs:
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
         with:
+          # No `accept-flake-config`: this flake carries no `nixConfig` (see the
+          # comment at the top of flake.nix for why it was deleted), and leaving
+          # the line would silently pre-authorise whatever `nixConfig` a future
+          # commit adds — extra-substituters, extra-trusted-public-keys,
+          # post-build-hook — on the one runner that also holds the cache write
+          # token. The substituter is armed by cachix-action's own `cachix use`,
+          # not by the flake.
           extra_nix_config: |
             experimental-features = nix-command flakes
-            accept-flake-config = true
 
       # Pull + push our own cache. cachix-action registers a nix post-build-hook
       # and pushes every path this job BUILDS, which drives both settings below.
@@ -64,9 +70,23 @@ jobs:
       - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: nicnixos
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-          # Never cache a test VERDICT. A check's output IS its pass, so once a
-          # `vm-test-run-*` path is in a trusted signed cache, `nix build`
+          # Withhold the secret entirely on anything but `push`. `skipPush` alone
+          # does NOT do this: cachix-action runs `cachix authtoken` unconditionally
+          # whenever authToken is non-empty and only afterwards computes pushMode,
+          # so a PR job would finish with a persisted writable token in
+          # ~/.config/cachix/cachix.dhall that any later step could use with no
+          # token argument. Measured on run 33457632177 (a pull_request run with
+          # skipPush true): the step logged `cachix authtoken ***` -> "Written to
+          # /home/runner/.config/cachix/cachix.dhall", and only the POST step said
+          # "Pushing is disabled".
+          #
+          # Note the limit of this control: a same-repo PR runs the workflow file
+          # FROM the PR branch, so its author can simply delete these lines. It
+          # stops accidents and shrinks the window; it is not an insider boundary.
+          # A real one needs a GitHub Environment with required reviewers.
+          authToken: ${{ github.event_name == 'push' && secrets.CACHIX_AUTH_TOKEN || '' }}
+          # Belt: never cache a test VERDICT. A check's output IS its pass, so once
+          # a `vm-test-run-*` path is in a trusted signed cache, `nix build`
           # substitutes it and the VM never boots again for that closure —
           # demonstrated by accident: one hand-push took this job from 9m20s to
           # 39s, with the step at 0s and zero subtests run. It also means a single
@@ -75,18 +95,15 @@ jobs:
           # Excluding verdicts costs little, because the time is in the build, not
           # the run: measured on run 33453135443, the step spent 5m57s building the
           # 68 closure paths cache.nixos.org lacks and only 2m43s running the VMs.
-          # So we keep the 5m57s and still execute the test every time.
           #
-          # No leading dash: the post-build-hook interpolates this regex unquoted
-          # into `grep -vEe`.
+          # This is a DENYLIST keyed on nixpkgs' internal name for
+          # `testers.runNixOSTest` outputs (`vm-test-run-${name}`), so it does not
+          # generalise: a future `checks.fmt = runCommand "alejandra-check" …`
+          # would have its verdict cached again with no signal. The braces below
+          # are the structural half that does generalise. No leading dash — the
+          # post-build-hook interpolates this regex unquoted into `grep -vEe`.
           pushFilter: 'vm-test-run-'
-          # Write only from `push`, i.e. from merged code. Pulling is unaffected —
-          # `cachix use` runs before this branch. Without it every same-repo PR
-          # branch carries a live write token, and that token now buys forged test
-          # verdicts as well as poisoned artifacts. Fork PRs get no secrets at all
-          # (the trigger is `pull_request`, never `pull_request_target`), so this
-          # narrows the insider surface, not the outsider one.
-          skipPush: ${{ github.event_name != 'push' || secrets.CACHIX_AUTH_TOKEN == '' }}
+          skipPush: ${{ github.event_name != 'push' }}
 
       - name: Evaluate the public check
         run: |
@@ -94,10 +111,27 @@ jobs:
           nix --version
           nix eval --raw '.#checks.x86_64-linux.buildbot-fanout.drvPath'
 
+      # Two commands on purpose, and the split is the structural guarantee that
+      # this check actually RUNS rather than being substituted:
+      #
+      #   1. Realise the driver and its closure WITH substitution, so the ~68 paths
+      #      cache.nixos.org lacks come from nicnixos instead of being rebuilt.
+      #      That is where the 5m57s of the old 8m41s step went.
+      #   2. Realise the check itself with --no-substitute, so the VM boots and the
+      #      subtests execute even if a `vm-test-run-*` verdict is sitting in the
+      #      cache. It is, right now: one was hand-pushed before `pushFilter`
+      #      existed, and until it ages out of the cache the single-command form
+      #      finished in 36s having run nothing (run 33457632177).
+      #
+      # This does not depend on the cache's state, on the derivation being renamed,
+      # or on `allowSubstitutes = false` — which would not help anyway, because
+      # install-nix-action injects `always-allow-substitutes = true` unless
+      # extra_nix_config mentions it, and ours does not.
       - name: checks.buildbot-fanout
         run: |
           set -euo pipefail
-          nix build -L --no-link '.#checks.x86_64-linux.buildbot-fanout'
+          nix build -L --no-link '.#checks.x86_64-linux.buildbot-fanout.driver'
+          nix build -L --no-link --no-substitute '.#checks.x86_64-linux.buildbot-fanout'
 
   host-eval:
     name: Host evaluation
