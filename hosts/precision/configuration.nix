@@ -465,11 +465,28 @@ in {
       "https://cuda-maintainers.cachix.org"
       "https://hyprland.cachix.org"
       "https://devenv.cachix.org"
+      # Our own cache, for what this repo builds: the VM checks and host
+      # closures. PUBLIC on purpose — everything in this repo is public. Nothing
+      # from bipa or certus-infra belongs here, which is why pushing is an
+      # explicit per-command action and never a post-build-hook (see below).
+      "https://nicnixos.cachix.org"
     ];
     trusted-public-keys = [
       "cuda-maintainers.cachix.org-1:0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E="
       "hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc="
       "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw="
+      "nicnixos.cachix.org-1:360nRdjlB+ydcwCGF3V17ojXcvyWqz/SJ3hTarX6Pqs="
     ];
   };
+
+  # Pushing to nicnixos is deliberately NOT a post-build-hook. This machine also
+  # builds bipa, a private employer monorepo, and a blanket hook would publish its
+  # artifacts to a public cache. Push explicitly, scoped to the command:
+  #
+  #   cachix authtoken <write-token>        # once; writes ~/.config/cachix/cachix.dhall (0600)
+  #   cachix watch-exec nicnixos -- nix build .#checks.x86_64-linux.buildbot-fanout
+  #
+  # `watch-exec` pushes only what that one command realises, so there is no way to
+  # sweep something private in by accident. Both lines are single-line and
+  # substitution-free, so they work in nushell as written.
 }

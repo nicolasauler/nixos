@@ -1,6 +1,22 @@
 {
   description = "Nixos config flake";
 
+  # Anyone evaluating this flake — including CI, which already passes
+  # `accept-flake-config = true` to install-nix-action — pulls from our cache
+  # without further setup. `extra-*` rather than the plain settings, so this adds
+  # to whatever the machine already trusts instead of replacing it.
+  #
+  # PULL only. Pushing needs a write token and is deliberately explicit: in CI via
+  # cachix-action, locally via `cachix watch-exec`. See the note in
+  # hosts/precision/configuration.nix for why a post-build-hook would be a
+  # mistake on a machine that also builds bipa.
+  nixConfig = {
+    extra-substituters = ["https://nicnixos.cachix.org"];
+    extra-trusted-public-keys = [
+      "nicnixos.cachix.org-1:360nRdjlB+ydcwCGF3V17ojXcvyWqz/SJ3hTarX6Pqs="
+    ];
+  };
+
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 

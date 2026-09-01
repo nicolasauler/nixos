@@ -43,6 +43,28 @@ jobs:
             experimental-features = nix-command flakes
             accept-flake-config = true
 
+      # Pull + push our own cache. cachix-action watches the store and pushes
+      # what this job realises, which is why WHAT this job builds matters:
+      #
+      #   SAFE TODAY. This job builds only `checks.buildbot-fanout`, which #19
+      #   deliberately wired to the PUBLIC buildbot-nix input rather than reaching
+      #   through the private certus-infra, and the host-eval job only evaluates.
+      #
+      #   READ THIS BEFORE ADDING A BUILD HERE. certus-infra's modules put secrets
+      #   in the store via `pkgs.writeText` — the buildbot webhook secret and the
+      #   worker password. Any closure containing them, e.g.
+      #   `checks.buildbot-workstation` or the `desktop` toplevel, must NEVER be
+      #   built in this job while it pushes, because cachix would publish those
+      #   store paths to a PUBLIC cache. If desktop ever joins public CI, split it
+      #   into a job without the push step, or fix the secrets first.
+      - uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: nicnixos
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          # Without the secret (e.g. a fork PR) this degrades to pull-only rather
+          # than failing the job.
+          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
+
       - name: Evaluate the public check
         run: |
           set -euo pipefail
@@ -70,6 +92,11 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             accept-flake-config = true
+
+      # No cachix step here on purpose: this job only EVALUATES, so it realises
+      # nothing to push, and evaluation needs flake inputs rather than built store
+      # paths, so pulling would not speed it up either. If a build is ever added
+      # to this job, re-read the secret warning on the cachix step above first.
 
       # Evaluating a host's toplevel catches the breakage that actually happens
       # to this repo: module paths that moved or vanished, and nixpkgs attributes
