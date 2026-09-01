@@ -70,6 +70,36 @@ pkgs.testers.runNixOSTest {
         chmod 0600 /var/lib/buildbot/github-app.key /var/lib/buildbot/oauth-secret
       '';
     };
+
+    # The worker list used to arrive from buildbot-limits.nix, which carried a
+    # real password as a store literal. It is an encrypted file now
+    # (../modules/services/buildbot-secrets.nix), and nothing in a VM can
+    # decrypt it — so this node states its own pair by value, the way
+    # buildbot-fanout.nix does. Safe by VALUE, not by structure: keep these
+    # obviously fake.
+    #
+    # `cores` must stay 1 or the "exactly one worker slot exists" subtest below
+    # is measuring a different configuration than the one it claims (certus-infra
+    # sets 8, which would spawn desktop-000..007).
+    #
+    # `worker.name` is set because it defaults to networking.hostName, which is
+    # "machine" in a VM while the entry above says "desktop". That mismatch made
+    # the worker unauthenticatable no matter what the passwords said — the log
+    # carried a permanent twisted UnauthorizedLogin — so nothing here exercised
+    # the master/worker credential pair at all. Aligning it means the "worker
+    # authenticates" subtest below actually fails if the two files diverge, which
+    # is the invariant desktop now depends on agenix to preserve.
+    services.buildbot-nix = {
+      master.workersFile = lib.mkForce (pkgs.writeText "workers.json" ''
+        [
+          { "name": "desktop", "pass": "test-password", "cores": 1 }
+        ]
+      '');
+      worker = {
+        name = "desktop";
+        workerPasswordFile = lib.mkForce (pkgs.writeText "worker-pass" "test-password");
+      };
+    };
   };
 
   testScript = ''
@@ -236,6 +266,31 @@ pkgs.testers.runNixOSTest {
         )
         workers = machine.succeed("curl -sf localhost:8010/api/v2/workers")
         assert "desktop-001" not in workers, f"more than one slot: {workers}"
+
+    with subtest("the worker authenticates against the master's worker list"):
+        # What makes the credential pair load-bearing rather than decorative.
+        # The master reads its list from workersFile and the worker reads its
+        # password from workerPasswordFile — two separate files, and on desktop
+        # two separate agenix secrets. If they diverge, buildbot answers with
+        # twisted's UnauthorizedLogin and the worker never attaches, so
+        # `connected_to` stays empty while the slot above still exists.
+        #
+        # Ask for THIS worker by name, not /api/v2/workers. buildbot registers a
+        # built-in `__Janitor` worker which is always connected: measured, the
+        # collection returns "total": 2, and a grep for a non-empty
+        # `connected_to` over the whole document matches the janitor and passes
+        # even when desktop-000 is rejected. That mistake was caught by breaking
+        # the password on purpose and watching this subtest pass anyway.
+        #
+        # timeout=60 rather than the driver's 900s default: by this point the
+        # earlier subtests have already spent ~30s, so a worker that is going to
+        # attach has long since done so, and a diverged pair should report in a
+        # minute instead of hanging for a quarter of an hour.
+        machine.wait_until_succeeds(
+            "curl -sf localhost:8010/api/v2/workers/desktop-000 | tr -d ' \\n' "
+            "| grep -q '\"connected_to\":\\[{'",
+            timeout=60,
+        )
 
     with subtest("master is functional (its own schedulers exist)"):
         machine.wait_until_succeeds(
