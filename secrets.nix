@@ -18,10 +18,22 @@
 # theirs and hand you a recipient that can read these files. Compare against the
 # pin or an out-of-band fingerprint, not against whatever answers port 22.
 #
-# Editing or rotating, from the repo root, with the admin key at
-# ~/.ssh/id_ed25519 or in ssh-agent:
+# Editing or rotating, from the repo root, in the devShell (it carries the PINNED
+# agenix — prefer it over `nix run github:ryantm/agenix`, which floats):
 #
-#   nix run github:ryantm/agenix -- -e secrets/buildbot-worker-password.age
+#   agenix -e secrets/buildbot-worker-password.age
+#
+# The identity is the admin key FILE at ~/.ssh/id_ed25519, passphrase prompted
+# interactively. ssh-agent does NOT help: agenix only ever passes `--identity
+# FILE` to age (pkgs/agenix.sh:135-148), and age has no agent support, so a
+# loaded agent key satisfies nothing. Also know that the cleartext is staged in
+# `mktemp -d` under /tmp during an edit — disk-backed on this machine, removed
+# with plain `rm -rf` — so an edit transiently puts plaintext on disk.
+#
+# RECOVERY WITHOUT THE ADMIN KEY, from desktop itself (host key is not in
+# agenix's default identity list, so the -i flag is required):
+#
+#   sudo agenix -r -i /etc/ssh/ssh_host_ed25519_key
 #
 # ROTATING THE WORKER PASSWORD TOUCHES BOTH FILES. buildbot checks the worker's
 # password against the master's worker list, so the value in
