@@ -52,12 +52,18 @@ jobs:
       # Pull + push our own cache. cachix-action registers a nix post-build-hook
       # and pushes every path this job BUILDS, which drives both settings below.
       #
-      #   SAFE TODAY, but by VALUE not by structure. This job builds only
-      #   `checks.buildbot-fanout`, which #19 wired to the PUBLIC buildbot-nix
-      #   input rather than reaching through the private certus-infra — and whose
-      #   own writeText passwords are dummies (`tests/buildbot-fanout.nix:38,56`,
-      #   "test-password"). Replace one of those with a real credential and this
-      #   job starts publishing it, with no other signal.
+      #   SAFE TODAY, but by VALUE not by structure. This job builds exactly two
+      #   checks, `checks.buildbot-fanout` and `checks.nix-substitution-limit`.
+      #   The fan-out is safe because #19 wired it to the PUBLIC buildbot-nix
+      #   input rather than reaching through the private certus-infra, and its own
+      #   writeText passwords are dummies (`tests/buildbot-fanout.nix:38,56`,
+      #   "test-password"). The substitution node is safe because it declares no
+      #   credential at all: it imports only ./modules/services/nix-daemon-ci.nix,
+      #   and its closure paths that the fan-out does not already share carry no
+      #   password material (measured — `buildbot-worker`'s password fields are
+      #   null and root's hashed-password is the NixOS-test default empty value).
+      #   Replace either dummy with a real credential and this job starts
+      #   publishing it, with no other signal.
       #
       #   READ THIS BEFORE ADDING A BUILD HERE. certus-infra puts the buildbot
       #   worker password and webhook secret in the store via `pkgs.writeText`.
@@ -114,11 +120,14 @@ jobs:
           pushFilter: 'test-run-'
           skipPush: ${{ github.event_name != 'push' }}
 
-      - name: Evaluate the public check
+      - name: Evaluate the public checks
         run: |
           set -euo pipefail
           nix --version
-          nix eval --raw '.#checks.x86_64-linux.buildbot-fanout.drvPath'
+          # `nix eval --raw` prints no trailing newline, so these need one each
+          # or the two paths arrive concatenated onto one unreadable line.
+          nix eval --raw '.#checks.x86_64-linux.buildbot-fanout.drvPath'; echo
+          nix eval --raw '.#checks.x86_64-linux.nix-substitution-limit.drvPath'; echo
 
       # Two commands, and the split is the structural guarantee that this check
       # actually RUNS rather than being substituted:
@@ -144,6 +153,30 @@ jobs:
         run: |
           set -euo pipefail
           drv=$(nix eval --raw '.#checks.x86_64-linux.buildbot-fanout.drvPath')
+          nix-store --query --references "$drv" | xargs -r nix-store --realise
+          nix build -L --no-link --no-substitute "$drv^*"
+
+      # Same two-command form, same reason. Both public checks live in this one
+      # job on purpose: the KVM guard above is a single gamble on a free runner,
+      # so splitting them into two jobs would roll that die twice for no gain and
+      # make a red badge the common case.
+      #
+      # How often it loses, measured rather than guessed: 6 of the last 26 settled
+      # runs of this workflow ended red at `Enable and verify KVM` (23%), and all
+      # 6 failed at exactly that step. Treat that as a floor, not the per-attempt
+      # rate — `gh run list` reports a run's FINAL conclusion, so reruns that
+      # eventually won are counted as successes. This PR's own head lost three
+      # consecutive attempts before passing.
+      #
+      # `!cancelled()` because that decision has a cost: as plain sequential steps
+      # a fan-out failure would abort the job and this check would never run, so
+      # one regression would take all signal from an unrelated test. The two are
+      # independent; only the KVM gamble is shared.
+      - name: checks.nix-substitution-limit
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          drv=$(nix eval --raw '.#checks.x86_64-linux.nix-substitution-limit.drvPath')
           nix-store --query --references "$drv" | xargs -r nix-store --realise
           nix build -L --no-link --no-substitute "$drv^*"
 
