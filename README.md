@@ -21,10 +21,11 @@ Pull needs nothing: it is armed by the devShell. Push happens from CI on merged
 code. If you ever need to push by hand, push only `checks.buildbot-fanout`, and
 read `flake.nix` first.
 
-One outstanding owner action, recorded because CI cannot do it: an empty
-`vm-test-run-buildbot-fanout` verdict was hand-pushed to the cache before
-`pushFilter` existed. The CI step no longer trusts it (it realises the check with
-`--no-substitute`), so it is no longer load-bearing — but it should be deleted from
-the cache via the cachix dashboard so it stops occupying a warm GC slot and cannot
-mislead a local `nix build`. There is no `cachix` CLI subcommand for deleting a
-path.
+Do not push a check's OUTPUT by hand. A check's output is its verdict, so once it
+is in a trusted signed cache `nix build` substitutes it and the test never runs
+again for that closure. That happened once here: a hand-pushed
+`vm-test-run-buildbot-fanout` took the CI job from 9m20s to 39s with zero subtests
+executed. The cache has since been purged, and two belts now prevent a recurrence
+— CI realises the check with `--no-substitute`, and `pushFilter` keeps
+`*-test-run-*` out of the cache — but there is no `cachix` CLI subcommand for
+deleting a path, so a mistake here needs the dashboard to undo.

@@ -88,7 +88,7 @@ jobs:
           # Belt: never cache a test VERDICT. A check's output IS its pass, so once
           # a `vm-test-run-*` path is in a trusted signed cache, `nix build`
           # substitutes it and the VM never boots again for that closure —
-          # demonstrated by accident: one hand-push took this job from 9m20s to
+          # demonstrated by accident: a hand-push once took this job from 9m20s to
           # 39s, with the step at 0s and zero subtests run. It also means a single
           # forged push would report success forever.
           #
@@ -96,13 +96,21 @@ jobs:
           # the run: measured on run 33453135443, the step spent 5m57s building the
           # 68 closure paths cache.nixos.org lacks and only 2m43s running the VMs.
           #
-          # This is a DENYLIST keyed on nixpkgs' internal name for
-          # `testers.runNixOSTest` outputs (`vm-test-run-${name}`), so it does not
-          # generalise: a future `checks.fmt = runCommand "alejandra-check" …`
-          # would have its verdict cached again with no signal. The braces below
-          # are the structural half that does generalise. No leading dash — the
-          # post-build-hook interpolates this regex unquoted into `grep -vEe`.
-          pushFilter: 'vm-test-run-'
+          # This is a DENYLIST, and the name it keys on is COMPUTED, not a literal.
+          # At the pinned nixpkgs (`nixos/lib/testing/run.nix`) the output name is
+          # `"${kind}-test-run-${config.name}"`, where kind comes from the node
+          # types — so a check declared with `containers` rather than `nodes` is
+          # `container-test-run-…`, which `vm-test-run-` would not have matched.
+          # `test-run-` covers all three spellings (vm-, container-,
+          # container-and-vm-) and still cannot match the driver
+          # (`nixos-test-driver-…`) or anything in its closure.
+          #
+          # It still does not generalise beyond nixos tests: a future
+          # `checks.fmt = runCommand "alejandra-check" …` would have its verdict
+          # cached again with no signal. The --no-substitute step below is the half
+          # that does generalise. No leading dash — the post-build-hook interpolates
+          # this regex unquoted into `grep -vEe`.
+          pushFilter: 'test-run-'
           skipPush: ${{ github.event_name != 'push' }}
 
       - name: Evaluate the public check
@@ -111,27 +119,32 @@ jobs:
           nix --version
           nix eval --raw '.#checks.x86_64-linux.buildbot-fanout.drvPath'
 
-      # Two commands on purpose, and the split is the structural guarantee that
-      # this check actually RUNS rather than being substituted:
+      # Two commands, and the split is the structural guarantee that this check
+      # actually RUNS rather than being substituted:
       #
-      #   1. Realise the driver and its closure WITH substitution, so the ~68 paths
-      #      cache.nixos.org lacks come from nicnixos instead of being rebuilt.
-      #      That is where the 5m57s of the old 8m41s step went.
+      #   1. Realise the check derivation's DIRECT REFERENCES with substitution, so
+      #      the expensive inputs come from a cache instead of being rebuilt. Dry-run
+      #      measures 27 paths / ~115 MiB.
       #   2. Realise the check itself with --no-substitute, so the VM boots and the
-      #      subtests execute even if a `vm-test-run-*` verdict is sitting in the
-      #      cache. It is, right now: one was hand-pushed before `pushFilter`
-      #      existed, and until it ages out of the cache the single-command form
-      #      finished in 36s having run nothing (run 33457632177).
+      #      subtests execute even if a cached verdict exists for this closure.
       #
-      # This does not depend on the cache's state, on the derivation being renamed,
-      # or on `allowSubstitutes = false` — which would not help anyway, because
-      # install-nix-action injects `always-allow-substitutes = true` unless
-      # extra_nix_config mentions it, and ours does not.
+      # It must be the drv's references, NOT just `.driver`. That was the first
+      # attempt and it is wrong in a way that only bites once the cache is warm:
+      # step 1 realises the driver's OUTPUT, and nix then fetches only that output's
+      # RUNTIME closure — 789 paths, which contains bash but NOT stdenv-linux
+      # (measured). With stdenv missing and substitution forbidden, step 2 builds
+      # 542 derivations: the full stage0-posix bootstrap, hex0-seed through
+      # gcc-4.6.4, gcc-10.4.0, binutils, musl, glibc. That needs hours against a
+      # 30-minute job timeout, so the check would fail by timeout while still never
+      # booting a VM — the same outcome this step exists to prevent. Adding only
+      # stdenv-linux to that store drops it to exactly one derivation, which is how
+      # the cause was isolated.
       - name: checks.buildbot-fanout
         run: |
           set -euo pipefail
-          nix build -L --no-link '.#checks.x86_64-linux.buildbot-fanout.driver'
-          nix build -L --no-link --no-substitute '.#checks.x86_64-linux.buildbot-fanout'
+          drv=$(nix eval --raw '.#checks.x86_64-linux.buildbot-fanout.drvPath')
+          nix-store --query --references "$drv" | xargs -r nix-store --realise
+          nix build -L --no-link --no-substitute "$drv^*"
 
   host-eval:
     name: Host evaluation
@@ -146,9 +159,13 @@ jobs:
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
         with:
+          # No `accept-flake-config` here either — and this is the job where it
+          # matters most, because `Host evaluation` is the REQUIRED check. Left in,
+          # a future flake `nixConfig` adding extra-substituters or
+          # extra-trusted-public-keys would be auto-accepted here with no prompt and
+          # no signal, silently changing where the required check's inputs come from.
           extra_nix_config: |
             experimental-features = nix-command flakes
-            accept-flake-config = true
 
       # No cachix step here on purpose: this job only EVALUATES, so it realises
       # nothing to push, and evaluation needs flake inputs rather than built store
