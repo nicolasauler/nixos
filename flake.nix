@@ -157,14 +157,15 @@
       # which is all of them.
       #
       # What must never reach a PUBLIC cache: `checks.buildbot-workstation` and any
-      # `nixosConfigurations.*.config.system.build.toplevel`. certus-infra puts the
-      # buildbot worker password and webhook secret in the store via
-      # `pkgs.writeText`. Measured on this machine:
-      # /nix/store/w8bvnl77ssir0g4ikvzar5aj0sjwmnhz-workers.json is mode 444 and
-      # contains the literal `certus-worker-local`, and is reachable from 169 paths
-      # in its referrers closure (19 direct referrers) including
-      # nixos-test-driver-buildbot-workstation and nixos-system-*. One push over any
-      # of those publishes it permanently.
+      # `nixosConfigurations.*.config.system.build.toplevel`. certus-infra puts its
+      # secrets in the store via `pkgs.writeText`. The worker password used to be
+      # the example here and no longer is — it moved to ./secrets/*.age, and both
+      # closures now contain the literal `certus-worker-local` zero times (measured
+      # before and after). The RULE IS UNCHANGED, because the webhook secret did
+      # not move: `…-webhook-secret` is still present in desktop's system closure
+      # AND in the workstation check's closure (measured, one path each). It guards
+      # an internet-facing funnel whose hostname is already published here, so one
+      # push over either closure publishes it permanently.
       #
       # `checks.buildbot-fanout` is safe to push, but note WHY: it is safe by
       # VALUE, not by structure — its writeText passwords are dummies

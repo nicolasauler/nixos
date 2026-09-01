@@ -36,9 +36,13 @@ somewhere that is not desktop and not this repo.
 **The buildbot worker password lives in two of these files and they must agree.**
 The master reads its worker list from `buildbot-workers.json.age`; the worker reads
 `buildbot-worker-password.age`. Change one without the other and the worker is
-rejected with `UnauthorizedLogin` while still appearing in the master's worker
-list. `checks.buildbot-workstation` asserts the pair actually attaches, so it will
-catch that — but only locally, since that check needs the private input.
+rejected with `UnauthorizedLogin` while still appearing in the master's worker list.
+
+**Nothing checks that for you.** `checks.buildbot-workstation` proves the
+master/worker pairing *mechanism* — a diverged pair does fail it — but it supplies
+its own dummy credentials and never reads `secrets/*.age`, so it passes whatever
+those two files contain. Agreement of the deployed halves is verified by hand, and
+the symptom is a worker that will not attach after the switch.
 
 The previous password was a plaintext literal committed to this public repo, so it
 is treated as burned rather than moved: `secrets/` carries a new value, and the old
