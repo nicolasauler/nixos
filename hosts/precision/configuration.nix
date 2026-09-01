@@ -475,7 +475,9 @@ in {
 
   # nicnixos deliberately does NOT appear here. It only ever holds what this repo
   # builds, so a machine-wide substituter would add a lookup to every unrelated
-  # `nix build` for a cache that cannot have the path. It belongs in flake.nix's
-  # `nixConfig`, which applies exactly when a command is run against this flake.
-  # Likewise `cachix` is in the flake's devShell, not systemPackages.
+  # `nix build` for a cache that cannot have the path. The cache is armed by the
+  # flake devShell's own NIX_CONFIG instead — NOT by a flake `nixConfig`, which
+  # would not have scoped it at all (nix persists that acceptance user-globally;
+  # see the comment at the top of flake.nix). Likewise `cachix` is in that
+  # devShell, not in systemPackages.
 }

@@ -94,10 +94,16 @@
     # so it was unpinned and impure and had nothing to do with the nixpkgs these
     # hosts are actually built from. This shell uses the locked input.
     #
-    # It is also the right scope for the cache: entering this shell (or running
-    # any `nix` command against this flake) picks up `nixConfig` above, so
-    # nicnixos is consulted exactly when it can help and never adds a lookup to
-    # unrelated `nix build`s on the machine.
+    # It is also the right scope for the cache, but via the `NIX_CONFIG` attribute
+    # below and NOT via a flake `nixConfig` — see the top of this file for why that
+    # would not have scoped anything. Consequence worth knowing: `nix print-dev-env`
+    # exports NIX_CONFIG and nix-direnv sources it, so every process started from
+    # this directory inherits the cache, including `nixos-rebuild switch --flake
+    # .#precision`, whose nixos-system-* closure cache.nixos.org cannot contradict.
+    # That is a much narrower scope than user-global-and-permanent, but the most
+    # security-relevant consumer is still inside it. To switch without the cache:
+    # `NIX_CONFIG= nixos-rebuild switch --flake .#precision`, or run it from
+    # outside the checkout.
     devShells.${system}.default = pkgs.mkShell {
       packages = with pkgs; [
         alejandra # formatter this repo is written with
@@ -133,19 +139,29 @@
       #
       #   cachix watch-exec nicnixos -- nix build .#checks.x86_64-linux.buildbot-fanout
       #
-      # `watch-exec` pushes what that ONE command realises, which is why the
-      # installable matters. NEVER point it at `checks.buildbot-workstation` or at
-      # a `nixosConfigurations.*.config.system.build.toplevel`: certus-infra puts
-      # the buildbot worker password and webhook secret in the store via
-      # `pkgs.writeText`, and those paths are in those closures. Measured on this
-      # machine: /nix/store/w8bvnl77ssir0g4ikvzar5aj0sjwmnhz-workers.json is mode
-      # 444 and contains the literal `certus-worker-local`, with 169 referrers
-      # including nixos-test-driver-buildbot-workstation and nixos-system-*. One
-      # `watch-exec` over any of those publishes it to a PUBLIC cache permanently.
+      # The rule is about the CLOSURE, not the subcommand. `watch-exec` pushes what
+      # that one command realises; `cachix push nicnixos <path>` pushes what you
+      # name; and `cachix watch-store nicnixos` takes no installable at all and
+      # pushes everything the machine builds while it runs — so starting it and then
+      # running any `nixos-rebuild`, or the local `checks.buildbot-workstation`
+      # verification that ci.yaml mentions, publishes those closures. Never use
+      # `watch-store` against this cache on a machine that builds certus closures,
+      # which is all of them.
+      #
+      # What must never reach a PUBLIC cache: `checks.buildbot-workstation` and any
+      # `nixosConfigurations.*.config.system.build.toplevel`. certus-infra puts the
+      # buildbot worker password and webhook secret in the store via
+      # `pkgs.writeText`. Measured on this machine:
+      # /nix/store/w8bvnl77ssir0g4ikvzar5aj0sjwmnhz-workers.json is mode 444 and
+      # contains the literal `certus-worker-local`, with 169 referrers including
+      # nixos-test-driver-buildbot-workstation and nixos-system-*. One push over any
+      # of those publishes it permanently.
       #
       # `checks.buildbot-fanout` is safe to push, but note WHY: it is safe by
       # VALUE, not by structure — its writeText passwords are dummies
       # (`tests/buildbot-fanout.nix:38,56`, "test-password"). Replace one with a
+      # real credential and every push of this check publishes it to a PUBLIC
+      # cache, permanently, with no other signal.
     };
 
     # Adding a check here? Two things to know before you also wire it into CI or
