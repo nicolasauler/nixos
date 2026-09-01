@@ -37,7 +37,10 @@ jobs:
           test -w /dev/kvm
           stat -c '%A %U:%G %n' /dev/kvm
 
+      # `id` so the second check below can require that nix actually got
+      # installed. See the comment on that step.
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+        id: install-nix
         with:
           # No `accept-flake-config`: this flake carries no `nixConfig` (see the
           # comment at the top of flake.nix for why it was deleted), and leaving
@@ -168,12 +171,23 @@ jobs:
       # eventually won are counted as successes. This PR's own head lost three
       # consecutive attempts before passing.
       #
-      # `!cancelled()` because that decision has a cost: as plain sequential steps
-      # a fan-out failure would abort the job and this check would never run, so
-      # one regression would take all signal from an unrelated test. The two are
-      # independent; only the KVM gamble is shared.
+      # The condition decouples this check from the fan-out WITHOUT running it in a
+      # job that has no nix. Plain sequential steps would have let a fan-out
+      # regression abort the job and skip this check entirely, taking all signal
+      # from an unrelated test — the two are independent, and only the KVM gamble is
+      # shared. But `!cancelled()` alone was wrong: when the KVM guard fails, steps
+      # 4-7 are SKIPPED rather than failed, so this step ran with no nix on PATH and
+      # produced a second red step reporting a check that never executed. Measured
+      # on run 33544209461: `Enable and verify KVM: failure`, install-nix `skipped`,
+      # and this step `failure`. That is actively misleading, because the standing
+      # advice for a red VM job is "look at whether step 3 failed, and if so nothing
+      # else ran".
+      #
+      # So: require the toolchain, not the sibling check. `conclusion` is 'skipped'
+      # for a step that never ran, so this covers both the KVM loss and any earlier
+      # setup failure, while still running when only `checks.buildbot-fanout` broke.
       - name: checks.nix-substitution-limit
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install-nix.conclusion == 'success' }}
         run: |
           set -euo pipefail
           drv=$(nix eval --raw '.#checks.x86_64-linux.nix-substitution-limit.drvPath')
