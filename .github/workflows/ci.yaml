@@ -59,7 +59,7 @@ jobs:
       #   checks, `checks.buildbot-fanout` and `checks.nix-substitution-limit`.
       #   The fan-out is safe because #19 wired it to the PUBLIC buildbot-nix
       #   input rather than reaching through the private certus-infra, and its own
-      #   writeText passwords are dummies (`tests/buildbot-fanout.nix:38,56`,
+      #   writeText passwords are dummies (`tests/buildbot-fanout.nix:40,56`,
       #   "test-password"). The substitution node is safe because it declares no
       #   credential at all: it imports only ./modules/services/nix-daemon-ci.nix,
       #   and its closure paths that the fan-out does not already share carry no

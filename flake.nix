@@ -169,7 +169,7 @@
       #
       # `checks.buildbot-fanout` is safe to push, but note WHY: it is safe by
       # VALUE, not by structure — its writeText passwords are dummies
-      # (`tests/buildbot-fanout.nix:38,56`, "test-password"). Replace one with a
+      # (`tests/buildbot-fanout.nix:40,56`, "test-password"). Replace one with a
       # real credential and every push of this check publishes it to a PUBLIC
       # cache, permanently, with no other signal.
     };
