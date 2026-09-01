@@ -67,7 +67,15 @@ in
       services.nixDaemonCi = {
         enable = true;
         group = ciUser;
-        # the default, spelled out because it is the value under test
+        # Stated here rather than inherited, because it is the value under test.
+        # Note this is NOT the module's whole default: nix-daemon-ci.nix:58-62
+        # also zeroes min-free/max-free (inert here — nix's own default for both
+        # is already 0). Consequence worth knowing: because this node sets
+        # nixConfig explicitly, it never reads the module default, so raising
+        # THAT to 16 leaves this check green. The string assertion in
+        # buildbot-workstation.nix:191 is what catches that. The two are
+        # complementary: this one proves the mechanism works, that one proves
+        # desktop is actually configured with it.
         nixConfig = ''
           max-substitution-jobs = ${toString expectedPeak}
         '';
@@ -80,7 +88,10 @@ in
         substituters = lib.mkForce [cacheUrl];
         # the local cache is unsigned
         require-sigs = false;
-        # exactly the desktop's shape: CI is not trusted
+        # Not desktop's literal list (that is ["nic"], hosts/desktop/
+        # configuration.nix:425-427) — what matters is the property both share:
+        # the CI identity is absent from it, so buildbot-worker connects as an
+        # untrusted client and cannot raise the cap itself.
         trusted-users = ["root"];
       };
 
