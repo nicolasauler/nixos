@@ -170,6 +170,12 @@ in {
 
   # Enable networking
   networking.networkmanager.enable = true;
+  # systemd-resolved gives Tailscale per-link split DNS: only *.ts.net goes to
+  # MagicDNS (100.100.100.100); everything else uses the DHCP resolver directly.
+  # Without it tailscaled becomes the sole resolver in resolv.conf and all DNS
+  # dies whenever it loses its upstream (link flap, resume, tailnet hiccup).
+  services.resolved.enable = true;
+  networking.networkmanager.dns = "systemd-resolved";
 
   # Set your time zone.
   time.timeZone = "America/Sao_Paulo";
