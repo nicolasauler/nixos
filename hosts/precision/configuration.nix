@@ -155,6 +155,7 @@ in {
     ./hardware-configuration.nix
     inputs.home-manager.nixosModules.default
     inputs.sentinelone.nixosModules.sentinelone
+    ../../modules/services/fingerprint.nix
   ];
 
   # Bootloader.
@@ -371,6 +372,17 @@ in {
 
   # hyprlock cannot authenticate without its pam service (HM only installs the binary)
   security.pam.services.hyprlock = {};
+
+  # Fingerprint reader: Dell ControlVault 3+ (Broadcom 0a5c:5865, "58200"). Not in
+  # stock libfprint; needs Dell's proprietary TOD module, which bundles the Citadel
+  # firmware. The udev rules (power/control=auto for the sensor) come from the driver
+  # too. fprintd itself, and the rule that only polkit-1 ever consults it, is
+  # modules/services/fingerprint.nix.
+  services.fprintd.tod = {
+    enable = true;
+    driver = pkgs.libfprint-2-tod1-broadcom-cv3plus;
+  };
+  services.udev.packages = [pkgs.libfprint-2-tod1-broadcom-cv3plus];
 
   hardware = {
     graphics = {
