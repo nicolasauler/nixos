@@ -83,6 +83,7 @@ hl.bind(mainMod .. " + D", hl.dsp.exec_cmd("rofi -modi drun,run -show drun"))
 hl.bind(mainMod .. " + V", hl.dsp.exec_cmd("cliphist list | rofi -dmenu | cliphist decode | wl-copy"))
 hl.bind(mainMod .. " + P", hl.dsp.window.pseudo()) -- dwindle
 hl.bind(mainMod .. " + T", hl.dsp.layout("togglesplit")) -- dwindle
+hl.bind(mainMod .. " + CTRL + T", hl.dsp.exec_cmd("otd-screen")) -- map the drawing tablet to the focused monitor
 
 hl.bind(mainMod .. " + SHIFT + Print", hl.dsp.exec_cmd([[grim -g "$(slurp -d)" - | wl-copy -t image/png]]))
 hl.bind(mainMod .. " + CTRL + Print", hl.dsp.exec_cmd([[grim -g "$(slurp)" $HOME/Pictures/$(date +'%s_grim.png')]]))

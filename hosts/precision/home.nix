@@ -20,6 +20,7 @@
     ../../modules/programs/nixvim
     ../../modules/programs/nushell.nix
     ../../modules/programs/nix-index.nix
+    ../../modules/programs/otd-screen.nix
     ../../modules/programs/qutebrowser.nix
     ../../modules/programs/rofi.nix
     ../../modules/home/nixpkgs.nix
