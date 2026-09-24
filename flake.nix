@@ -171,10 +171,11 @@
     #     cannot run on a public runner, and its closure carries certus's
     #     `writeText` secrets (the worker password and webhook secret). It must
     #     never be built by a job or command that pushes to nicnixos.
-    #   - `buildbot-fanout` and `nix-substitution-limit` are the public ones, and
-    #     they are safe by VALUE not by structure: fanout's writeText passwords are
-    #     dummies, and the substitution node has no secret-shaped values at all
-    #     (an unsigned local cache on loopback). Keep them that way.
+    #   - `buildbot-fanout`, `nix-substitution-limit` and `fingerprint-pam` are
+    #     the public ones, and they are safe by VALUE not by structure: fanout's
+    #     writeText passwords are dummies, the substitution node has no
+    #     secret-shaped values at all (an unsigned local cache on loopback), and
+    #     the fingerprint node's only user has no password. Keep them that way.
     # The pushing side of this is enforced in .github/workflows/ci.yaml and
     # explained next to the devShell's push instructions above.
     checks.${system} = {
@@ -187,6 +188,11 @@
       # Takes only `pkgs`: it imports ./modules/services/nix-daemon-ci.nix
       # directly and needs no flake input, private or otherwise.
       nix-substitution-limit = import ./tests/nix-substitution-limit.nix {
+        inherit pkgs;
+      };
+      # Same shape: imports ./modules/services/fingerprint.nix and drives
+      # libfprint's virtual reader, so it needs nothing beyond `pkgs`.
+      fingerprint-pam = import ./tests/fingerprint-pam.nix {
         inherit pkgs;
       };
     };
