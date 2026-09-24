@@ -106,7 +106,7 @@ Two jobs, and only one of them gates a merge.
 | job | required | needs KVM | what it does |
 |---|---|---|---|
 | `Host evaluation` | **yes** | no | evaluates `notebook`, `xpsbipa`, `precision` toplevels |
-| `NixOS VM checks` | no | yes | builds `checks.buildbot-fanout` and boots it |
+| `NixOS VM checks` | no | yes | builds and boots `checks.buildbot-fanout`, `checks.nix-substitution-limit`, `checks.fingerprint-pam` |
 
 `desktop` is absent from `Host evaluation` because it imports private
 `certus-infra` modules that declare the option surface its own config sets, so a
@@ -114,10 +114,11 @@ public runner cannot evaluate it. That is tracked as real work, not an oversight
 it reduces to one secret.
 
 **A red `NixOS VM checks` is usually not a regression.** GitHub's free runners hand
-out `/dev/kvm` unreliably: measured across the last 30 runs of this workflow, 6 of
-the 26 settled ones ended red at `Enable and verify KVM`, with every step after it
-skipped. Check that step first, and if it failed, `gh run rerun <id> --failed`. It
-is not a required check precisely because of this.
+out `/dev/kvm` unreliably: of the 51 settled runs of this workflow since
+2026-08-31, 9 ended red at `Enable and verify KVM` — and every red run in that
+window ended there, with every step after it skipped. Check that step first, and
+if it failed, `gh run rerun <id> --failed`. It is not a required check precisely
+because of this.
 
 What eval-only coverage does **not** catch, so you know what a green badge is worth:
 build-time check derivations never run, so a bogus `services.postgresql.settings`
@@ -130,16 +131,21 @@ minutes and hit the timeout.
 ### Checks
 
 ```
-nix build .#checks.x86_64-linux.buildbot-fanout        # public inputs only
-nix build .#checks.x86_64-linux.buildbot-workstation   # needs private certus-infra
+nix build .#checks.x86_64-linux.buildbot-fanout          # public inputs only
+nix build .#checks.x86_64-linux.nix-substitution-limit   # public inputs only
+nix build .#checks.x86_64-linux.fingerprint-pam          # public inputs only
+nix build .#checks.x86_64-linux.buildbot-workstation     # needs private certus-infra
 ```
 
-Both boot real VMs and need `/dev/kvm`; each takes about a minute warm.
+All four boot real VMs and need `/dev/kvm`; each takes about a minute warm.
 `buildbot-fanout` proves the CI concurrency lock bounds compilation, using a second
-unlocked worker as a control. `buildbot-workstation` boots the desktop's actual
-buildbot stack and asserts the capacity limits land on the right cgroup, that the CI
-daemon carries them and the system daemon does not, and that the worker
-authenticates.
+unlocked worker as a control. `nix-substitution-limit` proves the CI daemon's
+`max-substitution-jobs` bounds concurrent NAR fetches, with the system daemon as
+the control. `fingerprint-pam` proves, against libfprint's virtual reader, that
+`polkit-1` accepts a fingerprint on its own and is the only PAM service that
+consults the reader. `buildbot-workstation` boots the desktop's actual buildbot
+stack and asserts the capacity limits land on the right cgroup, that the CI daemon
+carries them and the system daemon does not, and that the worker authenticates.
 
 **Never build `buildbot-workstation`, or any host toplevel, in a job that pushes to
 a cache.** Its closure carries `certus-infra`'s `writeText` secrets.
@@ -147,7 +153,8 @@ a cache.** Its closure carries `certus-infra`'s `writeText` secrets.
 ## Binary cache
 
 Pull needs nothing: it is armed by the devShell. Push happens from CI on merged
-code. If you ever need to push by hand, push only `checks.buildbot-fanout`, and read
+code. If you ever need to push by hand, push only the three public checks
+(`buildbot-fanout`, `nix-substitution-limit`, `fingerprint-pam`), and read
 `flake.nix` first.
 
 Do not push a check's OUTPUT by hand. A check's output is its verdict, so once it is
