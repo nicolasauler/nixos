@@ -11,6 +11,7 @@ hl.on("hyprland.start", function()
 	hl.exec_cmd("waybar")
 	hl.exec_cmd("mako")
 	hl.exec_cmd("nm-applet")
+	hl.exec_cmd("1password --silent") -- tray only; the Firefox extension unlocks through the app
 	hl.exec_cmd("dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP")
 	hl.exec_cmd("alacritty -e bash -c 'curl wttr.in | less && zellij'")
 end)

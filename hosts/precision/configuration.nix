@@ -155,6 +155,7 @@ in {
     ./hardware-configuration.nix
     inputs.home-manager.nixosModules.default
     inputs.sentinelone.nixosModules.sentinelone
+    ../../modules/services/fingerprint.nix
   ];
 
   # Bootloader.
@@ -371,6 +372,28 @@ in {
 
   # hyprlock cannot authenticate without its pam service (HM only installs the binary)
   security.pam.services.hyprlock = {};
+
+  # Fingerprint reader: Dell ControlVault 3+ (Broadcom 0a5c:5865, "58200"). Not in
+  # stock libfprint; needs Dell's proprietary TOD module, which bundles the Citadel
+  # firmware. The udev rules (power/control=auto for the sensor) come from the driver
+  # too. fprintd itself, and the rule that only polkit-1 ever consults it, is
+  # modules/services/fingerprint.nix.
+  services.fprintd.tod = {
+    enable = true;
+    driver = pkgs.libfprint-2-tod1-broadcom-cv3plus;
+  };
+  services.udev.packages = [pkgs.libfprint-2-tod1-broadcom-cv3plus];
+
+  # 1Password (work account) is the passkey provider: passkeys live in the vault, the
+  # Firefox extension is unlocked through the desktop app, and the app unlocks with
+  # "system authentication" = polkit -> PAM -> fprintd above. polkitPolicyOwners
+  # installs the polkit action that setting needs; the module also adds the setgid
+  # 1Password-BrowserSupport wrapper the extension talks to. The app is started with
+  # the Hyprland session (hyprland_note.lua) so the extension always has it to talk to.
+  programs._1password-gui = {
+    enable = true;
+    polkitPolicyOwners = ["nic"];
+  };
 
   hardware = {
     graphics = {
