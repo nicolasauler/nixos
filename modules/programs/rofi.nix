@@ -4,7 +4,7 @@
 
     # package = pkgs.rofi-wayland;
 
-    extraConfig = {
+    settings = {
       show-icons = true;
       auto-select = true;
     };
