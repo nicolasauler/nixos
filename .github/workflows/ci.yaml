@@ -55,9 +55,9 @@ jobs:
       # Pull + push our own cache. cachix-action registers a nix post-build-hook
       # and pushes every path this job BUILDS, which drives both settings below.
       #
-      #   SAFE TODAY, but by VALUE not by structure. This job builds exactly three
-      #   checks: `checks.buildbot-fanout`, `checks.nix-substitution-limit` and
-      #   `checks.fingerprint-pam`.
+      #   SAFE TODAY, but by VALUE not by structure. This job builds exactly four
+      #   checks: `checks.buildbot-fanout`, `checks.nix-substitution-limit`,
+      #   `checks.fingerprint-pam` and `checks.printing-on-demand`.
       #   The fan-out is safe because #19 wired it to the PUBLIC buildbot-nix
       #   input rather than reaching through the private certus-infra, and its own
       #   writeText passwords are dummies (`tests/buildbot-fanout.nix:40,56`,
@@ -67,7 +67,9 @@ jobs:
       #   password material (measured — `buildbot-worker`'s password fields are
       #   null and root's hashed-password is the NixOS-test default empty value).
       #   The fingerprint node is the same shape: only ./modules/services/
-      #   fingerprint.nix, and its one user has no password at all.
+      #   fingerprint.nix, and its one user has no password at all. The printing
+      #   nodes are that shape again: only ./modules/services/printing.nix and a
+      #   simulated printer that takes jobs unauthenticated, no user password.
       #   Replace either dummy with a real credential and this job starts
       #   publishing it, with no other signal.
       #
@@ -136,6 +138,7 @@ jobs:
           nix eval --raw '.#checks.x86_64-linux.buildbot-fanout.drvPath'; echo
           nix eval --raw '.#checks.x86_64-linux.nix-substitution-limit.drvPath'; echo
           nix eval --raw '.#checks.x86_64-linux.fingerprint-pam.drvPath'; echo
+          nix eval --raw '.#checks.x86_64-linux.printing-on-demand.drvPath'; echo
 
       # Two commands, and the split is the structural guarantee that this check
       # actually RUNS rather than being substituted:
@@ -205,6 +208,15 @@ jobs:
         run: |
           set -euo pipefail
           drv=$(nix eval --raw '.#checks.x86_64-linux.fingerprint-pam.drvPath')
+          nix-store --query --references "$drv" | xargs -r nix-store --realise
+          nix build -L --no-link --no-substitute "$drv^*"
+
+      # Same guard, same two-command form, same reasons as the step above.
+      - name: checks.printing-on-demand
+        if: ${{ !cancelled() && steps.install-nix.conclusion == 'success' }}
+        run: |
+          set -euo pipefail
+          drv=$(nix eval --raw '.#checks.x86_64-linux.printing-on-demand.drvPath')
           nix-store --query --references "$drv" | xargs -r nix-store --realise
           nix build -L --no-link --no-substitute "$drv^*"
 
