@@ -156,6 +156,7 @@ in {
     inputs.home-manager.nixosModules.default
     inputs.sentinelone.nixosModules.sentinelone
     ../../modules/services/fingerprint.nix
+    ../../modules/services/printing.nix
   ];
 
   # Bootloader.
