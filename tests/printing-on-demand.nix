@@ -1,6 +1,6 @@
 # Behavioural proof of modules/services/printing.nix: a printer that announces
-# itself over mDNS prints with no driver and no queue configured, and cupsd runs
-# only while something needs it.
+# itself over mDNS prints with no driver and no queue configured, cupsd runs only
+# while something needs it, and nothing on the network can reach it or wake it.
 #
 # Why a VM and not an eval assertion. Reading startWhenNeeded back proves a
 # socket unit exists, not that cupsd ever leaves: the idle exit is decided at
@@ -34,6 +34,20 @@
 # `lpstat -r` is no proof that cupsd is back: it says "scheduler is running" as
 # soon as systemd accepts the connection on the socket (measured: 0.02 s, while
 # the unit was still starting). So the last subtest prints again.
+#
+# The laptop is a print client, not a print server. From the printer, TCP 631
+# (cupsd) and 515 (cups-lpd, a socket unit CUPS ships and nothing enables) don't
+# answer, and knocking on them doesn't start cupsd. Reading listenAddresses and
+# openFirewall back would only restate two defaults; what answers is the socket
+# unit NixOS generates from them, what the firewall lets through, and units no
+# option names. It runs before anything on the laptop has talked to cupsd, and
+# asks whether cups.service ever left "inactive", not whether it is running: a
+# socket-started cupsd spends its first moments "activating", which is not
+# running either (measured with 631 opened: "activating" right after the knock).
+# Its control is the same probe, from the laptop to the printer's open port, once
+# ippeveprinter is up (starting it earlier would announce the printer before the
+# "nothing to print to" control): without it, "doesn't answer" could just as well
+# be a probe that never connects.
 #
 # No private input and no credential: the users have no password, the printer
 # takes jobs unauthenticated, and the only document is a generated test page, so
@@ -126,6 +140,14 @@ in
           laptop.fail("journalctl -u avahi-daemon.service | grep -q 'another IPv4 mDNS stack'")
           printer.wait_until_succeeds("avahi-resolve-host-name -4 laptop.local | grep -q '^laptop.local'", timeout=timedelta(seconds=30))
 
+      with subtest("from the network, neither cupsd nor cups-lpd answers, and knocking doesn't wake cupsd"):
+          # the name resolves, so a failed connect is the port and not the lookup
+          printer.succeed("getent hosts laptop")
+          for p in (631, 515):
+              printer.fail(f"timeout 5 bash -c '</dev/tcp/laptop/{p}'")
+          started = laptop.succeed("systemctl show -P InactiveExitTimestampMonotonic cups.service").strip()
+          assert started == "0", f"cups.service left inactive at {started} us, so something woke it"
+
       with subtest("control: before any printer announces itself, there is nothing to print to"):
           assert "${queue}" not in laptop.succeed("lpstat -e || true")
           laptop.fail("runuser -u ${user} -- lp -d ${queue} ${page}")
@@ -134,6 +156,9 @@ in
           printer.systemctl("start ippeveprinter.service")
           printer.wait_for_open_port(${toString port})
           laptop.wait_until_succeeds("lpstat -e | grep -qx ${queue}", timeout=timedelta(seconds=60))
+
+      with subtest("control: the same probe, from the laptop, reaches the printer's open port"):
+          laptop.succeed("timeout 5 bash -c '</dev/tcp/printer/${toString port}'")
 
       with subtest("an ordinary user prints to it, with no driver and no queue configured"):
           laptop.succeed("runuser -u ${user} -- lp -d ${queue} ${page}")

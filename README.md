@@ -139,16 +139,17 @@ nix build .#checks.x86_64-linux.buildbot-workstation     # needs private certus-
 ```
 
 All five boot real VMs and need `/dev/kvm`. Each takes about a minute warm, except
-`printing-on-demand`, which waits out cupsd's idle timeout and takes about two and a
-half. `buildbot-fanout` proves the CI concurrency lock bounds compilation, using a
+`printing-on-demand`, which waits out cupsd's idle timeout and takes nearly three.
+`buildbot-fanout` proves the CI concurrency lock bounds compilation, using a
 second unlocked worker as a control. `nix-substitution-limit` proves the CI daemon's
 `max-substitution-jobs` bounds concurrent NAR fetches, with the system daemon as
 the control. `fingerprint-pam` proves, against libfprint's virtual reader, that
 `polkit-1` accepts a fingerprint on its own and is the only PAM service that
 consults the reader. `printing-on-demand` proves, against CUPS's own IPP Everywhere
 simulator, that a printer announced over mDNS prints for an ordinary user with no
-driver and no queue, and that cupsd starts only when something prints and exits by
-itself afterwards, with the module's on-demand settings reverted as the control.
+driver and no queue, that no other host can reach CUPS or wake it, and that cupsd
+starts only when something prints and exits by itself afterwards, with the module's
+on-demand settings reverted as the control.
 `buildbot-workstation` boots the desktop's actual buildbot stack and asserts the
 capacity limits land on the right cgroup, that the CI daemon carries them and the
 system daemon does not, and that the worker authenticates.
