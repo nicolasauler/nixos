@@ -106,7 +106,7 @@ Two jobs, and only one of them gates a merge.
 | job | required | needs KVM | what it does |
 |---|---|---|---|
 | `Host evaluation` | **yes** | no | evaluates `notebook`, `xpsbipa`, `precision` toplevels |
-| `NixOS VM checks` | no | yes | builds and boots `checks.buildbot-fanout`, `checks.nix-substitution-limit`, `checks.fingerprint-pam` |
+| `NixOS VM checks` | no | yes | builds and boots `checks.buildbot-fanout`, `checks.nix-substitution-limit`, `checks.fingerprint-pam`, `checks.printing-on-demand` |
 
 `desktop` is absent from `Host evaluation` because it imports private
 `certus-infra` modules that declare the option surface its own config sets, so a
@@ -134,18 +134,25 @@ minutes and hit the timeout.
 nix build .#checks.x86_64-linux.buildbot-fanout          # public inputs only
 nix build .#checks.x86_64-linux.nix-substitution-limit   # public inputs only
 nix build .#checks.x86_64-linux.fingerprint-pam          # public inputs only
+nix build .#checks.x86_64-linux.printing-on-demand       # public inputs only
 nix build .#checks.x86_64-linux.buildbot-workstation     # needs private certus-infra
 ```
 
-All four boot real VMs and need `/dev/kvm`; each takes about a minute warm.
-`buildbot-fanout` proves the CI concurrency lock bounds compilation, using a second
-unlocked worker as a control. `nix-substitution-limit` proves the CI daemon's
+All five boot real VMs and need `/dev/kvm`. Each takes about a minute warm, except
+`printing-on-demand`, which waits out cupsd's idle timeout and takes nearly three.
+`buildbot-fanout` proves the CI concurrency lock bounds compilation, using a
+second unlocked worker as a control. `nix-substitution-limit` proves the CI daemon's
 `max-substitution-jobs` bounds concurrent NAR fetches, with the system daemon as
 the control. `fingerprint-pam` proves, against libfprint's virtual reader, that
 `polkit-1` accepts a fingerprint on its own and is the only PAM service that
-consults the reader. `buildbot-workstation` boots the desktop's actual buildbot
-stack and asserts the capacity limits land on the right cgroup, that the CI daemon
-carries them and the system daemon does not, and that the worker authenticates.
+consults the reader. `printing-on-demand` proves, against CUPS's own IPP Everywhere
+simulator, that a printer announced over mDNS prints for an ordinary user with no
+driver and no queue, that no other host can reach CUPS or wake it, and that cupsd
+starts only when something prints and exits by itself afterwards, with the module's
+on-demand settings reverted as the control.
+`buildbot-workstation` boots the desktop's actual buildbot stack and asserts the
+capacity limits land on the right cgroup, that the CI daemon carries them and the
+system daemon does not, and that the worker authenticates.
 
 **Never build `buildbot-workstation`, or any host toplevel, in a job that pushes to
 a cache.** Its closure carries `certus-infra`'s `writeText` secrets.
@@ -153,9 +160,9 @@ a cache.** Its closure carries `certus-infra`'s `writeText` secrets.
 ## Binary cache
 
 Pull needs nothing: it is armed by the devShell. Push happens from CI on merged
-code. If you ever need to push by hand, push only the three public checks
-(`buildbot-fanout`, `nix-substitution-limit`, `fingerprint-pam`), and read
-`flake.nix` first.
+code. If you ever need to push by hand, push only the four public checks
+(`buildbot-fanout`, `nix-substitution-limit`, `fingerprint-pam`,
+`printing-on-demand`), and read `flake.nix` first.
 
 Do not push a check's OUTPUT by hand. A check's output is its verdict, so once it is
 in a trusted signed cache `nix build` substitutes it and the test never runs again

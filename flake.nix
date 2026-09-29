@@ -180,11 +180,13 @@
     #     cannot run on a public runner, and its closure carries certus's
     #     `writeText` secrets (the worker password and webhook secret). It must
     #     never be built by a job or command that pushes to nicnixos.
-    #   - `buildbot-fanout`, `nix-substitution-limit` and `fingerprint-pam` are
-    #     the public ones, and they are safe by VALUE not by structure: fanout's
-    #     writeText passwords are dummies, the substitution node has no
-    #     secret-shaped values at all (an unsigned local cache on loopback), and
-    #     the fingerprint node's only user has no password. Keep them that way.
+    #   - `buildbot-fanout`, `nix-substitution-limit`, `fingerprint-pam` and
+    #     `printing-on-demand` are the public ones, and they are safe by VALUE not
+    #     by structure: fanout's writeText passwords are dummies, the substitution
+    #     node has no secret-shaped values at all (an unsigned local cache on
+    #     loopback), the fingerprint node's only user has no password, and so do
+    #     the printing nodes', whose printer takes jobs unauthenticated. Keep them
+    #     that way.
     # The pushing side of this is enforced in .github/workflows/ci.yaml and
     # explained next to the devShell's push instructions above.
     checks.${system} = {
@@ -202,6 +204,11 @@
       # Same shape: imports ./modules/services/fingerprint.nix and drives
       # libfprint's virtual reader, so it needs nothing beyond `pkgs`.
       fingerprint-pam = import ./tests/fingerprint-pam.nix {
+        inherit pkgs;
+      };
+      # Same shape again: imports ./modules/services/printing.nix, and its
+      # printer is CUPS's own IPP Everywhere simulator on a second node.
+      printing-on-demand = import ./tests/printing-on-demand.nix {
         inherit pkgs;
       };
     };
