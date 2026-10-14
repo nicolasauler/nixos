@@ -7,10 +7,10 @@
 //! * layer pedals change the Voyager's own firmware layer through its raw-HID
 //!   interface, in ZSA's Oryx protocol (zsa/qmk_modules, oryx/oryx.c):
 //!   SET_LAYER on (layer_move) on press, SET_LAYER off (layer_off) on
-//!   release, each batch preceded by a pairing. Nothing on the host remaps
-//!   Voyager keystrokes and keymapp is not involved. A worker thread owns the
-//!   keyboard, so a missing or replugged Voyager never delays reading the
-//!   pedal.
+//!   release, each batch preceded by a pairing, and applied again after a
+//!   resume. Nothing on the host remaps Voyager keystrokes and keymapp is not
+//!   involved. A worker thread owns the keyboard, so a missing or replugged
+//!   Voyager never delays reading the pedal.
 //! * the Shift pedal holds Shift on a uinput keyboard, immediately. Hyprland
 //!   ORs held modifiers across keyboards, so it applies to Voyager keys.
 
@@ -29,6 +29,8 @@ use evdev::{AttributeSet, BusType, EventType, InputEvent, InputId, KeyCode};
 use nix::errno::Errno;
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 use nix::sys::signal::{SigSet, Signal};
+use nix::sys::time::TimeSpec;
+use nix::sys::timerfd::{ClockId, Expiration, TimerFd, TimerFlags, TimerSetTimeFlags};
 use parking_lot::Mutex;
 
 /// Layer indices of Oryx layout JqpmQ ("Colemak dh nicc"). Reordering layers
@@ -171,10 +173,37 @@ impl Dropping {
     }
 }
 
+/// Synthetic key changes for one fetched batch of raw events. A resync reads
+/// the device's key state (EVIOCGKEY), which also flushes the key events the
+/// kernel still queues for this reader; the rest of the batch is older than
+/// that state, so it goes too.
+fn pedal_changes(
+    events: impl IntoIterator<Item = InputEvent>,
+    dropping: &mut Dropping,
+    pedals: &mut Pedals,
+    held: impl FnOnce() -> io::Result<Vec<KeyCode>>,
+) -> io::Result<Vec<(KeyCode, i32)>> {
+    let mut changes = Vec::new();
+    for event in events {
+        match dropping.step(event.event_type().0, event.code(), event.value()) {
+            Step::Key(code, 1) => changes.extend(pedals.press(code)),
+            Step::Key(code, _) => changes.extend(pedals.release(code)),
+            Step::Resync => {
+                changes.extend(pedals.sync(&held()?));
+                break;
+            }
+            Step::Nothing => {}
+        }
+    }
+    Ok(changes)
+}
+
 /// What the firmware's pedal layers are known to be.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Applied {
-    /// Just paired: a previous run may have died mid-hold.
+    /// Just paired (a previous run may have died mid-hold), or resumed (the
+    /// firmware empties its queue of received reports on USB suspend, so the
+    /// last batch may never have run).
     Unknown,
     /// No pedal layer on.
     Off,
@@ -221,9 +250,10 @@ mod oryx {
 
 /// Reports for one batch of commands. The firmware ignores SET_LAYER unless
 /// paired, and can drop the pairing on its own (a failed send, e.g. across
-/// a USB suspend) without telling the host. Pairing is unconditional and
-/// the firmware handles reports in order, so pairing first makes every
-/// command in the batch land.
+/// a USB suspend) without telling the host. Pairing is unconditional and the
+/// firmware handles reports in order, so pairing first gets the batch past
+/// that check. It does not make the batch land: writes are not acknowledged,
+/// and pairing's own replies unpair again if their send fails.
 fn batch(commands: &[Command]) -> Vec<[u8; oryx::REPORT + 1]> {
     if commands.is_empty() {
         return Vec::new();
@@ -357,11 +387,9 @@ impl Trouble {
         self.0 = true;
     }
 
-    fn resolved(&mut self, message: impl std::fmt::Display) {
-        if self.0 {
-            eprintln!("{message}");
-        }
-        self.0 = false;
+    /// Ends the streak: true if there was one.
+    fn resolved(&mut self) -> bool {
+        std::mem::take(&mut self.0)
     }
 }
 
@@ -371,9 +399,33 @@ fn rest(wake: &UnixStream, timeout: PollTimeout) {
     drain_wake(wake);
 }
 
+/// Readable once the system resumes from suspend. Linux treats a resume as
+/// the wall clock jumping against the monotonic one (timekeeping_resume ->
+/// timerfd_resume) and cancels absolute wall-clock timers armed with
+/// TFD_TIMER_CANCEL_ON_SET. This one is set for 2106, so the only other thing
+/// that wakes it is setting the clock, which costs one needless batch.
+fn resume_alarm() -> nix::Result<TimerFd> {
+    let alarm = TimerFd::new(
+        ClockId::CLOCK_REALTIME,
+        TimerFlags::TFD_NONBLOCK | TimerFlags::TFD_CLOEXEC,
+    )?;
+    alarm.set(
+        Expiration::OneShot(TimeSpec::new(u32::MAX.into(), 0)),
+        TimerSetTimeFlags::TFD_TIMER_ABSTIME | TimerSetTimeFlags::TFD_TIMER_CANCEL_ON_SET,
+    )?;
+    Ok(alarm)
+}
+
 /// Owns the Voyager: applies the latest wanted layer, pairing again after a
-/// replug, so the pedal loop never waits on the keyboard.
-fn keyboard_worker(wanted: Arc<Mutex<Wanted>>, wake: UnixStream, done: mpsc::Sender<bool>) {
+/// replug and applying again after a resume, so the pedal loop never waits
+/// on the keyboard. When stopping, tells `done` whether the pedal layers are
+/// known to be off.
+fn keyboard_worker(
+    wanted: Arc<Mutex<Wanted>>,
+    wake: UnixStream,
+    resumed: TimerFd,
+    done: mpsc::Sender<bool>,
+) {
     let owned: Vec<u8> = PEDALS
         .iter()
         .filter_map(|(_, action)| match action {
@@ -384,7 +436,7 @@ fn keyboard_worker(wanted: Arc<Mutex<Wanted>>, wake: UnixStream, done: mpsc::Sen
     let mut keyboard: Option<Keyboard> = None;
     let mut applied = Applied::Unknown;
     let mut trouble = Trouble::default();
-    let mut first = true;
+    let mut first = true; // not reached the keyboard yet
     loop {
         let (layer, stopping) = {
             let wanted = wanted.lock();
@@ -392,9 +444,9 @@ fn keyboard_worker(wanted: Arc<Mutex<Wanted>>, wake: UnixStream, done: mpsc::Sen
         };
         let Some(connected) = keyboard.as_mut() else {
             if stopping {
-                // Nothing of ours is on: we were not paired. A layer left by
-                // an earlier run is cleared by the next start.
-                let _ = done.send(true);
+                // Unreachable: off only if known off before it went. A run
+                // that never reached it turned nothing on.
+                let _ = done.send(first || applied == Applied::Off);
                 return;
             }
             match Keyboard::connect() {
@@ -411,31 +463,33 @@ fn keyboard_worker(wanted: Arc<Mutex<Wanted>>, wake: UnixStream, done: mpsc::Sen
                     applied = Applied::Unknown;
                 }
                 Err(error) => {
-                    trouble.report(format!("voyager: {error}; retrying every 2s"));
+                    trouble.report(format!("voyager: {error}; retrying"));
                     rest(&wake, PollTimeout::from(2000u16));
                 }
             }
             continue;
         };
-        let sent = batch(&plan(applied, layer, &owned))
-            .iter()
-            .try_for_each(|report| connected.send(report));
-        if let Err(error) = sent {
+        let reports = batch(&plan(applied, layer, &owned));
+        if let Err(error) = reports.iter().try_for_each(|report| connected.send(report)) {
             trouble.report(format!("voyager: {error}; reconnecting"));
             keyboard = None;
             rest(&wake, PollTimeout::from(1000u16));
             continue;
         }
         applied = layer.map_or(Applied::Off, Applied::On);
-        trouble.resolved("voyager: back, layer applied");
+        if !reports.is_empty() && trouble.resolved() {
+            eprintln!("voyager: back, layer applied");
+        }
         if stopping {
             let _ = done.send(true);
             return;
         }
-        // Sleep until the pedals change or the keyboard sends something.
+        // Sleep until the pedals change, the keyboard sends something, or
+        // the system resumes.
         let mut fds = [
             PollFd::new(wake.as_fd(), PollFlags::POLLIN),
             PollFd::new(connected.hid.as_fd(), PollFlags::POLLIN),
+            PollFd::new(resumed.as_fd(), PollFlags::POLLIN),
         ];
         match poll(&mut fds, PollTimeout::NONE) {
             Ok(_) => {}
@@ -447,7 +501,15 @@ fn keyboard_worker(wanted: Arc<Mutex<Wanted>>, wake: UnixStream, done: mpsc::Sen
             }
         }
         let hid = fds[1].revents().unwrap_or(PollFlags::empty());
+        let resume = fds[2].revents().unwrap_or(PollFlags::empty());
         drain_wake(&wake);
+        if !resume.is_empty() {
+            // Take the cancellation (the next resume wakes it again), and
+            // send the wanted layer, or clear ours, again.
+            let _ = resumed.wait();
+            eprintln!("voyager: resumed (or the clock was set); applying the pedal layers again");
+            applied = Applied::Unknown;
+        }
         if !hid.is_empty()
             && let Err(error) = connected.drain()
         {
@@ -502,7 +564,7 @@ fn pedal_loop(mut outputs: Outputs) {
                 continue;
             }
         };
-        let result = read_pedal(&mut device, &mut pedals, &mut outputs);
+        let result = read_pedal(&mut device, &mut pedals, &mut outputs, &mut trouble);
         // Whatever was held is not any more.
         let released = pedals.sync(&[]);
         if let Err(error) = outputs.apply(&pedals, released) {
@@ -525,27 +587,22 @@ fn read_pedal(
     device: &mut RawDevice,
     pedals: &mut Pedals,
     outputs: &mut Outputs,
+    trouble: &mut Trouble,
 ) -> io::Result<()> {
     device.grab()?;
-    eprintln!("pedal connected");
     let held = |device: &RawDevice| -> io::Result<Vec<KeyCode>> {
         Ok(device.get_key_state()?.iter().collect())
     };
     // A pedal may already be down.
     let changes = pedals.sync(&held(device)?);
     outputs.apply(pedals, changes)?;
+    eprintln!("pedal connected");
+    trouble.resolved();
     let mut dropping = Dropping::default();
     loop {
         let events: Vec<InputEvent> = device.fetch_events()?.collect();
-        for event in events {
-            let changes = match dropping.step(event.event_type().0, event.code(), event.value()) {
-                Step::Key(code, 1) => pedals.press(code),
-                Step::Key(code, _) => pedals.release(code),
-                Step::Resync => pedals.sync(&held(device)?),
-                Step::Nothing => continue,
-            };
-            outputs.apply(pedals, changes)?;
-        }
+        let changes = pedal_changes(events, &mut dropping, pedals, || held(device))?;
+        outputs.apply(pedals, changes)?;
     }
 }
 
@@ -583,10 +640,11 @@ fn main() {
     let (wake, wake_worker) = UnixStream::pair().expect("socketpair");
     wake.set_nonblocking(true)
         .expect("non-blocking wake socket");
+    let resumed = resume_alarm().expect("resume timer");
     let (done, finished) = mpsc::channel();
 
     let worker_wanted = Arc::clone(&wanted);
-    thread::spawn(move || keyboard_worker(worker_wanted, wake_worker, done));
+    thread::spawn(move || keyboard_worker(worker_wanted, wake_worker, resumed, done));
     let outputs = Outputs {
         shift,
         wanted: Arc::clone(&wanted),
@@ -603,10 +661,14 @@ fn main() {
         wanted.stopping = true;
     }
     let _ = (&wake).write(&[1]);
-    if finished.recv_timeout(Duration::from_secs(2)).is_err() {
-        eprintln!(
+    match finished.recv_timeout(Duration::from_secs(2)) {
+        Ok(true) => {}
+        Ok(false) => eprintln!(
+            "stopping: the Voyager is unreachable, so a pedal layer may stay on until the next start"
+        ),
+        Err(_) => eprintln!(
             "stopping: the Voyager did not take the layer reset in time; a pedal layer may stay on until the next start"
-        );
+        ),
     }
 }
 
@@ -705,6 +767,34 @@ mod tests {
         // ...its release lost to a drop; the resync reads both up
         assert_eq!(pedals.sync(&[]), [SHIFT_UP]);
         assert_eq!(pedals.layer(), None);
+    }
+
+    #[test]
+    fn a_resync_discards_the_rest_of_its_batch() {
+        let mut pedals = Pedals::new(&PEDALS);
+        let mut dropping = Dropping::default();
+        let key = |code: KeyCode, value| InputEvent::new(EV_KEY, code.code(), value);
+        let report = InputEvent::new(EV_SYN, SYN_REPORT, 0);
+        // An overflow, then a Shift press already in our batch when the
+        // resync read the device and flushed its release from the kernel's
+        // queue: replaying it would hold Shift with nothing to let it go.
+        let batch = [
+            InputEvent::new(EV_SYN, SYN_DROPPED, 0),
+            report,
+            key(SHIFT, 1),
+            report,
+        ];
+        let changes = pedal_changes(batch, &mut dropping, &mut pedals, || Ok(vec![MIDDLE]));
+        assert!(
+            changes.unwrap().is_empty(),
+            "its press predates the state read"
+        );
+        assert_eq!(pedals.held, [MIDDLE], "the state read is adopted");
+        // only that batch: the next is taken as it comes
+        let changes = pedal_changes([key(SHIFT, 1), report], &mut dropping, &mut pedals, || {
+            unreachable!("no drop, no resync")
+        });
+        assert_eq!(changes.unwrap(), [SHIFT_DOWN]);
     }
 
     #[test]
