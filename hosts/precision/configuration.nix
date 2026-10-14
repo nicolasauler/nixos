@@ -439,6 +439,14 @@ in {
   users.groups.uinput.members = ["nic"];
   users.groups.input.members = ["nic"];
 
+  # The foot pedal's keyboard interface (PCsensor 3553:b001, factory keys a/b/c) is
+  # read only by the foot-pedal user service (modules/programs/foot-pedal), so hide it
+  # from libinput. Otherwise a press while that service (re)starts reaches Hyprland,
+  # the service's exclusive grab then swallows the release, and the key auto-repeats.
+  services.udev.extraRules = ''
+    ACTION=="add|change", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_VENDOR_ID}=="3553", ENV{ID_MODEL_ID}=="b001", ENV{ID_USB_INTERFACE_NUM}=="00", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+  '';
+
   services.postgresql = {
     enable = true;
     package = pkgs.postgresql;
