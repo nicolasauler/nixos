@@ -1,19 +1,16 @@
-//! Foot pedal -> Voyager layers, and Shift.
+//! Foot pedal -> Voyager layers.
 //!
 //! The PCsensor 3-pedal footswitch (3553:b001) sends its factory keys a, b,
 //! c. This grabs it exclusively, so those never reach applications, and makes
-//! each pedal a hold action:
-//!
-//! * layer pedals change the Voyager's own firmware layer through its raw-HID
-//!   interface, in ZSA's Oryx protocol (zsa/qmk_modules, oryx/oryx.c):
-//!   SET_LAYER on (layer_move) on press, SET_LAYER off (layer_off) on
-//!   release, each batch preceded by a pairing, and applied again after a
-//!   resume. Nothing on the host remaps Voyager keystrokes and keymapp is not
-//!   involved. A worker thread owns the keyboard, so a missing or replugged
-//!   Voyager never delays reading the pedal.
-//! * the Shift pedal holds Shift on a uinput keyboard, immediately. Hyprland
-//!   ORs held modifiers across keyboards, so it applies to Voyager keys.
+//! each pedal hold a layer of the Voyager's own firmware, through its raw-HID
+//! interface in ZSA's Oryx protocol (zsa/qmk_modules, oryx/oryx.c): SET_LAYER
+//! on (layer_move) on press, SET_LAYER off (layer_off) on release. Each batch
+//! of commands sits between two pairings and counts as applied once the
+//! firmware has answered both. Nothing on the host remaps Voyager keystrokes,
+//! and keymapp is not involved. A worker thread owns the keyboard, so a
+//! missing or replugged Voyager never delays reading the pedal.
 
+use std::convert::Infallible;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::fd::AsFd;
@@ -24,115 +21,72 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use evdev::raw_stream::RawDevice;
-use evdev::uinput::VirtualDevice;
-use evdev::{AttributeSet, BusType, EventType, InputEvent, InputId, KeyCode};
+use evdev::{InputEvent, KeyCode};
 use nix::errno::Errno;
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 use nix::sys::signal::{SigSet, Signal};
-use nix::sys::time::TimeSpec;
-use nix::sys::timerfd::{ClockId, Expiration, TimerFd, TimerFlags, TimerSetTimeFlags};
 use parking_lot::Mutex;
 
 /// Layer indices of Oryx layout JqpmQ ("Colemak dh nicc"). Reordering layers
 /// in Oryx means updating these.
+const NAV: u8 = 4;
 const MOUSE: u8 = 5;
 const MIRROR: u8 = 6;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Action {
-    Key(KeyCode),
-    Layer(u8),
-}
-
-const PEDALS: [(KeyCode, Action); 3] = [
-    (KeyCode::KEY_A, Action::Key(KeyCode::KEY_LEFTSHIFT)), // left
-    (KeyCode::KEY_B, Action::Layer(MIRROR)),               // middle
-    (KeyCode::KEY_C, Action::Layer(MOUSE)),                // right
+/// Each pedal's factory key, and the layer it holds.
+const PEDALS: [(KeyCode, u8); 3] = [
+    (KeyCode::KEY_A, NAV),    // left
+    (KeyCode::KEY_B, MIRROR), // middle
+    (KeyCode::KEY_C, MOUSE),  // right
 ];
 
 const PEDAL: &str = "/dev/input/by-id/usb-PCsensor_FootSwitch-event-kbd";
 
-/// Which pedals are down, and what that asks for. No I/O.
+/// Which pedals are down, and the layer that asks for. No I/O.
 struct Pedals {
-    map: &'static [(KeyCode, Action)],
+    map: &'static [(KeyCode, u8)],
     held: Vec<KeyCode>, // pedals down, in press order
 }
 
 impl Pedals {
-    fn new(map: &'static [(KeyCode, Action)]) -> Self {
+    fn new(map: &'static [(KeyCode, u8)]) -> Self {
         Pedals {
             map,
             held: Vec::new(),
         }
     }
 
-    fn action(&self, code: KeyCode) -> Option<Action> {
+    fn layer_of(&self, code: KeyCode) -> Option<u8> {
         self.map
             .iter()
-            .find_map(|&(pedal, action)| (pedal == code).then_some(action))
+            .find_map(|&(pedal, layer)| (pedal == code).then_some(layer))
     }
 
-    /// Synthetic key changes caused by a pedal going down.
-    fn press(&mut self, code: KeyCode) -> Vec<(KeyCode, i32)> {
-        match self.action(code) {
-            Some(action) if !self.held.contains(&code) => {
-                self.held.push(code);
-                key_change(action, 1)
-            }
-            _ => Vec::new(),
+    fn press(&mut self, code: KeyCode) {
+        if self.layer_of(code).is_some() && !self.held.contains(&code) {
+            self.held.push(code);
         }
     }
 
-    /// Synthetic key changes caused by a pedal coming up.
-    fn release(&mut self, code: KeyCode) -> Vec<(KeyCode, i32)> {
-        match (
-            self.held.iter().position(|&held| held == code),
-            self.action(code),
-        ) {
-            (Some(index), Some(action)) => {
-                self.held.remove(index);
-                key_change(action, 0)
-            }
-            _ => Vec::new(),
-        }
+    fn release(&mut self, code: KeyCode) {
+        self.held.retain(|&held| held != code);
     }
 
     /// Adopt the device's real key state: at open, after a drop, on loss.
-    fn sync(&mut self, down: &[KeyCode]) -> Vec<(KeyCode, i32)> {
-        let mut changes = Vec::new();
-        for code in self.held.clone() {
-            if !down.contains(&code) {
-                changes.extend(self.release(code));
-            }
-        }
+    fn sync(&mut self, down: &[KeyCode]) {
+        self.held.retain(|held| down.contains(held));
         let mut pressed: Vec<KeyCode> = down
             .iter()
             .copied()
-            .filter(|code| !self.held.contains(code))
+            .filter(|&code| self.layer_of(code).is_some() && !self.held.contains(&code))
             .collect();
         pressed.sort(); // their press order is unknown
-        for code in pressed {
-            changes.extend(self.press(code));
-        }
-        changes
+        self.held.extend(pressed);
     }
 
-    /// Layer of the latest layer pedal still down.
+    /// Layer of the latest pedal still down.
     fn layer(&self) -> Option<u8> {
-        self.held
-            .iter()
-            .rev()
-            .find_map(|&code| match self.action(code) {
-                Some(Action::Layer(layer)) => Some(layer),
-                _ => None,
-            })
-    }
-}
-
-fn key_change(action: Action, value: i32) -> Vec<(KeyCode, i32)> {
-    match action {
-        Action::Key(key) => vec![(key, value)],
-        Action::Layer(_) => Vec::new(),
+        self.held.last().and_then(|&code| self.layer_of(code))
     }
 }
 
@@ -173,37 +127,35 @@ impl Dropping {
     }
 }
 
-/// Synthetic key changes for one fetched batch of raw events. A resync reads
-/// the device's key state (EVIOCGKEY), which also flushes the key events the
+/// Feeds one fetched batch of raw events to `pedals`. A resync reads the
+/// device's key state (EVIOCGKEY), which also flushes the key events the
 /// kernel still queues for this reader; the rest of the batch is older than
 /// that state, so it goes too.
-fn pedal_changes(
+fn take_batch(
     events: impl IntoIterator<Item = InputEvent>,
     dropping: &mut Dropping,
     pedals: &mut Pedals,
     held: impl FnOnce() -> io::Result<Vec<KeyCode>>,
-) -> io::Result<Vec<(KeyCode, i32)>> {
-    let mut changes = Vec::new();
+) -> io::Result<()> {
     for event in events {
         match dropping.step(event.event_type().0, event.code(), event.value()) {
-            Step::Key(code, 1) => changes.extend(pedals.press(code)),
-            Step::Key(code, _) => changes.extend(pedals.release(code)),
+            Step::Key(code, 1) => pedals.press(code),
+            Step::Key(code, _) => pedals.release(code),
             Step::Resync => {
-                changes.extend(pedals.sync(&held()?));
+                pedals.sync(&held()?);
                 break;
             }
             Step::Nothing => {}
         }
     }
-    Ok(changes)
+    Ok(())
 }
 
 /// What the firmware's pedal layers are known to be.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Applied {
-    /// Just paired (a previous run may have died mid-hold), or resumed (the
-    /// firmware empties its queue of received reports on USB suspend, so the
-    /// last batch may never have run).
+    /// Just paired: a previous run may have died mid-hold, or a batch went
+    /// unanswered.
     Unknown,
     /// No pedal layer on.
     Off,
@@ -234,6 +186,7 @@ mod oryx {
     pub const SET_LAYER: u8 = 4;
     pub const GET_PROTOCOL_VERSION: u8 = 0xFE;
     pub const EVT_PAIRING_SUCCESS: u8 = 4;
+    pub const EVT_LAYER: u8 = 5;
     pub const EVT_PROTOCOL_VERSION: u8 = 0xFE;
     /// Versions with this SET_LAYER: 4 (firmware 25) and 5 (adds auto-mouse).
     pub const KNOWN_VERSIONS: [u8; 2] = [4, 5];
@@ -248,22 +201,54 @@ mod oryx {
     }
 }
 
-/// Reports for one batch of commands. The firmware ignores SET_LAYER unless
-/// paired, and can drop the pairing on its own (a failed send, e.g. across
-/// a USB suspend) without telling the host. Pairing is unconditional and the
-/// firmware handles reports in order, so pairing first gets the batch past
-/// that check. It does not make the batch land: writes are not acknowledged,
-/// and pairing's own replies unpair again if their send fails.
+/// Reports for one batch of commands, between two pairings. The firmware
+/// ignores SET_LAYER unless paired, and can drop the pairing on its own (a
+/// failed send, e.g. across a USB suspend) without telling the host: the
+/// first pairing gets the commands past that check. Writes are not
+/// acknowledged, and on USB suspend the firmware empties its queue of
+/// received reports, so the second pairing is the acknowledgement: reports
+/// are handled in order and every pairing is answered ([`Answers`]).
 fn batch(commands: &[Command]) -> Vec<[u8; oryx::REPORT + 1]> {
     if commands.is_empty() {
         return Vec::new();
     }
-    let mut reports = vec![oryx::report(&[oryx::PAIRING_INIT])];
+    let pairing = oryx::report(&[oryx::PAIRING_INIT]);
+    let mut reports = vec![pairing];
     reports.extend(commands.iter().map(|command| match *command {
         Command::Set(layer) => oryx::report(&[oryx::SET_LAYER, 1, layer]),
         Command::Unset(layer) => oryx::report(&[oryx::SET_LAYER, 0, layer]),
     }));
+    reports.push(pairing);
     reports
+}
+
+/// How far the firmware's answers to a batch have got. A pairing is answered
+/// with PAIRING_SUCCESS and then a layer snapshot, and either send failing
+/// drops the pairing again (oryx.c, raw_hid_send_oryx). So the first
+/// pairing's success must be directly followed by its snapshot (still paired
+/// when the commands ran), and then the second pairing's success shows that
+/// every command was handled. Key positions and layer changes in between are
+/// skipped.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+enum Answers {
+    #[default]
+    Nothing,
+    Paired,
+    StillPaired,
+    Confirmed,
+}
+
+impl Answers {
+    fn step(self, event: u8) -> Self {
+        match (self, event) {
+            (Answers::Confirmed, _) => Answers::Confirmed,
+            (Answers::StillPaired, oryx::EVT_PAIRING_SUCCESS) => Answers::Confirmed,
+            (Answers::StillPaired, _) => Answers::StillPaired,
+            (Answers::Paired, oryx::EVT_LAYER) => Answers::StillPaired,
+            (_, oryx::EVT_PAIRING_SUCCESS) => Answers::Paired,
+            _ => Answers::Nothing,
+        }
+    }
 }
 
 /// Is this hidraw node a Voyager's Oryx interface? Its USB ids, and QMK's
@@ -336,24 +321,52 @@ impl Keyboard {
         self.hid.write_all(report)
     }
 
-    /// The next report with this event code, within a second. Others (key
-    /// positions while paired, layer reports) are discarded.
-    fn reply(&mut self, event: u8) -> io::Result<[u8; 64]> {
-        let deadline = Instant::now() + Duration::from_secs(1);
+    /// The next report the keyboard sends, before `deadline`.
+    fn next(&mut self, deadline: Instant) -> io::Result<[u8; 64]> {
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
             let timeout = PollTimeout::try_from(left).unwrap_or(PollTimeout::ZERO);
             if left.is_zero() || !readable(&self.hid, timeout)? {
                 return Err(io::Error::new(
                     io::ErrorKind::TimedOut,
-                    format!("no reply {event:#04x} from the Voyager"),
+                    "the Voyager did not answer",
                 ));
             }
             let mut buf = [0; 64];
-            if self.hid.read(&mut buf)? > 0 && buf[0] == event {
+            if self.hid.read(&mut buf)? > 0 {
                 return Ok(buf);
             }
         }
+    }
+
+    /// The next report with this event code, within a second. Others (key
+    /// positions while paired, layer reports) are discarded.
+    fn reply(&mut self, event: u8) -> io::Result<[u8; 64]> {
+        let deadline = Instant::now() + Duration::from_secs(1);
+        loop {
+            let report = self.next(deadline)?;
+            if report[0] == event {
+                return Ok(report);
+            }
+        }
+    }
+
+    /// Sends a batch and waits, a second at most, for the firmware's answers
+    /// to it.
+    fn apply(&mut self, reports: &[[u8; oryx::REPORT + 1]]) -> io::Result<()> {
+        if reports.is_empty() {
+            return Ok(());
+        }
+        self.drain()?; // what came before answers nothing of this batch
+        for report in reports {
+            self.send(report)?;
+        }
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let mut answers = Answers::default();
+        while answers != Answers::Confirmed {
+            answers = answers.step(self.next(deadline)?[0]);
+        }
+        Ok(())
     }
 
     /// Discard what the keyboard sent. While paired it reports every key
@@ -399,40 +412,11 @@ fn rest(wake: &UnixStream, timeout: PollTimeout) {
     drain_wake(wake);
 }
 
-/// Readable once the system resumes from suspend. Linux treats a resume as
-/// the wall clock jumping against the monotonic one (timekeeping_resume ->
-/// timerfd_resume) and cancels absolute wall-clock timers armed with
-/// TFD_TIMER_CANCEL_ON_SET. This one is set for 2106, so the only other thing
-/// that wakes it is setting the clock, which costs one needless batch.
-fn resume_alarm() -> nix::Result<TimerFd> {
-    let alarm = TimerFd::new(
-        ClockId::CLOCK_REALTIME,
-        TimerFlags::TFD_NONBLOCK | TimerFlags::TFD_CLOEXEC,
-    )?;
-    alarm.set(
-        Expiration::OneShot(TimeSpec::new(u32::MAX.into(), 0)),
-        TimerSetTimeFlags::TFD_TIMER_ABSTIME | TimerSetTimeFlags::TFD_TIMER_CANCEL_ON_SET,
-    )?;
-    Ok(alarm)
-}
-
 /// Owns the Voyager: applies the latest wanted layer, pairing again after a
-/// replug and applying again after a resume, so the pedal loop never waits
-/// on the keyboard. When stopping, tells `done` whether the pedal layers are
-/// known to be off.
-fn keyboard_worker(
-    wanted: Arc<Mutex<Wanted>>,
-    wake: UnixStream,
-    resumed: TimerFd,
-    done: mpsc::Sender<bool>,
-) {
-    let owned: Vec<u8> = PEDALS
-        .iter()
-        .filter_map(|(_, action)| match action {
-            Action::Layer(layer) => Some(*layer),
-            Action::Key(_) => None,
-        })
-        .collect();
+/// replug, so the pedal loop never waits on the keyboard. When stopping,
+/// tells `done` whether the pedal layers are known to be off.
+fn keyboard_worker(wanted: Arc<Mutex<Wanted>>, wake: UnixStream, done: mpsc::Sender<bool>) {
+    let owned: Vec<u8> = PEDALS.iter().map(|&(_, layer)| layer).collect();
     let mut keyboard: Option<Keyboard> = None;
     let mut applied = Applied::Unknown;
     let mut trouble = Trouble::default();
@@ -470,7 +454,9 @@ fn keyboard_worker(
             continue;
         };
         let reports = batch(&plan(applied, layer, &owned));
-        if let Err(error) = reports.iter().try_for_each(|report| connected.send(report)) {
+        if let Err(error) = connected.apply(&reports) {
+            // Landed or not, it is unanswered: the next connection starts
+            // from Unknown and applies the wanted layer again.
             trouble.report(format!("voyager: {error}; reconnecting"));
             keyboard = None;
             rest(&wake, PollTimeout::from(1000u16));
@@ -484,12 +470,10 @@ fn keyboard_worker(
             let _ = done.send(true);
             return;
         }
-        // Sleep until the pedals change, the keyboard sends something, or
-        // the system resumes.
+        // Sleep until the pedals change or the keyboard sends something.
         let mut fds = [
             PollFd::new(wake.as_fd(), PollFlags::POLLIN),
             PollFd::new(connected.hid.as_fd(), PollFlags::POLLIN),
-            PollFd::new(resumed.as_fd(), PollFlags::POLLIN),
         ];
         match poll(&mut fds, PollTimeout::NONE) {
             Ok(_) => {}
@@ -501,15 +485,7 @@ fn keyboard_worker(
             }
         }
         let hid = fds[1].revents().unwrap_or(PollFlags::empty());
-        let resume = fds[2].revents().unwrap_or(PollFlags::empty());
         drain_wake(&wake);
-        if !resume.is_empty() {
-            // Take the cancellation (the next resume wakes it again), and
-            // send the wanted layer, or clear ours, again.
-            let _ = resumed.wait();
-            eprintln!("voyager: resumed (or the clock was set); applying the pedal layers again");
-            applied = Applied::Unknown;
-        }
         if !hid.is_empty()
             && let Err(error) = connected.drain()
         {
@@ -528,29 +504,23 @@ fn drain_wake(wake: &UnixStream) {
     }
 }
 
-/// The pedal side: what the read loop needs to act.
-struct Outputs {
-    shift: VirtualDevice,
+/// The pedal side's line to the keyboard worker.
+struct ToWorker {
     wanted: Arc<Mutex<Wanted>>,
     wake: UnixStream,
 }
 
-impl Outputs {
-    fn apply(&mut self, pedals: &Pedals, changes: Vec<(KeyCode, i32)>) -> io::Result<()> {
-        for (key, value) in changes {
-            self.shift
-                .emit(&[InputEvent::new(EventType::KEY.0, key.code(), value)])?;
-        }
+impl ToWorker {
+    fn want(&self, layer: Option<u8>) {
         let mut wanted = self.wanted.lock();
-        if !wanted.stopping && wanted.layer != pedals.layer() {
-            wanted.layer = pedals.layer();
+        if !wanted.stopping && wanted.layer != layer {
+            wanted.layer = layer;
             let _ = (&self.wake).write(&[1]);
         }
-        Ok(())
     }
 }
 
-fn pedal_loop(mut outputs: Outputs) {
+fn pedal_loop(worker: ToWorker) {
     let mut pedals = Pedals::new(&PEDALS);
     let mut trouble = Trouble::default();
     loop {
@@ -564,61 +534,41 @@ fn pedal_loop(mut outputs: Outputs) {
                 continue;
             }
         };
-        let result = read_pedal(&mut device, &mut pedals, &mut outputs, &mut trouble);
+        let Err(error) = read_pedal(&mut device, &mut pedals, &worker, &mut trouble);
         // Whatever was held is not any more.
-        let released = pedals.sync(&[]);
-        if let Err(error) = outputs.apply(&pedals, released) {
-            eprintln!("shift keyboard: {error}");
-        }
-        match result {
-            Err(error) if error.raw_os_error() == Some(Errno::ENODEV as i32) => {
-                eprintln!("pedal disconnected");
-            }
-            Err(error) => {
-                trouble.report(format!("pedal: {error}; retrying every 2s"));
-                thread::sleep(Duration::from_secs(2));
-            }
-            Ok(()) => unreachable!("the read loop only ends in an error"),
+        pedals.sync(&[]);
+        worker.want(pedals.layer());
+        if error.raw_os_error() == Some(Errno::ENODEV as i32) {
+            eprintln!("pedal disconnected");
+        } else {
+            trouble.report(format!("pedal: {error}; retrying every 2s"));
+            thread::sleep(Duration::from_secs(2));
         }
     }
 }
 
+/// Follows the pedal until reading it fails.
 fn read_pedal(
     device: &mut RawDevice,
     pedals: &mut Pedals,
-    outputs: &mut Outputs,
+    worker: &ToWorker,
     trouble: &mut Trouble,
-) -> io::Result<()> {
+) -> io::Result<Infallible> {
     device.grab()?;
     let held = |device: &RawDevice| -> io::Result<Vec<KeyCode>> {
         Ok(device.get_key_state()?.iter().collect())
     };
     // A pedal may already be down.
-    let changes = pedals.sync(&held(device)?);
-    outputs.apply(pedals, changes)?;
+    pedals.sync(&held(device)?);
+    worker.want(pedals.layer());
     eprintln!("pedal connected");
     trouble.resolved();
     let mut dropping = Dropping::default();
     loop {
         let events: Vec<InputEvent> = device.fetch_events()?.collect();
-        let changes = pedal_changes(events, &mut dropping, pedals, || held(device))?;
-        outputs.apply(pedals, changes)?;
+        take_batch(events, &mut dropping, pedals, || held(device))?;
+        worker.want(pedals.layer());
     }
-}
-
-fn shift_keyboard() -> io::Result<VirtualDevice> {
-    let keys: AttributeSet<KeyCode> = PEDALS
-        .iter()
-        .filter_map(|(_, action)| match action {
-            Action::Key(key) => Some(*key),
-            Action::Layer(_) => None,
-        })
-        .collect();
-    VirtualDevice::builder()?
-        .name("foot-pedal")
-        .input_id(InputId::new(BusType::BUS_VIRTUAL, 0, 0, 1))
-        .with_keys(&keys)?
-        .build()
 }
 
 fn main() {
@@ -629,10 +579,6 @@ fn main() {
     signals.add(Signal::SIGINT);
     signals.thread_block().expect("blocking SIGTERM and SIGINT");
 
-    let shift = shift_keyboard().unwrap_or_else(|error| {
-        eprintln!("cannot create the Shift keyboard on /dev/uinput: {error}");
-        std::process::exit(1);
-    });
     let wanted = Arc::new(Mutex::new(Wanted {
         layer: None,
         stopping: false,
@@ -640,21 +586,18 @@ fn main() {
     let (wake, wake_worker) = UnixStream::pair().expect("socketpair");
     wake.set_nonblocking(true)
         .expect("non-blocking wake socket");
-    let resumed = resume_alarm().expect("resume timer");
     let (done, finished) = mpsc::channel();
 
     let worker_wanted = Arc::clone(&wanted);
-    thread::spawn(move || keyboard_worker(worker_wanted, wake_worker, resumed, done));
-    let outputs = Outputs {
-        shift,
+    thread::spawn(move || keyboard_worker(worker_wanted, wake_worker, done));
+    let worker = ToWorker {
         wanted: Arc::clone(&wanted),
         wake: wake.try_clone().expect("wake socket"),
     };
-    thread::spawn(move || pedal_loop(outputs));
+    thread::spawn(move || pedal_loop(worker));
 
     let _ = signals.wait();
-    // Turn the pedal layers off before going. A held Shift needs nothing:
-    // the kernel releases it when the uinput device goes with this process.
+    // Turn the pedal layers off before going.
     {
         let mut wanted = wanted.lock();
         wanted.layer = None;
@@ -676,18 +619,20 @@ fn main() {
 mod tests {
     use super::*;
 
-    const SHIFT: KeyCode = KeyCode::KEY_A;
+    const LEFT: KeyCode = KeyCode::KEY_A;
     const MIDDLE: KeyCode = KeyCode::KEY_B;
     const RIGHT: KeyCode = KeyCode::KEY_C;
-    const SHIFT_DOWN: (KeyCode, i32) = (KeyCode::KEY_LEFTSHIFT, 1);
-    const SHIFT_UP: (KeyCode, i32) = (KeyCode::KEY_LEFTSHIFT, 0);
 
     #[test]
-    fn the_later_layer_pedal_wins_and_hands_back() {
+    fn the_later_pedal_wins_and_hands_back() {
         let mut pedals = Pedals::new(&PEDALS);
-        assert!(pedals.press(MIDDLE).is_empty());
+        pedals.press(MIDDLE);
         assert_eq!(pedals.layer(), Some(MIRROR));
         pedals.press(RIGHT);
+        assert_eq!(pedals.layer(), Some(MOUSE));
+        pedals.press(LEFT);
+        assert_eq!(pedals.layer(), Some(NAV));
+        pedals.release(LEFT);
         assert_eq!(pedals.layer(), Some(MOUSE));
         pedals.release(RIGHT);
         assert_eq!(pedals.layer(), Some(MIRROR));
@@ -696,7 +641,7 @@ mod tests {
     }
 
     #[test]
-    fn releasing_the_earlier_pedal_leaves_the_later_in_charge() {
+    fn releasing_an_earlier_pedal_leaves_the_later_in_charge() {
         let mut pedals = Pedals::new(&PEDALS);
         pedals.press(MIDDLE);
         pedals.press(RIGHT);
@@ -704,44 +649,35 @@ mod tests {
         assert_eq!(pedals.layer(), Some(MOUSE));
         pedals.release(RIGHT);
         assert_eq!(pedals.layer(), None);
-    }
-
-    #[test]
-    fn shift_is_a_key_independent_of_layers() {
-        let mut pedals = Pedals::new(&PEDALS);
-        assert_eq!(pedals.press(SHIFT), [SHIFT_DOWN]);
-        assert_eq!(pedals.layer(), None);
-        pedals.press(MIDDLE);
-        assert_eq!(pedals.release(SHIFT), [SHIFT_UP]);
-        assert_eq!(pedals.layer(), Some(MIRROR));
     }
 
     #[test]
     fn repeats_strays_and_other_keys_change_nothing() {
         let mut pedals = Pedals::new(&PEDALS);
-        pedals.press(SHIFT);
-        assert!(pedals.press(SHIFT).is_empty());
-        assert!(pedals.release(RIGHT).is_empty());
-        assert!(pedals.press(KeyCode::KEY_LEFTSHIFT).is_empty());
-        assert_eq!(pedals.held, [SHIFT]);
+        pedals.press(LEFT);
+        pedals.press(LEFT);
+        pedals.release(RIGHT);
+        pedals.press(KeyCode::KEY_LEFTSHIFT);
+        assert_eq!(pedals.held, [LEFT]);
     }
 
     #[test]
     fn sync_adopts_the_real_state() {
         let mut pedals = Pedals::new(&PEDALS);
-        pedals.press(SHIFT);
+        pedals.press(LEFT);
         pedals.press(MIDDLE);
-        assert_eq!(pedals.sync(&[RIGHT]), [SHIFT_UP]);
+        pedals.sync(&[RIGHT]);
         assert_eq!(pedals.layer(), Some(MOUSE));
-        assert!(pedals.sync(&[]).is_empty());
+        pedals.sync(&[]);
         assert_eq!(pedals.layer(), None);
     }
 
     #[test]
     fn pedals_already_down_at_open_take_effect() {
         let mut pedals = Pedals::new(&PEDALS);
-        assert_eq!(pedals.sync(&[RIGHT, SHIFT]), [SHIFT_DOWN]);
+        pedals.sync(&[RIGHT, KeyCode::KEY_LEFTSHIFT]);
         assert_eq!(pedals.layer(), Some(MOUSE));
+        assert_eq!(pedals.held, [RIGHT], "not a pedal");
     }
 
     #[test]
@@ -760,48 +696,41 @@ mod tests {
     }
 
     #[test]
-    fn a_pedal_held_at_open_and_released_in_a_drop_is_let_go() {
-        // held at open: adopted from the device state, not seen pressed...
-        let mut pedals = Pedals::new(&PEDALS);
-        assert_eq!(pedals.sync(&[SHIFT, MIDDLE]), [SHIFT_DOWN]);
-        // ...its release lost to a drop; the resync reads both up
-        assert_eq!(pedals.sync(&[]), [SHIFT_UP]);
-        assert_eq!(pedals.layer(), None);
-    }
-
-    #[test]
     fn a_resync_discards_the_rest_of_its_batch() {
         let mut pedals = Pedals::new(&PEDALS);
         let mut dropping = Dropping::default();
         let key = |code: KeyCode, value| InputEvent::new(EV_KEY, code.code(), value);
         let report = InputEvent::new(EV_SYN, SYN_REPORT, 0);
-        // An overflow, then a Shift press already in our batch when the
-        // resync read the device and flushed its release from the kernel's
-        // queue: replaying it would hold Shift with nothing to let it go.
-        let batch = [
+        // An overflow, then a press already in our batch when the resync
+        // read the device and flushed its release from the kernel's queue:
+        // replaying it would hold that layer with nothing to let it go.
+        let events = [
             InputEvent::new(EV_SYN, SYN_DROPPED, 0),
             report,
-            key(SHIFT, 1),
+            key(LEFT, 1),
             report,
         ];
-        let changes = pedal_changes(batch, &mut dropping, &mut pedals, || Ok(vec![MIDDLE]));
-        assert!(
-            changes.unwrap().is_empty(),
-            "its press predates the state read"
-        );
-        assert_eq!(pedals.held, [MIDDLE], "the state read is adopted");
+        take_batch(events, &mut dropping, &mut pedals, || Ok(vec![MIDDLE])).unwrap();
+        assert_eq!(pedals.held, [MIDDLE], "the state read, not the stale press");
         // only that batch: the next is taken as it comes
-        let changes = pedal_changes([key(SHIFT, 1), report], &mut dropping, &mut pedals, || {
+        take_batch([key(LEFT, 1), report], &mut dropping, &mut pedals, || {
             unreachable!("no drop, no resync")
-        });
-        assert_eq!(changes.unwrap(), [SHIFT_DOWN]);
+        })
+        .unwrap();
+        assert_eq!(pedals.layer(), Some(NAV));
     }
 
     #[test]
     fn release_unsets_and_an_unknown_state_clears_every_pedal_layer() {
-        let owned = [MIRROR, MOUSE];
-        let unset_all = [Command::Unset(MIRROR), Command::Unset(MOUSE)];
-        assert_eq!(plan(Applied::Unknown, None, &owned), unset_all);
+        let owned = [NAV, MIRROR, MOUSE];
+        assert_eq!(
+            plan(Applied::Unknown, None, &owned),
+            [
+                Command::Unset(NAV),
+                Command::Unset(MIRROR),
+                Command::Unset(MOUSE)
+            ]
+        );
         assert_eq!(
             plan(Applied::On(MIRROR), None, &owned),
             [Command::Unset(MIRROR)]
@@ -812,23 +741,50 @@ mod tests {
             [Command::Set(MOUSE)]
         );
         assert_eq!(
-            plan(Applied::On(MIRROR), Some(MOUSE), &owned),
-            [Command::Set(MOUSE)]
+            plan(Applied::On(MIRROR), Some(NAV), &owned),
+            [Command::Set(NAV)]
         );
         assert!(plan(Applied::On(MOUSE), Some(MOUSE), &owned).is_empty());
     }
 
     #[test]
-    fn every_batch_pairs_first_and_reports_match_oryx_c() {
+    fn every_batch_sits_between_two_pairings_and_matches_oryx_c() {
         // raw_hid_receive: data[0] command, param[0] on/off, param[1] layer
         let reports = batch(&[Command::Set(MIRROR), Command::Unset(MOUSE)]);
-        assert_eq!(reports.len(), 3);
+        assert_eq!(reports.len(), 4);
         assert_eq!(reports[0][..2], [0, oryx::PAIRING_INIT]);
         assert_eq!(reports[1][..4], [0, oryx::SET_LAYER, 1, MIRROR]);
         assert_eq!(reports[2][..4], [0, oryx::SET_LAYER, 0, MOUSE]);
+        assert_eq!(reports[3][..2], [0, oryx::PAIRING_INIT]);
         assert!(reports.iter().all(|report| report.len() == 33));
         assert!(reports[1][4..].iter().all(|&byte| byte == 0));
         assert!(batch(&[]).is_empty(), "nothing to do sends nothing");
+    }
+
+    #[test]
+    fn a_batch_counts_only_once_both_pairings_are_answered_in_order() {
+        use oryx::{EVT_LAYER as LAYER, EVT_PAIRING_SUCCESS as PAIRED};
+        const KEYDOWN: u8 = 6;
+        let answers = |events: &[u8]| {
+            events
+                .iter()
+                .fold(Answers::default(), |answers, &event| answers.step(event))
+        };
+        assert_eq!(answers(&[PAIRED, LAYER, PAIRED]), Answers::Confirmed);
+        // left over from before, a layer change, keys typed meanwhile
+        assert_eq!(
+            answers(&[LAYER, PAIRED, LAYER, KEYDOWN, LAYER, PAIRED, LAYER]),
+            Answers::Confirmed
+        );
+        // the first snapshot's send failed, and unpaired: the commands were
+        // ignored, whatever answers the second pairing
+        assert_ne!(answers(&[PAIRED, PAIRED, LAYER]), Answers::Confirmed);
+        assert_ne!(
+            answers(&[PAIRED, KEYDOWN, LAYER, PAIRED]),
+            Answers::Confirmed
+        );
+        // one pairing answered is not both
+        assert_ne!(answers(&[PAIRED, LAYER]), Answers::Confirmed);
     }
 
     #[test]

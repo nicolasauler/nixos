@@ -6,5 +6,5 @@ publish = false
 
 [dependencies]
 evdev = "0.13"
-nix = { version = "0.29", features = ["poll", "signal", "time"] }
+nix = { version = "0.29", features = ["poll", "signal"] }
 parking_lot = "0.12"
