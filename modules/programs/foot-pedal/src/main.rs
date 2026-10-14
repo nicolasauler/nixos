@@ -6,9 +6,10 @@
 //! interface in ZSA's Oryx protocol (zsa/qmk_modules, oryx/oryx.c): SET_LAYER
 //! on (layer_move) on press, SET_LAYER off (layer_off) on release. Each batch
 //! of commands sits between two pairings and counts as applied once the
-//! firmware has answered both. Nothing on the host remaps Voyager keystrokes,
-//! and keymapp is not involved. A worker thread owns the keyboard, so a
-//! missing or replugged Voyager never delays reading the pedal.
+//! firmware has answered both, which is best effort ([`Answers`]). Nothing on
+//! the host remaps Voyager keystrokes, and keymapp is not involved. A worker
+//! thread owns the keyboard, so a missing or replugged Voyager never delays
+//! reading the pedal.
 
 use std::convert::Infallible;
 use std::fs::{self, File, OpenOptions};
@@ -259,19 +260,20 @@ fn batch(commands: &[Command]) -> Vec<[u8; oryx::REPORT + 1]> {
 /// How far the firmware's answers to a batch have got. A pairing is answered
 /// with PAIRING_SUCCESS and then a layer snapshot, and either send failing
 /// drops the pairing again (oryx.c, raw_hid_send_oryx). So the opening
-/// pairing's success must be directly followed by its snapshot (still
-/// paired when the commands ran), and then the closing pairing's success
-/// shows that every command was handled. Key positions, layer changes and a
-/// snapshot left over from before are skipped.
+/// pairing's success must be directly followed by its snapshot (paired at
+/// that point), and then the closing pairing's success shows that the
+/// firmware got through every report before it. Key positions, layer
+/// changes and a snapshot left over from before are skipped.
 ///
-/// Not covered: a command the firmware had received but not yet handled
-/// when a USB suspend emptied its queue, with the closing pairing written
-/// after the resume. The firmware handles what it receives in its main loop,
-/// about a millisecond apart, and a USB device notices suspend only after
-/// 3 ms of bus idle, which comes after Linux has frozen this daemon (1-2 ms
-/// here) and suspended devices: the daemon would have to be frozen between
-/// two writes of a batch and the firmware stall that long. A pedal layer
-/// left on that way goes with the next press and release of any pedal.
+/// Best effort, not proof. A batch spanning a USB suspend or reset (either
+/// empties the firmware's queue of received reports: usb_main.c), or one
+/// during which the pairing drops (any failed send unpairs, key positions
+/// included), can be acknowledged with a command lost or ignored. No bound
+/// on the firmware's dispatch delay argues that away: its main loop also
+/// flushes the RGB LEDs over I2C and can wait on a full IN queue. A pedal
+/// layer can then stay on with no pedal down, and a stop report it off; a
+/// pedal press the worker applies, then its release, or a restart of the
+/// service clears it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum Answers {
     #[default]
@@ -393,8 +395,8 @@ impl Keyboard {
         }
     }
 
-    /// Sends a batch and waits, a second at most, for the firmware's answers
-    /// to it ([`Answers`]).
+    /// Sends a batch, then reads the firmware's answers to it, with a
+    /// one-second deadline after the writes ([`Answers`]).
     fn apply(&mut self, reports: &[[u8; oryx::REPORT + 1]]) -> io::Result<()> {
         if reports.is_empty() {
             return Ok(());
