@@ -181,7 +181,7 @@ impl Knowledge {
         self.reached = true;
     }
 
-    /// A pairing's snapshot showed the batch for `wanted` done.
+    /// The firmware answered the batch for `wanted`.
     fn confirmed(&mut self, wanted: Option<u8>) {
         self.applied = wanted.map_or(Applied::Off, Applied::On);
     }
@@ -240,9 +240,8 @@ mod oryx {
 /// ignores SET_LAYER unless paired, and can drop the pairing on its own (a
 /// failed send, e.g. across a USB suspend) without telling the host: the
 /// opening pairing gets the commands past that check. Writes are not
-/// acknowledged, and on USB suspend the firmware empties its queue of
-/// received reports: the closing pairing's answer shows what the commands
-/// did ([`Answers`]).
+/// acknowledged: the closing pairing's answer is the acknowledgement, as the
+/// firmware handles reports in order ([`Answers`]).
 fn batch(commands: &[Command]) -> Vec<[u8; oryx::REPORT + 1]> {
     if commands.is_empty() {
         return Vec::new();
@@ -257,56 +256,40 @@ fn batch(commands: &[Command]) -> Vec<[u8; oryx::REPORT + 1]> {
     reports
 }
 
-/// Whether a layer snapshot (the top layer on) shows a batch's commands
-/// done: the wanted layer on top, or every layer it unset off, which a top
-/// layer below that one proves.
-fn shows(snapshot: u8, wanted: Option<u8>, commands: &[Command]) -> bool {
-    match wanted {
-        Some(layer) => snapshot == layer,
-        None => commands
-            .iter()
-            .all(|&command| matches!(command, Command::Unset(layer) if snapshot < layer)),
-    }
-}
-
-/// Reading a batch's answers. Every pairing is answered with
-/// PAIRING_SUCCESS and, directly after it, a snapshot of the top layer on
-/// (oryx.c, pairing_success_event); the closing pairing's comes after every
-/// command before it. A snapshot showing the commands done confirms the
-/// batch, whichever pairing it answers, as the commands only move toward
-/// that state. The closing pairing's snapshot not showing it means a command
-/// was lost. Key positions and layer-change events are skipped.
-#[derive(Default)]
-struct Answers {
-    pairings: u8,
-    after_pairing: bool,
-}
-
-#[derive(Debug, PartialEq)]
-enum Verdict {
-    Waiting,
+/// How far the firmware's answers to a batch have got. A pairing is answered
+/// with PAIRING_SUCCESS and then a layer snapshot, and either send failing
+/// drops the pairing again (oryx.c, raw_hid_send_oryx). So the opening
+/// pairing's success must be directly followed by its snapshot (still
+/// paired when the commands ran), and then the closing pairing's success
+/// shows that every command was handled. Key positions, layer changes and a
+/// snapshot left over from before are skipped.
+///
+/// Not covered: a command the firmware had received but not yet handled
+/// when a USB suspend emptied its queue, with the closing pairing written
+/// after the resume. The firmware handles what it receives in its main loop,
+/// about a millisecond apart, and a USB device notices suspend only after
+/// 3 ms of bus idle, which comes after Linux has frozen this daemon (1-2 ms
+/// here) and suspended devices: the daemon would have to be frozen between
+/// two writes of a batch and the firmware stall that long. A pedal layer
+/// left on that way goes with the next press and release of any pedal.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+enum Answers {
+    #[default]
+    Nothing,
+    Paired,
+    StillPaired,
     Confirmed,
-    /// The closing pairing's snapshot, the commands not done.
-    Refused(u8),
 }
 
 impl Answers {
-    fn step(&mut self, report: &[u8], done: impl Fn(u8) -> bool) -> Verdict {
-        let after_pairing = std::mem::replace(
-            &mut self.after_pairing,
-            report[0] == oryx::EVT_PAIRING_SUCCESS,
-        );
-        match report[0] {
-            oryx::EVT_PAIRING_SUCCESS => {
-                self.pairings = self.pairings.saturating_add(1);
-                Verdict::Waiting
-            }
-            oryx::EVT_LAYER if after_pairing => match report[1] {
-                layer if done(layer) => Verdict::Confirmed,
-                layer if self.pairings >= 2 => Verdict::Refused(layer),
-                _ => Verdict::Waiting,
-            },
-            _ => Verdict::Waiting,
+    fn step(self, event: u8) -> Self {
+        match (self, event) {
+            (Answers::Confirmed, _) => Answers::Confirmed,
+            (Answers::StillPaired, oryx::EVT_PAIRING_SUCCESS) => Answers::Confirmed,
+            (Answers::StillPaired, _) => Answers::StillPaired,
+            (Answers::Paired, oryx::EVT_LAYER) => Answers::StillPaired,
+            (_, oryx::EVT_PAIRING_SUCCESS) => Answers::Paired,
+            _ => Answers::Nothing,
         }
     }
 }
@@ -410,13 +393,9 @@ impl Keyboard {
         }
     }
 
-    /// Sends a batch, then reads the firmware's answers, a second at most,
-    /// until a snapshot shows it `done` ([`Answers`]).
-    fn apply(
-        &mut self,
-        reports: &[[u8; oryx::REPORT + 1]],
-        done: impl Fn(u8) -> bool,
-    ) -> io::Result<()> {
+    /// Sends a batch and waits, a second at most, for the firmware's answers
+    /// to it ([`Answers`]).
+    fn apply(&mut self, reports: &[[u8; oryx::REPORT + 1]]) -> io::Result<()> {
         if reports.is_empty() {
             return Ok(());
         }
@@ -426,17 +405,10 @@ impl Keyboard {
         }
         let deadline = Instant::now() + Duration::from_secs(1);
         let mut answers = Answers::default();
-        loop {
-            match answers.step(&self.next(deadline)?, &done) {
-                Verdict::Waiting => {}
-                Verdict::Confirmed => return Ok(()),
-                Verdict::Refused(layer) => {
-                    return Err(io::Error::other(format!(
-                        "a command was lost: on layer {layer} after the batch"
-                    )));
-                }
-            }
+        while answers != Answers::Confirmed {
+            answers = answers.step(self.next(deadline)?[0]);
         }
+        Ok(())
     }
 
     /// Discard what the keyboard sent. While paired it reports every key
@@ -519,10 +491,8 @@ fn keyboard_worker(wanted: Arc<Mutex<Wanted>>, wake: UnixStream, done: mpsc::Sen
             }
             continue;
         };
-        let commands = plan(knowledge.applied, layer, &owned);
-        let reports = batch(&commands);
-        if let Err(error) = connected.apply(&reports, |snapshot| shows(snapshot, layer, &commands))
-        {
+        let reports = batch(&plan(knowledge.applied, layer, &owned));
+        if let Err(error) = connected.apply(&reports) {
             // Any of it may have run: the next connection plans from scratch.
             knowledge.failed();
             trouble.report(format!("voyager: {error}; reconnecting"));
@@ -830,63 +800,30 @@ mod tests {
     }
 
     #[test]
-    fn a_batch_counts_once_a_pairing_snapshot_shows_it_done() {
+    fn a_batch_counts_only_once_both_pairings_are_answered_in_order() {
         use oryx::{EVT_LAYER as LAYER, EVT_PAIRING_SUCCESS as PAIRED};
         const KEYDOWN: u8 = 6;
-        let verdict = |reports: &[[u8; 2]], wanted: Option<u8>, commands: &[Command]| {
-            let mut answers = Answers::default();
-            reports
+        let answers = |events: &[u8]| {
+            events
                 .iter()
-                .map(|report| answers.step(report, |top| shows(top, wanted, commands)))
-                .find(|verdict| *verdict != Verdict::Waiting)
-                .unwrap_or(Verdict::Waiting)
+                .fold(Answers::default(), |answers, &event| answers.step(event))
         };
-        let nav = [Command::Set(NAV)];
-        let nav_off = [Command::Unset(NAV)];
-        // the opening snapshot shows the old state; a change event (not a
-        // snapshot) and a key come between; the closing snapshot shows nav
-        let answered = [
-            [PAIRED, 0],
-            [LAYER, 0],
-            [LAYER, NAV],
-            [KEYDOWN, 3],
-            [PAIRED, 0],
-            [LAYER, NAV],
-        ];
-        assert_eq!(verdict(&answered, Some(NAV), &nav), Verdict::Confirmed);
-        // the unset lost between the pairings (the firmware emptied its
-        // queue on suspend): both answered, the closing snapshot on nav
-        let lost = [[PAIRED, 0], [LAYER, NAV], [PAIRED, 0], [LAYER, NAV]];
-        assert_eq!(verdict(&lost, None, &nav_off), Verdict::Refused(NAV));
-        // already so before the commands ran: done either way
+        assert_eq!(answers(&[PAIRED, LAYER, PAIRED]), Answers::Confirmed);
+        // the previous batch's closing snapshot arriving late, a layer
+        // change, and keys typed meanwhile
         assert_eq!(
-            verdict(&[[PAIRED, 0], [LAYER, 0]], None, &nav_off),
-            Verdict::Confirmed
+            answers(&[LAYER, PAIRED, LAYER, KEYDOWN, LAYER, PAIRED, LAYER]),
+            Answers::Confirmed
         );
-        // one pairing answered, not showing it: more to come, or a timeout
-        assert_eq!(
-            verdict(&[[PAIRED, 0], [LAYER, 0]], Some(NAV), &nav),
-            Verdict::Waiting
+        // the opening snapshot's send failed, and unpaired: the commands
+        // were ignored, whatever answers the closing pairing
+        assert_ne!(answers(&[PAIRED, PAIRED, LAYER]), Answers::Confirmed);
+        assert_ne!(
+            answers(&[PAIRED, KEYDOWN, LAYER, PAIRED]),
+            Answers::Confirmed
         );
-    }
-
-    #[test]
-    fn an_unset_layer_is_known_off_only_below_the_top_layer() {
-        let mirror_off = [Command::Unset(MIRROR)];
-        assert!(
-            shows(NAV, None, &mirror_off),
-            "nav held from the keyboard is on top: mirror, above it, is off"
-        );
-        assert!(!shows(MIRROR, None, &mirror_off));
-        let all_off = [
-            Command::Unset(NAV),
-            Command::Unset(MIRROR),
-            Command::Unset(MOUSE),
-        ];
-        assert!(shows(3, None, &all_off));
-        assert!(!shows(NAV, None, &all_off), "nav could be ours");
-        assert!(shows(MOUSE, Some(MOUSE), &[Command::Set(MOUSE)]));
-        assert!(!shows(MIRROR, Some(MOUSE), &[Command::Set(MOUSE)]));
+        // one pairing answered is not both
+        assert_ne!(answers(&[PAIRED, LAYER]), Answers::Confirmed);
     }
 
     #[test]
