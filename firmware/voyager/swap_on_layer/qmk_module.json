@@ -1,0 +1,7 @@
+{
+    "module_name": "swap_on_layer",
+    "maintainer": "nicolasauler",
+    "features": {
+        "swap_hands": true
+    }
+}
