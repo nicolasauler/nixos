@@ -10,6 +10,7 @@
     ../../modules/programs/alacritty.nix
     ../../modules/programs/cliphist.nix
     ../../modules/programs/direnv.nix
+    ../../modules/programs/foot-pedal
     ../../modules/programs/git
     ../../modules/programs/jujutsu.nix
     # ../../modules/programs/gtk.nix

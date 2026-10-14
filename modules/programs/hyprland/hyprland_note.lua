@@ -12,6 +12,7 @@ hl.on("hyprland.start", function()
 	hl.exec_cmd("mako")
 	hl.exec_cmd("nm-applet")
 	hl.exec_cmd("1password --silent") -- tray only; the Firefox extension unlocks through the app
+	hl.exec_cmd("keymapp") -- its API is how the foot pedal switches Voyager layers (kontroll)
 	hl.exec_cmd("dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP")
 	hl.exec_cmd("alacritty -e bash -c 'curl wttr.in | less && zellij'")
 end)
