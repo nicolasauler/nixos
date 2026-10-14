@@ -57,7 +57,10 @@ fn source_files(zip: &[u8]) -> Result<Vec<(&'static str, Vec<u8>)>, String> {
     let mut found: Vec<(&'static str, Vec<u8>)> = Vec::new();
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
-        let path = entry.name().to_owned();
+        let path = entry
+            .name()
+            .map_err(|error| error.to_string())?
+            .into_owned();
         let Some(name) = FILES
             .iter()
             .find(|&&name| path.contains("_source/") && path.ends_with(&format!("/{name}")))
