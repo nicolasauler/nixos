@@ -27,7 +27,7 @@
     ../../modules/home/nixpkgs.nix
     ../../modules/programs/shell-aliases.nix
     ../../modules/programs/starship.nix
-    ../../modules/programs/talk
+    ../../modules/programs/talkd
     ../../modules/programs/waybar/waybar_note.nix
     ../../modules/programs/zathura.nix
     ../../modules/programs/zellij.nix
