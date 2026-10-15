@@ -4,7 +4,7 @@
 # pedal mirrors the whole keyboard rather than one hand-made layer.
 #
 # Flash: `nix run nixpkgs#zapp -- flash result/*.bin`, then press the reset
-# button (or a Reset key on the board).
+# button with a paperclip (the layout has no Reset key).
 {
   lib,
   stdenv,
@@ -14,9 +14,18 @@
   # The layer whose activation mirrors the keyboard. Must match MIRROR in
   # modules/programs/foot-pedal/src/main.rs. null builds the layout as Oryx does.
   swapOnLayer ? 6,
+  # Mirrored nav: an alias layer the module rewrites to navLayer + swapOnLayer,
+  # so the pedal's layer_move (one layer on) can still give nav, mirrored. Must
+  # match MIRRORED_NAV and NAV in modules/programs/foot-pedal/src/main.rs.
+  # Either null (or swapOnLayer null) builds without the alias.
+  mirroredNavLayer ? 7,
+  navLayer ? 4,
 }: let
   pin = lib.importJSON ./oryx.json;
   swap = swapOnLayer != null;
+  alias = swap && mirroredNavLayer != null && navLayer != null;
+  keymapC = builtins.readFile ./oryx/keymap.c;
+  layout = layer: "[${toString layer}] = LAYOUT_voyager(";
 
   # ZSA's fork at branch firmware25 (the version Oryx compiles this layout
   # with), and the submodules a Voyager build reads. The fork's .gitmodules also
@@ -40,7 +49,7 @@
   # no nested parentheses, so the first ")" after its LAYOUT( ends it; any key
   # that is a function call fails the check anyway.
   layerKeys = layer: let
-    after = lib.splitString "[${toString layer}] = LAYOUT_voyager(" (builtins.readFile ./oryx/keymap.c);
+    after = lib.splitString (layout layer) keymapC;
   in
     if builtins.length after != 2
     then throw "voyager-firmware: layer ${toString layer} is not in oryx/keymap.c"
@@ -50,13 +59,23 @@
     voyager-firmware: layer ${toString swapOnLayer} must be fully transparent to mirror the keyboard, but has ${toString (builtins.length opaqueKeys)} distinct keys: ${lib.concatStringsSep ", " opaqueKeys}.
     In Oryx, make every key of that layer transparent (or replace the layer with a new, empty one), save, and run `nix run .#voyager-layout-update`.'';
 
+  # The alias never reaches layer_state, so a keymap layer at its index (say a
+  # layer added later in Oryx) would be unreachable. The module goes first in
+  # the module list so the Oryx module (which reports the layer over raw HID)
+  # and the keymap see the rewritten state, never the alias.
+  aliasChecked =
+    lib.assertMsg (!lib.hasInfix (layout mirroredNavLayer) keymapC) ''
+      voyager-firmware: mirroredNavLayer ${toString mirroredNavLayer} is a layer in oryx/keymap.c; the alias must be an index the layout does not use.''
+    && lib.assertMsg (lib.hasInfix (layout navLayer) keymapC) ''
+      voyager-firmware: navLayer ${toString navLayer} is not in oryx/keymap.c.'';
+
   oryxKeymap = lib.importJSON ./oryx/keymap.json;
   keymapJson =
     writeText "keymap.json" (builtins.toJSON (oryxKeymap
-        // lib.optionalAttrs swap {modules = (oryxKeymap.modules or []) ++ ["nic/swap_on_layer"];}));
-  configH =
-    writeText "config.h" (builtins.readFile ./oryx/config.h
-      + lib.optionalString swap "\n#define SWAP_ON_LAYER ${toString swapOnLayer}\n");
+        // lib.optionalAttrs swap {modules = ["nic/swap_on_layer"] ++ (oryxKeymap.modules or []);}));
+  configH = writeText "config.h" (builtins.readFile ./oryx/config.h
+    + lib.optionalString swap "\n#define SWAP_ON_LAYER ${toString swapOnLayer}\n"
+    + lib.optionalString alias "#define MIRRORED_NAV_LAYER ${toString mirroredNavLayer}\n#define NAV_LAYER ${toString navLayer}\n");
 
   keymap = "keyboards/zsa/voyager/keymaps/oryx";
 in
@@ -70,6 +89,7 @@ in
     # forced when the derivation is instantiated (still evaluation time), not
     # when merely reaching .override
     postPatch = assert swap -> checked;
+    assert alias -> aliasChecked;
       lib.concatStrings (lib.mapAttrsToList (path: source: "cp -r ${source}/. ${path}\n") submodules)
       + ''
         mkdir -p ${keymap}
