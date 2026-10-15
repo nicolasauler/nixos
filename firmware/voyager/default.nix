@@ -60,10 +60,11 @@
   #   line end, and of `\\` + LF, where the last backslash splices).
   #   Trigraphs are not replaced, as GCC does not replace them either under
   #   QMK's `-std=gnu11` (builddefs/common_rules.mk:37 at 93b2b9ec).
-  # - Comments and literals. keymap.c is lexed just enough to tell code from
-  #   comments (`/* … */`, `// …`) and string and character literals (with
-  #   escapes); each becomes "@", which code cannot otherwise hold. One never
-  #   closed is refused.
+  # - Comments and literals. GNU raw-string introducers (R", including
+  #   prefixed forms) are refused before lexing: their delimiters cannot be
+  #   read as ordinary quotes. Otherwise comments (`/* … */`, `// …`) and
+  #   string/character literals with escapes become "@", which code cannot
+  #   otherwise hold. One never closed is refused.
   # - The declaration. In the code that remains, `keymaps` must occur exactly
   #   once, as `keymaps[][MATRIX_ROWS][MATRIX_COLS] = {` after whitespace
   #   (so no longer identifier ending in it, nor a second copy anywhere, in a
@@ -94,6 +95,8 @@
       then refuse "a CR byte (only LF line ends are read)"
       else if builtins.length (builtins.split "\\\\[[:space:]]*\n" raw) > 1
       then refuse "a backslash line continuation (lines are not spliced here)"
+      else if lib.hasInfix "R\"" raw
+      then refuse "a GNU raw-string introducer (raw literals are not supported)"
       else raw;
     escaped = "\\\\.";
     tokens =
@@ -225,7 +228,11 @@
 
   layerKeys = layer:
     layers.${toString layer} or (throw "voyager-firmware: layer ${toString layer} is not in oryx/keymap.c");
-  opaqueKeys = lib.unique (lib.filter (key: !(builtins.elem key ["KC_TRANSPARENT" "KC_TRNS" "_______"])) (layerKeys swapOnLayer));
+  # Match the same whitespace as the parser, including VT/FF that lib.trim
+  # deliberately leaves intact.
+  opaqueKeys = lib.unique (lib.filter
+    (key: builtins.match "[[:space:]]*(KC_TRANSPARENT|KC_TRNS|_______)[[:space:]]*" key == null)
+    (layerKeys swapOnLayer));
   checked = lib.assertMsg (opaqueKeys == []) ''
     voyager-firmware: layer ${toString swapOnLayer} must be fully transparent to mirror the keyboard, but has ${toString (builtins.length opaqueKeys)} distinct keys: ${lib.concatStringsSep ", " opaqueKeys}.
     In Oryx, make every key of that layer transparent (or replace the layer with a new, empty one), save, and run `nix run .#voyager-layout-update`.'';
