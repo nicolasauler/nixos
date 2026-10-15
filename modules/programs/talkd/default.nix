@@ -59,5 +59,9 @@ in {
   # the bind active under hyprlock too.
   wayland.windowManager.hyprland.extraLuaFiles.talkd = ''
     hl.bind("code:191", hl.dsp.no_op(), { locked = true, auto_consuming = true, ignore_mods = true })
+    -- F14 is the explicit default-input toggle, independent of talkd's
+    -- hold/latch cycle. Set the baseline before starting an F13 cycle.
+    -- No `locked` flag: do not add a new locked-screen unmute action.
+    hl.bind("code:192", hl.dsp.exec_cmd("${lib.getExe' pkgs.wireplumber "wpctl"} set-mute @DEFAULT_AUDIO_SOURCE@ toggle"), { auto_consuming = true, ignore_mods = true })
   '';
 }
