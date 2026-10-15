@@ -10,7 +10,7 @@ use std::convert::Infallible;
 use std::time::Duration;
 
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
-use wayland_client::{Connection, Dispatch, QueueHandle};
+use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle};
 
 use crate::machine::Lock;
 
@@ -86,9 +86,16 @@ fn lock(locked: bool) -> Lock {
     if locked { Lock::Locked } else { Lock::Unlocked }
 }
 
-/// Follows the lock state until the connection fails; `up` is set once the
-/// first state is known.
-fn watch(send: &impl Fn(Lock), up: &mut bool) -> Result<Infallible, String> {
+/// A lock notification subscribed and its first state read: the
+/// connection, its queue, the notification object, and the state.
+type Subscribed = (
+    Connection,
+    EventQueue<State>,
+    HyprlandLockNotificationV1,
+    State,
+);
+
+fn subscribe() -> Result<Subscribed, String> {
     let connection = Connection::connect_to_env().map_err(|error| error.to_string())?;
     let mut queue = connection.new_event_queue();
     let handle = queue.handle();
@@ -101,11 +108,23 @@ fn watch(send: &impl Fn(Lock), up: &mut bool) -> Result<Infallible, String> {
         .notifier
         .take()
         .ok_or("the compositor offers no hyprland_lock_notifier_v1")?;
-    let _notification = notifier.get_lock_notification(&handle, ());
+    let notification = notifier.get_lock_notification(&handle, ());
     // a lock already in place is announced right away
     queue
         .roundtrip(&mut state)
         .map_err(|error| error.to_string())?;
+    Ok((connection, queue, notification, state))
+}
+
+/// The lock state, once (`talkd status`).
+pub fn now() -> Result<Lock, String> {
+    subscribe().map(|(_, _, _, state)| lock(state.locked))
+}
+
+/// Follows the lock state until the connection fails; `up` is set once the
+/// first state is known.
+fn watch(send: &impl Fn(Lock), up: &mut bool) -> Result<Infallible, String> {
+    let (_connection, mut queue, _notification, mut state) = subscribe()?;
     let mut sent = state.locked;
     send(lock(sent));
     *up = true;

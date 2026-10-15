@@ -16,7 +16,7 @@ use pw::context::ContextRc;
 use pw::core::{CoreRc, PW_ID_CORE};
 use pw::device::{Device, DeviceListener};
 use pw::metadata::{Metadata, MetadataListener};
-use pw::node::{Node, NodeListener};
+use pw::node::{Node, NodeChangeMask, NodeListener};
 use pw::permissions::PermissionFlags;
 use pw::registry::{GlobalObject, RegistryRc};
 use pw::spa::param::ParamType;
@@ -68,6 +68,24 @@ pub enum Update {
         pod: Vec<u8>,
     },
     Default(Option<String>),
+}
+
+/// What `talkd status` shows of the server and its default source.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Status {
+    pub server: u32,
+    /// Or why there is none.
+    pub default: Result<DefaultSource, String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DefaultSource {
+    pub id: u32,
+    pub serial: u64,
+    pub name: String,
+    pub description: Option<String>,
+    /// Where the mixer finds its mute, and the mute; None if nowhere.
+    pub mute: Option<(Via, bool)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -125,6 +143,7 @@ struct Source {
     node: Node,
     serial: u64,
     name: String,
+    description: Option<String>,
     device: Option<u32>,
     profile_device: Option<i32>,
     props_mute: Option<bool>,
@@ -401,6 +420,7 @@ impl Mic {
                     source.device = text(*pw::keys::DEVICE_ID).and_then(|id| id.parse().ok());
                     source.profile_device =
                         text("card.profile.device").and_then(|device| device.parse().ok());
+                    source.description = text("node.description").map(str::to_owned);
                     link.recompute(id, &mut events);
                 }
             }
@@ -437,6 +457,30 @@ impl Mic {
         let name = link.default.as_deref()?;
         let source = link.sources.values().find(|source| source.name == name)?;
         Some((link.pin(source)?, link.mixer(source)?.1))
+    }
+
+    /// What `talkd status` shows; None until synced.
+    pub fn status(&self) -> Option<Status> {
+        let link = self.link.as_ref().filter(|link| link.ready && !link.lost)?;
+        let default = match link.default.as_deref() {
+            None => Err("none: no default.audio.source in the \"default\" metadata".to_owned()),
+            Some(name) => link
+                .sources
+                .iter()
+                .find(|(_, source)| source.name == name)
+                .map(|(&id, source)| DefaultSource {
+                    id,
+                    serial: source.serial,
+                    name: source.name.clone(),
+                    description: source.description.clone(),
+                    mute: link.mixer(source),
+                })
+                .ok_or_else(|| format!("{name:?}, which is no audio source node")),
+        };
+        Some(Status {
+            server: link.cookie?,
+            default,
+        })
     }
 
     pub fn muted(&self, pin: Pin) -> Option<bool> {
@@ -493,10 +537,14 @@ fn bind(
                 .info({
                     let hook = hook.clone();
                     move |info| {
-                        hook(Update::NodeInfo {
-                            id,
-                            props: owned(info.props()),
-                        })
+                        // later infos carry props only when they changed; an
+                        // empty set then is no news, not "no device.id"
+                        if info.change_mask().contains(NodeChangeMask::PROPS) {
+                            hook(Update::NodeInfo {
+                                id,
+                                props: owned(info.props()),
+                            })
+                        }
                     }
                 })
                 .param({
@@ -519,6 +567,7 @@ fn bind(
                     node,
                     serial,
                     name,
+                    description: None,
                     device: None,
                     profile_device: None,
                     props_mute: None,
@@ -668,9 +717,9 @@ context.modules = [
   { name = libpipewire-module-access }
 ]
 context.objects = [
-  { factory = adapter args = { factory.name = support.null-audio-sink node.name = "test-mic"
+  { factory = adapter args = { factory.name = support.null-audio-sink node.name = "test-mic" node.description = "Test mic"
       media.class = "Audio/Source" audio.position = [ FL FR ] priority.session = 2000 } }
-  { factory = adapter args = { factory.name = support.null-audio-sink node.name = "test-headset"
+  { factory = adapter args = { factory.name = support.null-audio-sink node.name = "test-headset" node.description = "Test headset"
       media.class = "Audio/Source" audio.position = [ FL FR ] priority.session = 1000 } }
 ]
 "#;
@@ -859,6 +908,30 @@ context.objects = [
             mic(&owner.borrow()).link.as_ref().unwrap().sources[&mic_id].serial,
             pin.serial,
             "the default is the higher-priority source"
+        );
+
+        // `talkd status`, on its own connection, reads the same without
+        // changing anything
+        let status = crate::status::read(Some(server.socket())).unwrap();
+        let expected = DefaultSource {
+            id: mic_id,
+            serial: pin.serial,
+            name: "test-mic".to_owned(),
+            description: Some("Test mic".to_owned()),
+            mute: Some((Via::Props, false)),
+        };
+        assert_eq!(status.default, Ok(expected));
+        assert_eq!(
+            mic(&owner.borrow()).status().unwrap().default,
+            status.default
+        );
+        assert_ne!(status.server, 0);
+        let report = crate::status::format(&status, &Err("no compositor".to_owned()));
+        eprint!("{report}");
+        assert!(report.contains("mute lives in: the node's Props\nmuted: no\n"));
+        assert_eq!(
+            server.wpctl(&["get-volume", "@DEFAULT_AUDIO_SOURCE@"]),
+            "Volume: 1.00\n"
         );
 
         // set, and confirmed by the param coming back; wpctl agrees

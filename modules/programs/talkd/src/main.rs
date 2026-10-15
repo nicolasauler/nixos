@@ -16,6 +16,7 @@ mod machine;
 mod mic;
 mod notices;
 mod params;
+mod status;
 mod store;
 
 use std::cell::RefCell;
@@ -292,6 +293,15 @@ fn notifier(messages: mpsc::Receiver<String>, send: pw::channel::Sender<Msg>) {
 }
 
 fn main() -> ExitCode {
+    let mut args = env::args().skip(1);
+    match (args.next().as_deref(), args.next()) {
+        (None, _) => {}
+        (Some("status"), None) => return status::run(),
+        _ => {
+            eprintln!("usage: talkd [status]");
+            return ExitCode::from(2);
+        }
+    }
     // the main loop takes SIGTERM and SIGINT through a signalfd; block them
     // before any thread exists so none of the others gets them
     let mut signals = SigSet::empty();
