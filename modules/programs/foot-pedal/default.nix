@@ -17,12 +17,12 @@
   };
 in {
   # PCsensor 3-pedal footswitch as hold keys for the Voyager's layers: left =
-  # nav, middle = mirror, right = mouse (mapping in src/main.rs). The pedals
-  # talk to the keyboard's raw-HID interface directly (ZSA's Oryx protocol), so
-  # keymapp is not needed; hardware.keyboard.zsa makes that node writable. The
-  # Voyager's own input is never intercepted. Needs the input group, which this
-  # user has; the pedal is hidden from libinput by a udev rule in the host
-  # configuration.
+  # mirror, middle = nav, right = mouse; a tap locks mirror or mouse until the
+  # next tap (mapping in src/main.rs). The pedals talk to the keyboard's raw-HID
+  # interface directly (ZSA's Oryx protocol), so keymapp is not needed;
+  # hardware.keyboard.zsa makes that node writable. The Voyager's own input is
+  # never intercepted. Needs the input group, which this user has; the pedal is
+  # hidden from libinput by a udev rule in the host configuration.
   systemd.user.services.foot-pedal = {
     Unit = {
       Description = "Foot pedal: Voyager layers";
