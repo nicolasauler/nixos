@@ -47,36 +47,115 @@
   # would be mirrored twice and type exactly as if nothing were mirrored.
   # Checked at evaluation, from the vendored keymap.
   #
-  # Its layers, by index: {"0" = [keys]; …}, found by the designated
-  # initialisers `[N] = LAYOUT…(` of the keymaps array, whatever the spacing or
-  # the layout macro's name. Whatever else the array holds (a layer without an
-  # index, an index that is not a number, one index twice) is refused, not
-  # guessed at, so a keymap the parser cannot read never passes as "layer N is
-  # absent". A layer's keys end at the first ")": a transparent layer has no
-  # nested parentheses, and a key that is a function call fails the check anyway.
+  # Its layers, by index: {"0" = [keys]; …}. The keymaps array must be exactly
+  # a comma-separated list of designated initialisers `[N] = LAYOUT…( … )`:
+  # N a decimal index in its canonical spelling (no leading zero), any layout
+  # macro name, any spacing, each macro call's parentheses balanced. All of the
+  # array is consumed: anything else before, between or after its layers (an
+  # initialiser without an index, `[07]`, `[NAV]`, a braced `{{ … }}` layer, a
+  # comment) or one index twice is refused, not skipped, so a keymap the parser
+  # cannot read never passes as "layer N is absent". A layer's keys are its
+  # macro's top-level arguments.
   layers = let
     refuse = why: throw "voyager-firmware: oryx/keymap.c: ${why}; the layer guards cannot read this keymap";
+    quote = text: "`${lib.substring 0 60 (lib.trim (builtins.replaceStrings ["\n"] [" "] text))}`";
     array = builtins.split "keymaps\\[]\\[MATRIX_ROWS]\\[MATRIX_COLS][[:space:]]*=[[:space:]]*\\{" (builtins.readFile ./oryx/keymap.c);
+    # up to the array's closing "};". A "};" inside it ends it early, which
+    # leaves an unbalanced last layer: refused below.
     body = builtins.head (lib.splitString "};" (builtins.elemAt array 2));
-    matches = regex: (builtins.length (builtins.split regex body) - 1) / 2;
-    parts = builtins.split "\\[[[:space:]]*([0-9]+)[[:space:]]*][[:space:]]*=[[:space:]]*LAYOUT[[:alnum:]_]*[[:space:]]*\\(" body;
-    entries = lib.genList (i: {
-      name = builtins.head (builtins.elemAt parts (2 * i + 1));
-      value = map lib.trim (lib.splitString "," (builtins.head (lib.splitString ")" (builtins.elemAt parts (2 * i + 2)))));
-    }) ((builtins.length parts - 1) / 2);
+    parts = builtins.split "\\[[[:space:]]*(0|[1-9][0-9]*)[[:space:]]*][[:space:]]*=[[:space:]]*LAYOUT[[:alnum:]_]*[[:space:]]*\\(" body;
+    count = (builtins.length parts - 1) / 2;
+    # The rest of one layer after its "LAYOUT…(": the macro's arguments up to
+    # the ")" that balances that "(", then only the "," before the next layer
+    # (optional after the last). Returns the top-level arguments, trimmed.
+    layer = index: last: rest: let
+      step = state: token:
+        if state.closed
+        then
+          if builtins.isList token
+          then refuse "after layer ${index}: ${quote (state.tail + builtins.head token)} is not `, [N] = LAYOUT…(`"
+          else state // {tail = state.tail + token;}
+        else if builtins.isList token
+        then let
+          paren = builtins.head token;
+          depth =
+            state.depth
+            + (
+              if paren == "("
+              then 1
+              else -1
+            );
+        in
+          if depth == 0
+          then
+            state
+            // {
+              closed = true;
+              depth = 0;
+              keys = state.keys ++ [state.key];
+            }
+          else
+            state
+            // {
+              inherit depth;
+              key = state.key + paren;
+            }
+        else if state.depth == 1
+        then let
+          # commas at the top level end a key
+          pieces = lib.splitString "," token;
+          n = builtins.length pieces;
+        in
+          if n == 1
+          then state // {key = state.key + token;}
+          else
+            state
+            // {
+              keys = state.keys ++ [(state.key + builtins.head pieces)] ++ lib.sublist 1 (n - 2) pieces;
+              key = lib.last pieces;
+            }
+        else state // {key = state.key + token;};
+      end = builtins.foldl' step {
+        closed = false;
+        depth = 1;
+        key = "";
+        keys = [];
+        tail = "";
+      } (builtins.split "([()])" rest);
+    in
+      if !end.closed
+      then refuse "layer ${index}: its LAYOUT…( has no balancing )"
+      else if
+        builtins.match (
+          if last
+          then "[[:space:]]*,?[[:space:]]*"
+          else "[[:space:]]*,[[:space:]]*"
+        )
+        end.tail
+        == null
+      then refuse "after layer ${index}: ${quote end.tail} is not `, [N] = LAYOUT…(`"
+      else map lib.trim end.keys;
+    entries =
+      lib.genList (i: let
+        index = builtins.head (builtins.elemAt parts (2 * i + 1));
+      in {
+        name = index;
+        value = layer index (i == count - 1) (builtins.elemAt parts (2 * i + 2));
+      })
+      count;
     indices = map (entry: entry.name) entries;
   in
     if builtins.length array != 3
     then refuse "no single `keymaps[][MATRIX_ROWS][MATRIX_COLS] = {`"
-    else if entries == []
+    else if count == 0
     then refuse "no `[N] = LAYOUT…(` layer"
-    else if matches "LAYOUT[[:alnum:]_]*[[:space:]]*\\(" != builtins.length entries
-    then refuse "a layer without a numeric `[N] =` index"
-    else if matches "\\[[^]]*][[:space:]]*=" != builtins.length entries
-    then refuse "an index that is not `[N] = LAYOUT…(`"
+    else if builtins.match "[[:space:]]*" (builtins.head parts) == null
+    then refuse "${quote (builtins.head parts)} before the first `[N] = LAYOUT…(`"
     else if lib.unique indices != indices
     then refuse "a layer index given twice"
-    else builtins.listToAttrs entries;
+    # every layer is parsed, not only the ones asked for: a refusal hides in
+    # any of them
+    else builtins.deepSeq entries (builtins.listToAttrs entries);
   hasLayer = layer: layers ? ${toString layer};
 
   layerKeys = layer:

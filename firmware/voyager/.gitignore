@@ -1,0 +1,3 @@
+# voyager-layout-update's lock, and its staging directory while it runs
+/.oryx.lock
+/.oryx.staged/
