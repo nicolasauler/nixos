@@ -47,22 +47,45 @@
   # would be mirrored twice and type exactly as if nothing were mirrored.
   # Checked at evaluation, from the vendored keymap.
   #
-  # Its layers, by index: {"0" = [keys]; …}. The keymaps array must be exactly
-  # a comma-separated list of designated initialisers `[N] = LAYOUT…( … )`:
-  # N a decimal index in its canonical spelling (no leading zero), any layout
-  # macro name, any spacing, each macro call's parentheses balanced. All of the
-  # array is consumed: anything else before, between or after its layers (an
-  # initialiser without an index, `[07]`, `[NAV]`, a braced `{{ … }}` layer, a
-  # comment) or one index twice is refused, not skipped, so a keymap the parser
-  # cannot read never passes as "layer N is absent". A layer's keys are its
-  # macro's top-level arguments.
+  # Its layers, by index: {"0" = [keys]; …}. keymap.c is first lexed just
+  # enough to tell code from comments (`/* … */`, `// …`) and string and
+  # character literals (with escapes and line continuations); each of those
+  # becomes "@", which C code outside them cannot hold. In the code that
+  # remains, the declaration `keymaps[][MATRIX_ROWS][MATRIX_COLS] = {` must
+  # occur exactly once, and the array runs to the first ";" after it (an
+  # initialiser list holds none), which must follow its closing "}". Inside
+  # the array nothing but code may appear: a comment or literal there is
+  # refused, so neither can supply a delimiter or a layer.
+  #
+  # The array must be exactly a comma-separated list of designated
+  # initialisers `[N] = LAYOUT…( … )`: N a decimal index in its canonical
+  # spelling (no leading zero), any layout macro name, any spacing, each macro
+  # call's parentheses balanced. All of the array is consumed: anything else
+  # before, between or after its layers (an initialiser without an index,
+  # `[07]`, `[NAV]`, a braced `{{ … }}` layer) or one index twice is refused,
+  # not skipped, so a keymap the parser cannot read never passes as "layer N
+  # is absent". A layer's keys are its macro's top-level arguments.
+  # Preprocessor macros are not expanded.
   layers = let
     refuse = why: throw "voyager-firmware: oryx/keymap.c: ${why}; the layer guards cannot read this keymap";
     quote = text: "`${lib.substring 0 60 (lib.trim (builtins.replaceStrings ["\n"] [" "] text))}`";
-    array = builtins.split "keymaps\\[]\\[MATRIX_ROWS]\\[MATRIX_COLS][[:space:]]*=[[:space:]]*\\{" (builtins.readFile ./oryx/keymap.c);
-    # up to the array's closing "};". A "};" inside it ends it early, which
-    # leaves an unbalanced last layer: refused below.
-    body = builtins.head (lib.splitString "};" (builtins.elemAt array 2));
+    escaped = "\\\\(.|\n)";
+    tokens = builtins.split (lib.concatStringsSep "|" [
+      "/\\*([^*]|\\*+[^*/])*\\*+/"
+      "//([^\\\\\n]|${escaped})*"
+      "\"([^\"\\\\\n]|${escaped})*\""
+      "'([^'\\\\\n]|${escaped})*'"
+    ]) (builtins.readFile ./oryx/keymap.c);
+    pieces = lib.filter builtins.isString tokens;
+    code = lib.concatStrings (map (token:
+      if builtins.isList token
+      then "@"
+      else token)
+    tokens);
+    array = builtins.split "keymaps\\[]\\[MATRIX_ROWS]\\[MATRIX_COLS][[:space:]]*=[[:space:]]*\\{" code;
+    declaration = builtins.head (lib.splitString ";" (builtins.elemAt array 2));
+    closed = builtins.match "([^;]*)}[[:space:]]*" declaration;
+    body = builtins.head closed;
     parts = builtins.split "\\[[[:space:]]*(0|[1-9][0-9]*)[[:space:]]*][[:space:]]*=[[:space:]]*LAYOUT[[:alnum:]_]*[[:space:]]*\\(" body;
     count = (builtins.length parts - 1) / 2;
     # The rest of one layer after its "LAYOUT…(": the macro's arguments up to
@@ -145,8 +168,15 @@
       count;
     indices = map (entry: entry.name) entries;
   in
-    if builtins.length array != 3
-    then refuse "no single `keymaps[][MATRIX_ROWS][MATRIX_COLS] = {`"
+    # what is left of a comment or literal start in code was never closed
+    if lib.any (piece: lib.any (start: lib.hasInfix start piece) ["/*" "//" "\"" "'" "@"]) pieces
+    then refuse "an unterminated comment or literal, or an @ in code"
+    else if builtins.length array != 3
+    then refuse "not exactly one `keymaps[][MATRIX_ROWS][MATRIX_COLS] = {` outside comments and literals"
+    else if closed == null
+    then refuse "the keymaps array does not end in `}` before its `;`"
+    else if lib.hasInfix "@" body
+    then refuse "a comment or literal inside the keymaps array"
     else if count == 0
     then refuse "no `[N] = LAYOUT…(` layer"
     else if builtins.match "[[:space:]]*" (builtins.head parts) == null

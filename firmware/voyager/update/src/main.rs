@@ -22,6 +22,7 @@ use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{self, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::time::Duration;
 
 use nix::fcntl::{AT_FDCWD, RenameFlags, renameat2};
 use serde_json::{Value, json};
@@ -32,6 +33,8 @@ const PIN: &str = "oryx.json";
 const FILES: [&str; 4] = ["keymap.c", "config.h", "rules.mk", "keymap.json"];
 /// The ZSA QMK branch (firmwareNN) that firmware/voyager/default.nix builds.
 const FIRMWARE_MAJOR: &str = "25";
+/// The longest either request to Oryx may take, end to end.
+const TIMEOUT: Duration = Duration::from_secs(60);
 const QUERY: &str = "query($hashId: String!, $revisionId: String!, $geometry: String) { \
     layout(hashId: $hashId, geometry: $geometry, revisionId: $revisionId) { \
     revision { hashId qmkVersion title } } }";
@@ -75,14 +78,34 @@ fn le(bytes: &[u8], at: usize, width: usize) -> Option<usize> {
     )
 }
 
-/// The raw name of every record in the zip's central directory, read here
-/// rather than through ZipArchive: that keeps one entry per name, so of two
-/// records with the same name only the last would ever be seen. Zip64 (more
-/// than 65,534 entries or 4 GiB) is refused rather than half read.
-fn entry_names(zip: &[u8]) -> Result<Vec<&[u8]>, String> {
+/// One central-directory record: where it starts, and the raw name it gives.
+#[derive(Debug)]
+struct Record<'a> {
+    offset: usize,
+    name: &'a [u8],
+}
+
+/// The zip's central directory as read here, rather than through ZipArchive,
+/// which keeps one entry per name (of two records with the same name only the
+/// last would ever be seen) and finds its directory by a search of its own.
+#[derive(Debug)]
+struct CentralDirectory<'a> {
+    start: usize,
+    records: Vec<Record<'a>>,
+}
+
+/// Reads the central directory named by the end-of-central-directory record
+/// whose comment runs exactly to the end of the file. Every record must lie
+/// wholly inside the directory, and the records must fill it. Zip64 is refused
+/// rather than half read: zip64 end-of-directory values or locator (more than
+/// 65,534 entries or 4 GiB), and zip64 extra fields (header 0x0001) on entries.
+fn central_directory(zip: &[u8]) -> Result<CentralDirectory<'_>, String> {
     const END: &[u8] = b"PK\x05\x06";
+    const ZIP64_LOCATOR: &[u8] = b"PK\x06\x07";
     const RECORD: &[u8] = b"PK\x01\x02";
+    const ZIP64_EXTRA: usize = 0x0001;
     let corrupt = |why: &str| format!("the export is not a zip: {why}");
+    let zip64 = || "the export uses zip64, which this updater does not read".to_owned();
     // the end-of-central-directory record: 22 bytes, then a comment of up to
     // 64 KiB that runs to the end of the file
     let last = zip
@@ -94,34 +117,64 @@ fn entry_names(zip: &[u8]) -> Result<Vec<&[u8]>, String> {
         .find(|&at| zip[at..].starts_with(END) && le(zip, at + 20, 2) == Some(last - at))
         .ok_or_else(|| corrupt("no end of central directory"))?;
     let field = |at, width| le(zip, end + at, width).ok_or_else(|| corrupt("truncated"));
-    let (on_disk, entries, size, offset) =
+    let (on_disk, entries, size, start) =
         (field(8, 2)?, field(10, 2)?, field(12, 4)?, field(16, 4)?);
-    if entries == 0xFFFF || size == 0xFFFF_FFFF || offset == 0xFFFF_FFFF {
-        return Err("the export is a zip64 archive, which this updater does not read".to_owned());
+    if entries == 0xFFFF
+        || size == 0xFFFF_FFFF
+        || start == 0xFFFF_FFFF
+        || end
+            .checked_sub(20)
+            .is_some_and(|locator| zip[locator..].starts_with(ZIP64_LOCATOR))
+    {
+        return Err(zip64());
     }
-    if on_disk != entries {
+    if on_disk != entries || field(4, 2)? != 0 || field(6, 2)? != 0 {
         return Err(corrupt("a multi-disk archive"));
     }
-    let mut names = Vec::with_capacity(entries);
-    let mut at = offset;
+    let directory_end = start
+        .checked_add(size)
+        .filter(|&directory_end| directory_end <= end)
+        .ok_or_else(|| corrupt("the central directory runs past its end record"))?;
+    // only the directory's own bytes: a record cannot reach beyond them
+    let directory = &zip[..directory_end];
+    let truncated = || corrupt("a central directory record runs past the directory");
+    let mut records = Vec::with_capacity(entries);
+    let mut at = start;
     for _ in 0..entries {
-        let field = |offset, width| {
-            le(zip, at + offset, width).ok_or_else(|| corrupt("truncated central directory"))
-        };
-        if !zip[at.min(zip.len())..].starts_with(RECORD) {
+        let field = |offset, width| le(directory, at + offset, width).ok_or_else(truncated);
+        if !directory[at.min(directory_end)..].starts_with(RECORD) {
             return Err(corrupt("a central directory record is missing"));
         }
         let (name, extra, comment) = (field(28, 2)?, field(30, 2)?, field(32, 2)?);
-        names.push(
-            zip.get(at + 46..at + 46 + name)
-                .ok_or_else(|| corrupt("truncated central directory"))?,
-        );
-        at += 46 + name + extra + comment;
+        let name_at = at + 46;
+        let extra_at = name_at + name;
+        let next = extra_at + extra + comment;
+        if next > directory_end {
+            return Err(truncated());
+        }
+        let mut extra = &directory[extra_at..extra_at + extra];
+        while !extra.is_empty() {
+            let (id, length) = (le(extra, 0, 2), le(extra, 2, 2));
+            let (Some(id), Some(length)) = (id, length) else {
+                return Err(corrupt("a malformed extra field"));
+            };
+            if id == ZIP64_EXTRA {
+                return Err(zip64());
+            }
+            extra = extra
+                .get(4 + length..)
+                .ok_or_else(|| corrupt("a malformed extra field"))?;
+        }
+        records.push(Record {
+            offset: at,
+            name: &directory[name_at..extra_at],
+        });
+        at = next;
     }
-    if at != offset + size {
+    if at != directory_end {
         return Err(corrupt("the central directory is not the size it claims"));
     }
-    Ok(names)
+    Ok(CentralDirectory { start, records })
 }
 
 /// The four layout files of an Oryx export, in FILES order. They must be
@@ -130,24 +183,57 @@ fn entry_names(zip: &[u8]) -> Result<Vec<&[u8]>, String> {
 /// below the top level, a nested path inside it, a source file named twice,
 /// whether as exactly the same name or one spelt differently) is an error
 /// rather than a guess at which copy is meant, as is any entry name that
-/// appears twice in the archive.
+/// appears twice in the archive. The zip crate must read exactly the central
+/// directory checked here: the same start, the same records at the same
+/// offsets with the same names, so a file with two candidate directories
+/// cannot be validated by one and extracted from the other.
 fn source_files(zip: &[u8]) -> Result<Vec<(&'static str, Vec<u8>)>, String> {
-    let names = entry_names(zip)?;
+    let directory = central_directory(zip)?;
     let mut seen = HashSet::new();
-    if let Some(twice) = names.iter().find(|name| !seen.insert(**name)) {
+    if let Some(twice) = directory
+        .records
+        .iter()
+        .find(|record| !seen.insert(record.name))
+    {
         return Err(format!(
             "the export has two entries named {}",
-            String::from_utf8_lossy(twice)
+            String::from_utf8_lossy(twice.name)
         ));
     }
     let mut archive = zip::ZipArchive::new(Cursor::new(zip))
         .map_err(|error| format!("the export is not a zip: {error}"))?;
-    if archive.len() != names.len() {
-        return Err(format!(
-            "the export's central directory has {} entries, but its zip reader sees {}",
-            names.len(),
-            archive.len()
+    let differs = |what: String| {
+        Err(format!(
+            "the zip reader reads another central directory than the one checked: {what}"
+        ))
+    };
+    if archive.central_directory_start() != directory.start as u64 {
+        return differs(format!(
+            "it starts at {}, not {}",
+            archive.central_directory_start(),
+            directory.start
         ));
+    }
+    if archive.len() != directory.records.len() {
+        return differs(format!(
+            "{} entries, not {}",
+            archive.len(),
+            directory.records.len()
+        ));
+    }
+    for (index, record) in directory.records.iter().enumerate() {
+        let entry = archive
+            .by_index_raw(index)
+            .map_err(|error| error.to_string())?;
+        if entry.central_header_start() != record.offset as u64 || entry.name_raw() != record.name {
+            return differs(format!(
+                "entry {index} is {} at {}, not {} at {}",
+                String::from_utf8_lossy(entry.name_raw()),
+                entry.central_header_start(),
+                String::from_utf8_lossy(record.name),
+                record.offset
+            ));
+        }
     }
     let mut root: Option<String> = None;
     let mut found: [Option<Vec<u8>>; FILES.len()] = Default::default();
@@ -426,7 +512,14 @@ fn run() -> Result<(), String> {
         "query": QUERY,
         "variables": {"hashId": layout, "geometry": "voyager", "revisionId": "latest"},
     });
-    let mut response = ureq::post("https://oryx.zsa.io/graphql")
+    // each request whole, connecting to the last body byte; the lock is held
+    // meanwhile, so a stalled server must not hold it for ever
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(TIMEOUT))
+        .build()
+        .into();
+    let mut response = agent
+        .post("https://oryx.zsa.io/graphql")
         .header("Content-Type", "application/json")
         .send(request.to_string())
         .map_err(|error| format!("Oryx GraphQL: {error}"))?;
@@ -449,7 +542,8 @@ fn run() -> Result<(), String> {
     }
 
     let url = format!("https://oryx.zsa.io/source/{}", latest.hash_id);
-    let mut response = ureq::get(&url)
+    let mut response = agent
+        .get(&url)
         .call()
         .map_err(|error| format!("{url}: {error}"))?;
     let zip = response
@@ -490,6 +584,7 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::io::Write;
     use std::sync::mpsc;
     use std::thread;
 
@@ -590,11 +685,11 @@ mod tests {
         assert!(source_files(&zip).unwrap_err().contains("keymap.c twice"));
     }
 
-    #[test]
-    fn two_entries_with_exactly_the_same_name_are_an_error() {
-        // ZipWriter refuses a name twice, so write another name of the same
-        // length and rename it in the bytes, local header and central
-        // directory alike
+    /// The source export plus a fifth entry, also named x_source/keymap.c
+    /// but with other content. ZipWriter refuses a name twice, so it writes
+    /// another name of the same length, renamed here in the bytes, local
+    /// header and central directory alike.
+    fn export_with_keymap_twice() -> Vec<u8> {
         let mut zip = export_with(&[("x_source/keymap.X", "other keys")]);
         let (from, to) = (b"x_source/keymap.X", b"x_source/keymap.c");
         let mut renamed = 0;
@@ -605,10 +700,28 @@ mod tests {
             }
         }
         assert_eq!(renamed, 2);
+        zip
+    }
+
+    /// An end-of-central-directory record: `entries` records, `size` bytes
+    /// from `start`, then a comment of `comment` bytes.
+    fn end_record(entries: u16, size: usize, start: usize, comment: u16) -> Vec<u8> {
+        let mut end = b"PK\x05\x06\0\0\0\0".to_vec();
+        end.extend_from_slice(&entries.to_le_bytes());
+        end.extend_from_slice(&entries.to_le_bytes());
+        end.extend_from_slice(&u32::try_from(size).unwrap().to_le_bytes());
+        end.extend_from_slice(&u32::try_from(start).unwrap().to_le_bytes());
+        end.extend_from_slice(&comment.to_le_bytes());
+        end
+    }
+
+    #[test]
+    fn two_entries_with_exactly_the_same_name_are_an_error() {
+        let zip = export_with_keymap_twice();
         // the zip crate reads it, and sees one keymap.c of the two
         let archive = zip::ZipArchive::new(Cursor::new(&zip[..])).unwrap();
         assert_eq!(archive.len(), 4);
-        assert_eq!(entry_names(&zip).unwrap().len(), 5);
+        assert_eq!(central_directory(&zip).unwrap().records.len(), 5);
         assert!(
             source_files(&zip)
                 .unwrap_err()
@@ -617,11 +730,65 @@ mod tests {
     }
 
     #[test]
-    fn a_zip64_export_is_refused() {
+    fn the_zip_reader_must_read_the_central_directory_that_was_checked() {
+        // Two central directories: the five records with keymap.c twice, then
+        // the first four, distinct. The last end record, whose comment runs
+        // to the end of the file, names the four; its comment hides another
+        // end record, naming the five, followed by one more byte.
+        let zip = export_with_keymap_twice();
+        let five = central_directory(&zip).unwrap();
+        let (start, fifth) = (five.start, five.records[4].offset);
+        let end = zip.len() - 22;
+        let mut ambiguous = zip[..end].to_vec();
+        let four_start = ambiguous.len();
+        ambiguous.extend_from_within(start..fifth);
+        let four_size = ambiguous.len() - four_start;
+        ambiguous.extend(end_record(4, four_size, four_start, 23));
+        ambiguous.extend(end_record(5, end - start, start, 0));
+        ambiguous.push(0);
+
+        let checked = central_directory(&ambiguous).unwrap();
+        assert_eq!(checked.start, four_start);
+        assert_eq!(checked.records.len(), 4);
+        // the zip crate takes the hidden one, and sees keymap.c once
+        let archive = zip::ZipArchive::new(Cursor::new(&ambiguous[..])).unwrap();
+        assert_eq!(archive.central_directory_start(), start as u64);
+        assert_eq!(archive.len(), 4);
+        let error = source_files(&ambiguous).unwrap_err();
+        assert!(
+            error.contains("reads another central directory than the one checked"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_zip64_end_record_is_refused() {
         let mut zip = export_with(&[]);
         let end = zip.len() - 22;
         assert_eq!(&zip[end..end + 4], b"PK\x05\x06");
         zip[end + 8..end + 12].copy_from_slice(&[0xFF; 4]);
+        assert!(source_files(&zip).unwrap_err().contains("zip64"));
+    }
+
+    #[test]
+    fn a_zip64_extra_field_on_an_entry_is_refused() {
+        // a small archive with ordinary end values, but whose entry carries
+        // zip64 sizes in an extra field (header 0x0001)
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let large = zip::write::SimpleFileOptions::default().large_file(true);
+        zip.start_file("x_source/keymap.c", large).unwrap();
+        zip.write_all(b"keys").unwrap();
+        let zip = zip.finish().unwrap().into_inner();
+        let end = zip.len() - 22;
+        assert_eq!(&zip[end + 8..end + 10], &1u16.to_le_bytes());
+        let record = usize::try_from(u32::from_le_bytes(
+            zip[end + 16..end + 20].try_into().unwrap(),
+        ))
+        .unwrap();
+        let extra = record + 46 + "x_source/keymap.c".len();
+        assert_ne!(&zip[record + 30..record + 32], &[0, 0], "no extra field");
+        assert_eq!(&zip[extra..extra + 2], &1u16.to_le_bytes(), "not zip64");
+        assert!(zip::ZipArchive::new(Cursor::new(&zip[..])).is_ok());
         assert!(source_files(&zip).unwrap_err().contains("zip64"));
     }
 
@@ -877,8 +1044,11 @@ mod tests {
     fn a_second_updater_cannot_touch_the_first_one_s_staging() {
         let (scratch, live) = live_old("two");
         let (about_to_exchange, paused) = mpsc::channel();
-        let (go, wait) = mpsc::channel();
         thread::scope(|threads| {
+            // made in here, so that a failed assertion below drops `go` as it
+            // unwinds, before the scope joins the first publisher: that one
+            // then fails at its pause instead of waiting there for ever
+            let (go, wait) = mpsc::channel();
             let first = threads.spawn(|| {
                 let mut ops = PauseBeforeExchange {
                     about_to_exchange,
