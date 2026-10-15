@@ -21,14 +21,14 @@
   mirroredNavLayer ? 7,
   navLayer ? 4,
 }: let
-  pin = lib.importJSON ./oryx.json;
+  pin = lib.importJSON ./oryx/oryx.json;
   swap = swapOnLayer != null;
   alias = swap && mirroredNavLayer != null && navLayer != null;
-  keymapC = builtins.readFile ./oryx/keymap.c;
-  layout = layer: "[${toString layer}] = LAYOUT_voyager(";
 
-  # ZSA's fork at branch firmware25 (the version Oryx compiles this layout
-  # with), and the submodules a Voyager build reads. The fork's .gitmodules also
+  # ZSA's fork at the head of branch firmware25 when pinned: the branch for
+  # Oryx's firmware 25, which this revision targets (`firmware` in
+  # oryx/oryx.json). Oryx does not publish the exact commit it builds with.
+  # Plus the submodules a Voyager build reads; the fork's .gitmodules also
   # pins pico-sdk, lvgl, vusb and googletest: other MCUs and tests.
   github = owner: repo: rev: hash: fetchFromGitHub {inherit owner repo rev hash;};
   qmkFirmware = github "zsa" "qmk_firmware" "93b2b9ec3368f86c5eb5a2e3f934049f8daef885" "sha256-YMdZSfexFhynEBOMkawD35u6acVX6PnRoRXvdw28jfc=";
@@ -45,15 +45,42 @@
   # turns it on must be fully transparent: the layers below show through,
   # mirrored. A layer that mirrors by hand (as the Oryx "mirror" layer did)
   # would be mirrored twice and type exactly as if nothing were mirrored.
-  # Checked at evaluation, from the vendored keymap. A transparent layer has
-  # no nested parentheses, so the first ")" after its LAYOUT( ends it; any key
-  # that is a function call fails the check anyway.
-  layerKeys = layer: let
-    after = lib.splitString (layout layer) keymapC;
+  # Checked at evaluation, from the vendored keymap.
+  #
+  # Its layers, by index: {"0" = [keys]; …}, found by the designated
+  # initialisers `[N] = LAYOUT…(` of the keymaps array, whatever the spacing or
+  # the layout macro's name. Whatever else the array holds (a layer without an
+  # index, an index that is not a number, one index twice) is refused, not
+  # guessed at, so a keymap the parser cannot read never passes as "layer N is
+  # absent". A layer's keys end at the first ")": a transparent layer has no
+  # nested parentheses, and a key that is a function call fails the check anyway.
+  layers = let
+    refuse = why: throw "voyager-firmware: oryx/keymap.c: ${why}; the layer guards cannot read this keymap";
+    array = builtins.split "keymaps\\[]\\[MATRIX_ROWS]\\[MATRIX_COLS][[:space:]]*=[[:space:]]*\\{" (builtins.readFile ./oryx/keymap.c);
+    body = builtins.head (lib.splitString "};" (builtins.elemAt array 2));
+    matches = regex: (builtins.length (builtins.split regex body) - 1) / 2;
+    parts = builtins.split "\\[[[:space:]]*([0-9]+)[[:space:]]*][[:space:]]*=[[:space:]]*LAYOUT[[:alnum:]_]*[[:space:]]*\\(" body;
+    entries = lib.genList (i: {
+      name = builtins.head (builtins.elemAt parts (2 * i + 1));
+      value = map lib.trim (lib.splitString "," (builtins.head (lib.splitString ")" (builtins.elemAt parts (2 * i + 2)))));
+    }) ((builtins.length parts - 1) / 2);
+    indices = map (entry: entry.name) entries;
   in
-    if builtins.length after != 2
-    then throw "voyager-firmware: layer ${toString layer} is not in oryx/keymap.c"
-    else map lib.trim (lib.splitString "," (builtins.head (lib.splitString ")" (builtins.elemAt after 1))));
+    if builtins.length array != 3
+    then refuse "no single `keymaps[][MATRIX_ROWS][MATRIX_COLS] = {`"
+    else if entries == []
+    then refuse "no `[N] = LAYOUT…(` layer"
+    else if matches "LAYOUT[[:alnum:]_]*[[:space:]]*\\(" != builtins.length entries
+    then refuse "a layer without a numeric `[N] =` index"
+    else if matches "\\[[^]]*][[:space:]]*=" != builtins.length entries
+    then refuse "an index that is not `[N] = LAYOUT…(`"
+    else if lib.unique indices != indices
+    then refuse "a layer index given twice"
+    else builtins.listToAttrs entries;
+  hasLayer = layer: layers ? ${toString layer};
+
+  layerKeys = layer:
+    layers.${toString layer} or (throw "voyager-firmware: layer ${toString layer} is not in oryx/keymap.c");
   opaqueKeys = lib.unique (lib.filter (key: !(builtins.elem key ["KC_TRANSPARENT" "KC_TRNS" "_______"])) (layerKeys swapOnLayer));
   checked = lib.assertMsg (opaqueKeys == []) ''
     voyager-firmware: layer ${toString swapOnLayer} must be fully transparent to mirror the keyboard, but has ${toString (builtins.length opaqueKeys)} distinct keys: ${lib.concatStringsSep ", " opaqueKeys}.
@@ -64,9 +91,9 @@
   # the module list so the Oryx module (which reports the layer over raw HID)
   # and the keymap see the rewritten state, never the alias.
   aliasChecked =
-    lib.assertMsg (!lib.hasInfix (layout mirroredNavLayer) keymapC) ''
+    lib.assertMsg (!hasLayer mirroredNavLayer) ''
       voyager-firmware: mirroredNavLayer ${toString mirroredNavLayer} is a layer in oryx/keymap.c; the alias must be an index the layout does not use.''
-    && lib.assertMsg (lib.hasInfix (layout navLayer) keymapC) ''
+    && lib.assertMsg (hasLayer navLayer) ''
       voyager-firmware: navLayer ${toString navLayer} is not in oryx/keymap.c.'';
 
   oryxKeymap = lib.importJSON ./oryx/keymap.json;
