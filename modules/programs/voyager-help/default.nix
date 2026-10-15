@@ -53,7 +53,8 @@
   message =
     "Reference revision ${keymap.revision}; snapshot, not live-detected state. "
     + "Start every gesture from the unmirrored base; key names are Colemak base legends. "
-    + "Planned rows are target mappings, not verified active keys. Search functions, keys or aliases; Enter/Escape closes without action.";
+    + "Planned rows are target mappings, not verified active keys. Search functions, keys or aliases. "
+    + "Escape closes; Enter closes a selected result. Neither executes an action.";
   # Desktop Entry Exec is not shell syntax. Escape both its string-value and
   # double-quoted argument layers, including literal percent field-code escapes.
   quoteExec = argument:
@@ -70,6 +71,9 @@
     (toString mapping)
     "-i"
     "-no-case-smart"
+    # Treat a leading minus as a symbol, not Rofi's default token negation.
+    "-matching-negate-char"
+    "\\0"
     "-no-auto-select"
     "-no-custom"
     "-markup-rows"

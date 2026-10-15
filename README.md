@@ -121,9 +121,10 @@ it is a literal in a public repo either way.
 
 Open **Super+D**, search **Voyager Keyboard Reference**, then search a function,
 key or alias such as `caps`, `F11`, `click`, `underscore` or `mirror`.
-The Rofi view shows the physical hold/tap recipe and layer. Enter and Escape
-close it; accepting a row emits no row text and executes no action. Its
-auto-select override keeps even a single match visible while you read it.
+The Rofi view shows the physical hold/tap recipe and layer. Escape closes it;
+Enter closes it when a result is selected. Neither executes an action, and
+accepting a row emits no row text. Auto-select is disabled so a single match
+stays visible. Symbol searches, including a literal `-`, are not negation filters.
 
 This is a maintained reference for **JqpmQ/bvrAW7**, not live keyboard detection.
 **Planned** rows describe target mappings, not verified active keys. Recipes
