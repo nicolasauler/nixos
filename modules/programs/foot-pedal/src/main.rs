@@ -36,6 +36,12 @@ use parking_lot::Mutex;
 const NAV: u8 = 4;
 const MOUSE: u8 = 5;
 const MIRROR: u8 = 6;
+/// Not a layer of the keymap: the firmware's swap_on_layer module turns a
+/// request for it into nav and mirror together (firmware/voyager,
+/// `mirroredNavLayer`), since SET_LAYER is layer_move, one layer at a time.
+/// Leaving it takes a layer_move, or unsetting nav and mirror: unsetting it
+/// does nothing.
+const MIRRORED_NAV: u8 = 7;
 
 /// A pedal: its factory key, the layer it holds, and whether a tap locks it.
 #[derive(Clone, Copy)]
@@ -182,10 +188,24 @@ impl Pedals {
         self.locked = None;
     }
 
-    /// Layer of the latest pedal down, or else of the locked one.
+    /// Layer of the latest pedal down, or else of the locked one; nav and
+    /// mirror together (mirror held or locked, nav held) are nav, mirrored.
     fn layer(&self) -> Option<u8> {
         let key = self.held.last().map(|press| press.key).or(self.locked);
-        key.and_then(|key| self.pedal(key)).map(|pedal| pedal.layer)
+        let layer = key.and_then(|key| self.pedal(key))?.layer;
+        let both = self.holds(NAV, false) && self.holds(MIRROR, true);
+        Some(if matches!(layer, NAV | MIRROR) && both {
+            MIRRORED_NAV
+        } else {
+            layer
+        })
+    }
+
+    /// Whether a pedal for `layer` is down, or locked if `locked` counts.
+    fn holds(&self, layer: u8, locked: bool) -> bool {
+        let lock = self.locked.filter(|_| locked);
+        let mut keys = self.held.iter().map(|press| press.key).chain(lock);
+        keys.any(|key| self.pedal(key).is_some_and(|pedal| pedal.layer == layer))
     }
 
     fn locked_name(&self) -> Option<&'static str> {
@@ -389,6 +409,8 @@ fn plan(applied: Applied, wanted: Option<u8>, owned: &[u8]) -> Vec<Command> {
         (Applied::On(on), Some(layer)) if on == layer => Vec::new(),
         (_, Some(layer)) => vec![Command::Set(layer)],
         (Applied::Off, None) => Vec::new(),
+        // the alias's layers are what is on
+        (Applied::On(MIRRORED_NAV), None) => vec![Command::Unset(NAV), Command::Unset(MIRROR)],
         (Applied::On(on), None) => vec![Command::Unset(on)],
         (Applied::Unknown, None) => owned.iter().map(|&layer| Command::Unset(layer)).collect(),
     }
@@ -452,7 +474,8 @@ fn batch(commands: &[Command]) -> Vec<[u8; oryx::REPORT + 1]> {
 /// on the firmware's dispatch delay argues that away: its main loop also
 /// flushes the RGB LEDs over I2C and can wait on a full IN queue. A pedal
 /// layer can then stay on with no pedal down, and a stop report it off; a
-/// pedal press the worker applies, then its release, or a restart of the
+/// long press of any pedal the worker applies, then its release (a short
+/// mirror or mouse press is a tap now, which locks), or a restart of the
 /// service clears it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum Answers {
@@ -901,17 +924,17 @@ mod tests {
     #[test]
     fn the_later_pedal_wins_and_hands_back() {
         let mut pedals = Pedals::new(&PEDALS);
-        pedals.press(MIDDLE, ms(0));
-        assert_eq!(pedals.layer(), Some(NAV));
-        pedals.press(RIGHT, ms(1000));
+        pedals.press(RIGHT, ms(0));
         assert_eq!(pedals.layer(), Some(MOUSE));
-        pedals.press(LEFT, ms(2000));
+        pedals.press(LEFT, ms(1000));
         assert_eq!(pedals.layer(), Some(MIRROR));
-        pedals.release(LEFT, ms(3000), quiet);
+        pedals.release(LEFT, ms(2000), quiet);
         assert_eq!(pedals.layer(), Some(MOUSE));
-        pedals.release(RIGHT, ms(4000), quiet);
+        pedals.press(MIDDLE, ms(3000));
         assert_eq!(pedals.layer(), Some(NAV));
-        pedals.release(MIDDLE, ms(5000), quiet);
+        pedals.release(MIDDLE, ms(4000), quiet);
+        assert_eq!(pedals.layer(), Some(MOUSE));
+        pedals.release(RIGHT, ms(5000), quiet);
         assert_eq!(pedals.layer(), None);
     }
 
@@ -1159,7 +1182,7 @@ mod tests {
             || unreachable!("no drop, no resync"),
         )
         .unwrap();
-        assert_eq!(pedals.layer(), Some(MIRROR));
+        assert_eq!(down(&pedals), [MIDDLE, LEFT]);
     }
 
     #[test]
@@ -1225,6 +1248,51 @@ mod tests {
             [Command::Set(NAV)]
         );
         assert!(plan(Applied::On(MOUSE), Some(MOUSE), &owned).is_empty());
+    }
+
+    #[test]
+    fn mirror_and_nav_together_are_nav_mirrored() {
+        let mut pedals = Pedals::new(&PEDALS);
+        pedals.press(LEFT, ms(0));
+        pedals.press(MIDDLE, ms(1000));
+        assert_eq!(pedals.layer(), Some(MIRRORED_NAV));
+        pedals.release(MIDDLE, ms(2000), quiet);
+        assert_eq!(pedals.layer(), Some(MIRROR), "back to mirror");
+        // the other order, and mirror let go first
+        pedals.press(MIDDLE, ms(3000));
+        assert_eq!(pedals.layer(), Some(MIRRORED_NAV));
+        pedals.release(LEFT, ms(4000), quiet);
+        assert_eq!(pedals.layer(), Some(NAV), "plain nav");
+        // a locked mirror counts as held
+        pedals.release(MIDDLE, ms(5000), quiet);
+        pedals.press(LEFT, ms(6000));
+        pedals.release(LEFT, ms(6080), quiet);
+        pedals.press(MIDDLE, ms(7000));
+        assert_eq!(pedals.layer(), Some(MIRRORED_NAV));
+        // mouse, the latest, wins over both
+        pedals.press(RIGHT, ms(8000));
+        assert_eq!(pedals.layer(), Some(MOUSE));
+        pedals.release(RIGHT, ms(9000), quiet);
+        assert_eq!(pedals.layer(), Some(MIRRORED_NAV));
+    }
+
+    #[test]
+    fn leaving_mirrored_nav_clears_both_of_its_layers() {
+        let owned = [MIRROR, NAV, MOUSE];
+        // layer_off(7) would leave nav and mirror on
+        assert_eq!(
+            plan(Applied::On(MIRRORED_NAV), None, &owned),
+            [Command::Unset(NAV), Command::Unset(MIRROR)]
+        );
+        // layer_move replaces both
+        assert_eq!(
+            plan(Applied::On(MIRRORED_NAV), Some(MIRROR), &owned),
+            [Command::Set(MIRROR)]
+        );
+        assert_eq!(
+            plan(Applied::On(MIRROR), Some(MIRRORED_NAV), &owned),
+            [Command::Set(MIRRORED_NAV)]
+        );
     }
 
     #[test]
