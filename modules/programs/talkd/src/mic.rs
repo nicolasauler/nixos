@@ -106,7 +106,8 @@ pub struct DefaultSource {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MicEvent {
-    /// Synced: every source and device present is known, with its mute.
+    /// Discovery is fenced and initial enumerations finished; individual
+    /// snapshots may have failed and remain unavailable for mixing.
     Ready(u32),
     /// Fresh readback after this mutation's write barrier, never a cache hit.
     Confirmed(u64, Pin, bool),
@@ -257,6 +258,10 @@ impl<T: Default> Snapshot<T> {
             }
         }
     }
+
+    fn finished(&self) -> bool {
+        self.known && self.pending.is_none()
+    }
 }
 
 fn same_seq(a: i32, b: i32) -> bool {
@@ -357,9 +362,11 @@ impl Link {
         })
     }
 
+    /// Startup waits for completion, not universal success. An unrelated
+    /// unusable target must not prevent recovery of a healthy pinned mic.
     fn settled(&self) -> bool {
-        self.sources.values().all(|source| source.props.ready)
-            && self.devices.values().all(|audio| audio.routes.ready)
+        self.sources.values().all(|source| source.props.finished())
+            && self.devices.values().all(|audio| audio.routes.finished())
     }
 
     fn refresh(&mut self, object: ParamObject) -> Result<u64, String> {
@@ -780,6 +787,21 @@ impl Mic {
             }
             Update::Default(name) => link.default = name,
         }
+        // A late bind may arrive after the last discovery fence, while
+        // parameter snapshots are still pending. Fence that bind too; no
+        // future Done can clear bound if there is no outstanding sync.
+        if !link.lost && !link.ready && link.bound && link.sync.is_none() {
+            match link.core.sync(0) {
+                Ok(seq) => {
+                    link.sync = Some(seq);
+                    link.bound = false;
+                }
+                Err(error) => {
+                    link.lost = true;
+                    events.push(MicEvent::Lost(format!("PipeWire discovery sync: {error}")));
+                }
+            }
+        }
         if !link.lost
             && !link.ready
             && link.sync.is_none()
@@ -1042,7 +1064,9 @@ fn bind(
             });
         }
     }
-    link.bound = true;
+    if !link.ready {
+        link.bound = true;
+    }
     Ok(())
 }
 
@@ -1197,6 +1221,25 @@ mod tests {
         cache.done(AsyncSeq::from_seq(6));
         assert!(cache.ready);
         assert_eq!(cache.value, Some(false));
+    }
+
+    #[test]
+    fn failed_enumeration_finishes_startup_but_never_supplies_a_mute() {
+        let mut cache = Snapshot::<Option<bool>>::default();
+        assert!(!cache.finished(), "no initial info yet");
+        cache.info(Some(ParamInfoFlags::READ));
+        cache.begin(1, Some((1, AsyncSeq::from_seq(2))));
+        cache.error(1);
+        assert!(
+            !cache.finished(),
+            "the error does not replace the completion fence"
+        );
+        cache.done(AsyncSeq::from_seq(2));
+        assert!(
+            cache.finished(),
+            "terminal failure must not block unrelated startup recovery"
+        );
+        assert!(!cache.ready, "finished is not usable");
     }
 
     /// A PipeWire and WirePlumber of the test's own: their own runtime,
@@ -1551,6 +1594,81 @@ context.objects = [
         wait(
             "an unchanged mute's readback",
             &saw(cursor, MicEvent::Confirmed(3, pin, true)),
+        );
+
+        // Stage the precise startup interleavings on this real connection,
+        // rather than relying on when the server happens to announce globals.
+        // First: the last discovery fence finished, a late bind set bound,
+        // and a parameter enumeration is still pending.
+        let late_fenced = {
+            let mut owner = owner.borrow_mut();
+            let mic = owner.mic.as_mut().unwrap();
+            let link = mic.link.as_mut().unwrap();
+            link.ready = false;
+            link.sync = None;
+            link.bound = true; // the state set by a successful late bind
+            link.refresh(ParamObject::Node(mic_id)).unwrap();
+            let events = mic.apply(Update::Default(Some("test-headset".to_owned())));
+            let fenced = mic.link.as_ref().unwrap().sync.is_some();
+            owner.events.extend(events);
+            fenced
+        };
+        wait("the late bind's parameter snapshot", &|owner| {
+            mic(owner).link.as_ref().unwrap().sources[&mic_id]
+                .props
+                .ready
+        });
+
+        // Second: the pinned mic is usable, but an unrelated source's enum
+        // terminates with a permission error. That failure must not strand
+        // ServerUp/startup recovery or become a usable empty snapshot.
+        let ready_after_failure = {
+            let mut owner = owner.borrow_mut();
+            let mic = owner.mic.as_mut().unwrap();
+            let link = mic.link.as_mut().unwrap();
+            link.ready = false;
+            link.sync = None;
+            link.bound = false;
+            link.refresh(ParamObject::Node(headset_id)).unwrap();
+            let source = &link.sources[&headset_id];
+            let pending = source.props.pending.as_ref().unwrap();
+            let (seq, done, id) = (pending.seq, pending.done, source.node.upcast_ref().id());
+            let mut events = mic.apply(Update::Error {
+                id,
+                seq,
+                res: -nix::libc::EACCES,
+                message: "injected initialization permission denial".to_owned(),
+            });
+            events.extend(mic.apply(Update::Done(done)));
+            let ready = events.contains(&MicEvent::Ready(cookie));
+            owner.events.extend(events);
+            ready
+        };
+        assert!(
+            late_fenced && ready_after_failure,
+            "initialization stranded: late bind fenced={late_fenced}, unrelated failure completed={ready_after_failure}"
+        );
+        assert!(mic(&owner.borrow()).exists(headset));
+        assert_eq!(
+            mic(&owner.borrow()).muted(headset),
+            None,
+            "failed target remains unavailable"
+        );
+        let cursor = owner.borrow().events.len();
+        owner
+            .borrow_mut()
+            .mic
+            .as_mut()
+            .unwrap()
+            .set_mute(pin, false, 90)
+            .unwrap();
+        wait(
+            "healthy pinned restore after initialization failure",
+            &saw(cursor, MicEvent::Confirmed(90, pin, false)),
+        );
+        assert_eq!(
+            server.wpctl(&["get-volume", &mic_id.to_string()]),
+            "Volume: 1.00\n"
         );
 
         // a node removed: gone, and no longer settable

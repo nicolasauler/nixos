@@ -1165,6 +1165,31 @@ pub mod tests {
     }
 
     #[test]
+    fn an_unavailable_saved_target_retains_and_reports_its_restore() {
+        let owed = Obligation {
+            pin: MIC,
+            was_muted: MUTED,
+        };
+        let mut fake = Fake::new(LIVE);
+        fake.saved = Some(owed);
+        fake.observed.clear(); // node exists, but its mixer snapshot failed
+        fake.apply = Apply::Refuse;
+        let mut machine = Machine::new(Some(owed));
+        machine.handle(Event::ServerUp(SERVER), &mut fake);
+        assert_eq!(fake.saved, Some(owed));
+        assert!(matches!(
+            fake.problems.as_slice(),
+            [Problem::RestoreFailed(_)]
+        ));
+        fake.observe(MIC, LIVE);
+        fake.apply = Apply::Normally;
+        fake.lock = Lock::Locked;
+        run(&mut machine, &mut fake, &[Event::Press(ms(4_000))]);
+        assert_eq!(fake.get(MIC), Some(MUTED));
+        assert_eq!(fake.saved, None, "a later usable snapshot permits retry");
+    }
+
+    #[test]
     fn only_restore_troubles_are_visible() {
         assert!(Problem::RestoreUnconfirmed.visible());
         assert!(Problem::NodeGone.visible());
