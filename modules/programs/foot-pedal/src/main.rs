@@ -1255,24 +1255,31 @@ mod tests {
         let mut pedals = Pedals::new(&PEDALS);
         pedals.press(LEFT, ms(0));
         pedals.press(MIDDLE, ms(1000));
-        assert_eq!(pedals.layer(), Some(MIRRORED_NAV));
+        assert_eq!(pedals.layer(), Some(MIRRORED_NAV), "mirror first");
         pedals.release(MIDDLE, ms(2000), quiet);
         assert_eq!(pedals.layer(), Some(MIRROR), "back to mirror");
-        // the other order, and mirror let go first
         pedals.press(MIDDLE, ms(3000));
-        assert_eq!(pedals.layer(), Some(MIRRORED_NAV));
         pedals.release(LEFT, ms(4000), quiet);
-        assert_eq!(pedals.layer(), Some(NAV), "plain nav");
-        // a locked mirror counts as held
+        assert_eq!(pedals.layer(), Some(NAV), "mirror let go: plain nav");
         pedals.release(MIDDLE, ms(5000), quiet);
-        pedals.press(LEFT, ms(6000));
-        pedals.release(LEFT, ms(6080), quiet);
-        pedals.press(MIDDLE, ms(7000));
-        assert_eq!(pedals.layer(), Some(MIRRORED_NAV));
+        // nav first
+        pedals.press(MIDDLE, ms(6000));
+        assert_eq!(pedals.layer(), Some(NAV));
+        pedals.press(LEFT, ms(7000));
+        assert_eq!(pedals.layer(), Some(MIRRORED_NAV), "nav first");
+        // both found down by a resync
+        pedals.sync(&[LEFT, MIDDLE]);
+        assert_eq!(pedals.layer(), Some(MIRRORED_NAV), "after a resync");
+        pedals.sync(&[]);
+        // a locked mirror counts as held
+        pedals.press(LEFT, ms(8000));
+        pedals.release(LEFT, ms(8080), quiet);
+        pedals.press(MIDDLE, ms(9000));
+        assert_eq!(pedals.layer(), Some(MIRRORED_NAV), "mirror locked");
         // mouse, the latest, wins over both
-        pedals.press(RIGHT, ms(8000));
+        pedals.press(RIGHT, ms(10000));
         assert_eq!(pedals.layer(), Some(MOUSE));
-        pedals.release(RIGHT, ms(9000), quiet);
+        pedals.release(RIGHT, ms(11000), quiet);
         assert_eq!(pedals.layer(), Some(MIRRORED_NAV));
     }
 
