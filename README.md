@@ -117,6 +117,25 @@ it is a literal in a public repo either way.
 
 [agenix]: https://github.com/ryantm/agenix
 
+## precision keyboard reference
+
+Open **Super+D**, search **Voyager Keyboard Reference**, then search a function,
+key or alias such as `caps`, `F11`, `click`, `underscore` or `mirror`.
+The Rofi view shows the physical hold/tap recipe and layer. Enter and Escape
+close it; accepting a row emits no row text and executes no action. Its
+auto-select override keeps even a single match visible while you read it.
+
+This is a maintained reference for **JqpmQ/bvrAW7**, not live keyboard detection.
+**Planned** rows describe target mappings, not verified active keys. Recipes
+start from the unmirrored base and use its Colemak key labels; symbol glyphs
+assume the configured `us / altgr-intl` host layout.
+
+Update `modules/programs/voyager-help/keymap.nix` and its revision together when
+the exported layout changes. It covers non-letter functions and explicit
+alternate routes, not every transparent-layer duplicate or possible modifier
+combination. The feature is a Nix-generated data file and native Rofi launcher,
+not a background service or a firmware parser.
+
 ## CI
 
 Two jobs, and only one of them gates a merge.
