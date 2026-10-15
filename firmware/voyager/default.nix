@@ -47,42 +47,71 @@
   # would be mirrored twice and type exactly as if nothing were mirrored.
   # Checked at evaluation, from the vendored keymap.
   #
-  # Its layers, by index: {"0" = [keys]; …}. keymap.c is first lexed just
-  # enough to tell code from comments (`/* … */`, `// …`) and string and
-  # character literals (with escapes and line continuations); each of those
-  # becomes "@", which C code outside them cannot hold. In the code that
-  # remains, the declaration `keymaps[][MATRIX_ROWS][MATRIX_COLS] = {` must
-  # occur exactly once, and the array runs to the first ";" after it (an
-  # initialiser list holds none), which must follow its closing "}". Inside
-  # the array nothing but code may appear: a comment or literal there is
-  # refused, so neither can supply a delimiter or a layer.
+  # Its layers, by index: {"0" = [keys]; …}, read from a strict subset of C
+  # that Oryx's export falls in; anything outside it is refused, never
+  # guessed at, so a keymap the parser cannot read never passes as "layer N is
+  # absent":
   #
-  # The array must be exactly a comma-separated list of designated
-  # initialisers `[N] = LAYOUT…( … )`: N a decimal index in its canonical
-  # spelling (no leading zero), any layout macro name, any spacing, each macro
-  # call's parentheses balanced. All of the array is consumed: anything else
-  # before, between or after its layers (an initialiser without an index,
-  # `[07]`, `[NAV]`, a braced `{{ … }}` layer) or one index twice is refused,
-  # not skipped, so a keymap the parser cannot read never passes as "layer N
-  # is absent". A layer's keys are its macro's top-level arguments.
-  # Preprocessor macros are not expanded.
+  # - Physical lines. C splices backslash-newline before it sees comments,
+  #   literals or identifiers; this reader does not, so it refuses any CR
+  #   byte (Oryx writes LF only, so LF is the only line end) and any
+  #   backslash followed by whitespace that contains an LF (a superset of
+  #   GCC's continuations, which allow spaces, tabs, FF and VT before the
+  #   line end, and of `\\` + LF, where the last backslash splices).
+  #   Trigraphs are not replaced, as GCC does not replace them either under
+  #   QMK's `-std=gnu11` (builddefs/common_rules.mk:37 at 93b2b9ec).
+  # - Comments and literals. keymap.c is lexed just enough to tell code from
+  #   comments (`/* … */`, `// …`) and string and character literals (with
+  #   escapes); each becomes "@", which code cannot otherwise hold. One never
+  #   closed is refused.
+  # - The declaration. In the code that remains, `keymaps` must occur exactly
+  #   once, as `keymaps[][MATRIX_ROWS][MATRIX_COLS] = {` after whitespace
+  #   (so no longer identifier ending in it, nor a second copy anywhere, in a
+  #   function body or `#if 0`, can stand in). The array runs to the first
+  #   ";" after it (an initialiser list holds none), which must follow its
+  #   closing "}". A comment or literal inside it is refused.
+  # - Its layers. The array must be exactly a comma-separated list of
+  #   designated initialisers `[N] = LAYOUT…( … )`: N decimal in its canonical
+  #   spelling (no leading zero), any layout macro name, any spacing, each
+  #   call's parentheses balanced. Anything else before, between or after
+  #   them (an initialiser without an index, `[07]`, `[NAV]`, a braced
+  #   `{{ … }}` layer) or one index twice is refused.
+  # - Its keys: the macro's top-level arguments, of every layer, may hold only
+  #   letters, digits, `_`, whitespace, `(`, `)`, `,` and `|`. So no brace,
+  #   bracket or digraph (`<%`, `%>`, `<:`, `:>`, `%:`) in a key can close a
+  #   layer early and slip in an initialiser C would see and this would not.
+  #
+  # The preprocessor is not run: macros are not expanded and conditional
+  # inclusion is not evaluated; keymap.c is read as written, so a definition,
+  # here or in a header, that changes what `keymaps`, `LAYOUT…` or a
+  # transparent keycode means is not seen.
   layers = let
     refuse = why: throw "voyager-firmware: oryx/keymap.c: ${why}; the layer guards cannot read this keymap";
-    quote = text: "`${lib.substring 0 60 (lib.trim (builtins.replaceStrings ["\n"] [" "] text))}`";
-    escaped = "\\\\(.|\n)";
-    tokens = builtins.split (lib.concatStringsSep "|" [
-      "/\\*([^*]|\\*+[^*/])*\\*+/"
-      "//([^\\\\\n]|${escaped})*"
-      "\"([^\"\\\\\n]|${escaped})*\""
-      "'([^'\\\\\n]|${escaped})*'"
-    ]) (builtins.readFile ./oryx/keymap.c);
+    quote = text: "`${lib.substring 0 60 (lib.trim (builtins.replaceStrings ["\n" "\r"] [" " " "] text))}`";
+    raw = builtins.readFile ./oryx/keymap.c;
+    source =
+      if lib.hasInfix "\r" raw
+      then refuse "a CR byte (only LF line ends are read)"
+      else if builtins.length (builtins.split "\\\\[[:space:]]*\n" raw) > 1
+      then refuse "a backslash line continuation (lines are not spliced here)"
+      else raw;
+    escaped = "\\\\.";
+    tokens =
+      builtins.split (lib.concatStringsSep "|" [
+        "/\\*([^*]|\\*+[^*/])*\\*+/"
+        "//([^\\\\\n]|${escaped})*"
+        "\"([^\"\\\\\n]|${escaped})*\""
+        "'([^'\\\\\n]|${escaped})*'"
+      ])
+      source;
     pieces = lib.filter builtins.isString tokens;
     code = lib.concatStrings (map (token:
       if builtins.isList token
       then "@"
       else token)
     tokens);
-    array = builtins.split "keymaps\\[]\\[MATRIX_ROWS]\\[MATRIX_COLS][[:space:]]*=[[:space:]]*\\{" code;
+    mentions = (builtins.length (builtins.split "keymaps" code) - 1) / 2;
+    array = builtins.split "[[:space:]]keymaps\\[]\\[MATRIX_ROWS]\\[MATRIX_COLS][[:space:]]*=[[:space:]]*\\{" code;
     declaration = builtins.head (lib.splitString ";" (builtins.elemAt array 2));
     closed = builtins.match "([^;]*)}[[:space:]]*" declaration;
     body = builtins.head closed;
@@ -157,7 +186,13 @@
         end.tail
         == null
       then refuse "after layer ${index}: ${quote end.tail} is not `, [N] = LAYOUT…(`"
-      else map lib.trim end.keys;
+      else let
+        keys = map lib.trim end.keys;
+        odd = lib.findFirst (key: builtins.match "[A-Za-z0-9_[:space:](),|]*" key == null) null keys;
+      in
+        if odd != null
+        then refuse "layer ${index}: key ${quote odd} holds a character other than letters, digits, `_`, whitespace, `(`, `)`, `,` and `|`"
+        else keys;
     entries =
       lib.genList (i: let
         index = builtins.head (builtins.elemAt parts (2 * i + 1));
@@ -171,8 +206,8 @@
     # what is left of a comment or literal start in code was never closed
     if lib.any (piece: lib.any (start: lib.hasInfix start piece) ["/*" "//" "\"" "'" "@"]) pieces
     then refuse "an unterminated comment or literal, or an @ in code"
-    else if builtins.length array != 3
-    then refuse "not exactly one `keymaps[][MATRIX_ROWS][MATRIX_COLS] = {` outside comments and literals"
+    else if mentions != 1 || builtins.length array != 3
+    then refuse "`keymaps` must appear exactly once in code (outside comments and literals), as the declaration `keymaps[][MATRIX_ROWS][MATRIX_COLS] = {` after whitespace"
     else if closed == null
     then refuse "the keymaps array does not end in `}` before its `;`"
     else if lib.hasInfix "@" body

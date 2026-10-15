@@ -33,7 +33,11 @@ const PIN: &str = "oryx.json";
 const FILES: [&str; 4] = ["keymap.c", "config.h", "rules.mk", "keymap.json"];
 /// The ZSA QMK branch (firmwareNN) that firmware/voyager/default.nix builds.
 const FIRMWARE_MAJOR: &str = "25";
-/// The longest either request to Oryx may take, end to end.
+/// ureq's `timeout_global` for each HTTP request to Oryx (each its own, not
+/// one shared budget). It stops a server that goes silent, but it is not a
+/// hard wall-clock ceiling: the TLS layer reuses the relative timeout on each
+/// underlying read, so a server trickling one TLS record can stretch a single
+/// read past it.
 const TIMEOUT: Duration = Duration::from_secs(60);
 const QUERY: &str = "query($hashId: String!, $revisionId: String!, $geometry: String) { \
     layout(hashId: $hashId, geometry: $geometry, revisionId: $revisionId) { \
@@ -97,8 +101,11 @@ struct CentralDirectory<'a> {
 /// Reads the central directory named by the end-of-central-directory record
 /// whose comment runs exactly to the end of the file. Every record must lie
 /// wholly inside the directory, and the records must fill it. Zip64 is refused
-/// rather than half read: zip64 end-of-directory values or locator (more than
-/// 65,534 entries or 4 GiB), and zip64 extra fields (header 0x0001) on entries.
+/// rather than half read where this reads it: zip64 values in the selected
+/// end record, a zip64 end-of-directory locator before it (more than 65,534
+/// entries or 4 GiB), and zip64 extra fields (header 0x0001) in central
+/// directory records. Local file headers are not inspected: the zip crate
+/// takes sizes and offsets from the central directory, which is checked here.
 fn central_directory(zip: &[u8]) -> Result<CentralDirectory<'_>, String> {
     const END: &[u8] = b"PK\x05\x06";
     const ZIP64_LOCATOR: &[u8] = b"PK\x06\x07";
@@ -512,8 +519,9 @@ fn run() -> Result<(), String> {
         "query": QUERY,
         "variables": {"hashId": layout, "geometry": "voyager", "revisionId": "latest"},
     });
-    // each request whole, connecting to the last body byte; the lock is held
-    // meanwhile, so a stalled server must not hold it for ever
+    // one agent for both requests, each with its own `timeout_global` (see
+    // TIMEOUT for what that does and does not bound); the lock is held
+    // meanwhile, so a silent server must not hold it for ever
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(TIMEOUT))
         .build()
