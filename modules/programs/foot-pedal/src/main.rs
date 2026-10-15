@@ -4,7 +4,8 @@
 //! c. This grabs it exclusively, so those never reach applications, and makes
 //! each pedal hold a layer of the Voyager's own firmware, through its raw-HID
 //! interface in ZSA's Oryx protocol (zsa/qmk_modules, oryx/oryx.c): SET_LAYER
-//! on (layer_move) on press, SET_LAYER off (layer_off) on release. Each batch
+//! on (layer_move) on press, SET_LAYER off (layer_off) on release. A tap on
+//! the mirror or mouse pedal locks its layer until the next tap. Each batch
 //! of commands sits between two pairings and counts as applied once the
 //! firmware has answered both, which is best effort ([`Answers`]). Nothing on
 //! the host remaps Voyager keystrokes, and keymapp is not involved. A worker
@@ -17,9 +18,10 @@ use std::io::{self, Read, Write};
 use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use evdev::raw_stream::RawDevice;
 use evdev::{InputEvent, KeyCode};
@@ -34,61 +36,154 @@ const NAV: u8 = 4;
 const MOUSE: u8 = 5;
 const MIRROR: u8 = 6;
 
-/// Each pedal's factory key, and the layer it holds.
-const PEDALS: [(KeyCode, u8); 3] = [
-    (KeyCode::KEY_A, NAV),    // left
-    (KeyCode::KEY_B, MIRROR), // middle
-    (KeyCode::KEY_C, MOUSE),  // right
+/// A pedal: its factory key, the layer it holds, and whether a tap locks it.
+#[derive(Clone, Copy)]
+struct Pedal {
+    key: KeyCode,
+    layer: u8,
+    name: &'static str,
+    lockable: bool,
+}
+
+/// Nav sits under the resting foot, as it is entered between bursts of
+/// typing; mirror and mouse are sessions, so a tap locks them.
+const PEDALS: [Pedal; 3] = [
+    Pedal {
+        key: KeyCode::KEY_A, // left
+        layer: MIRROR,
+        name: "mirror",
+        lockable: true,
+    },
+    Pedal {
+        key: KeyCode::KEY_B, // middle
+        layer: NAV,
+        name: "nav",
+        lockable: false,
+    },
+    Pedal {
+        key: KeyCode::KEY_C, // right
+        layer: MOUSE,
+        name: "mouse",
+        lockable: true,
+    },
 ];
+
+/// A press shorter than this, with no key typed during it, is a tap.
+const TAP: Duration = Duration::from_millis(250);
 
 const PEDAL: &str = "/dev/input/by-id/usb-PCsensor_FootSwitch-event-kbd";
 
-/// Which pedals are down, and the layer that asks for. No I/O.
+/// A moment for the pedals: the kernel's time for the event, and how many
+/// keys the Voyager had reported pressed by then.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Moment {
+    at: Duration,
+    typed: u64,
+}
+
+/// A pedal down, and when it went down: None if its state was read rather
+/// than seen changing (at open, after a drop), or if it took a lock over.
+/// Such a press is never a tap.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Press {
+    key: KeyCode,
+    seen: Option<Moment>,
+}
+
+/// Which pedals are down, which is locked, and the layer that asks for.
+/// No I/O.
 struct Pedals {
-    map: &'static [(KeyCode, u8)],
-    held: Vec<KeyCode>, // pedals down, in press order
+    map: &'static [Pedal],
+    held: Vec<Press>, // in press order
+    locked: Option<KeyCode>,
 }
 
 impl Pedals {
-    fn new(map: &'static [(KeyCode, u8)]) -> Self {
+    fn new(map: &'static [Pedal]) -> Self {
         Pedals {
             map,
             held: Vec::new(),
+            locked: None,
         }
     }
 
-    fn layer_of(&self, code: KeyCode) -> Option<u8> {
-        self.map
-            .iter()
-            .find_map(|&(pedal, layer)| (pedal == code).then_some(layer))
+    fn pedal(&self, key: KeyCode) -> Option<&Pedal> {
+        self.map.iter().find(|pedal| pedal.key == key)
     }
 
-    fn press(&mut self, code: KeyCode) {
-        if self.layer_of(code).is_some() && !self.held.contains(&code) {
-            self.held.push(code);
+    fn is_down(&self, key: KeyCode) -> bool {
+        self.held.iter().any(|press| press.key == key)
+    }
+
+    fn press(&mut self, key: KeyCode, now: Moment) {
+        if self.pedal(key).is_some() && !self.is_down(key) {
+            let seen = (!self.take_over(key)).then_some(now);
+            self.held.push(Press { key, seen });
         }
     }
 
-    fn release(&mut self, code: KeyCode) {
-        self.held.retain(|&held| held != code);
+    /// Pressing the locked pedal turns its lock into a hold, which its
+    /// release ends. True if it was locked.
+    fn take_over(&mut self, key: KeyCode) -> bool {
+        let locked = self.locked == Some(key);
+        if locked {
+            self.locked = None;
+        }
+        locked
     }
 
-    /// Adopt the device's real key state: at open, after a drop, on loss.
+    /// A tap unlocks whatever is locked, or else locks a lockable pedal.
+    fn release(&mut self, key: KeyCode, now: Moment) {
+        let Some(index) = self.held.iter().position(|press| press.key == key) else {
+            return;
+        };
+        let press = self.held.remove(index);
+        if !press.seen.is_some_and(|start| tapped(start, now)) {
+            return;
+        }
+        if self.locked.take().is_none() && self.pedal(key).is_some_and(|pedal| pedal.lockable) {
+            self.locked = Some(key);
+        }
+    }
+
+    /// Adopt the device's real key state: at open and after a drop. A lock
+    /// stays; nothing found this way is a tap.
     fn sync(&mut self, down: &[KeyCode]) {
-        self.held.retain(|held| down.contains(held));
-        let mut pressed: Vec<KeyCode> = down
+        self.held.retain(|press| down.contains(&press.key));
+        let mut found: Vec<KeyCode> = down
             .iter()
             .copied()
-            .filter(|&code| self.layer_of(code).is_some() && !self.held.contains(&code))
+            .filter(|&key| self.pedal(key).is_some() && !self.is_down(key))
             .collect();
-        pressed.sort(); // their press order is unknown
-        self.held.extend(pressed);
+        found.sort(); // their press order is unknown
+        for key in found {
+            self.take_over(key);
+            self.held.push(Press { key, seen: None });
+        }
     }
 
-    /// Layer of the latest pedal still down.
-    fn layer(&self) -> Option<u8> {
-        self.held.last().and_then(|&code| self.layer_of(code))
+    /// The pedal is gone: nothing is down, and nothing could unlock a lock.
+    fn lost(&mut self) {
+        self.held.clear();
+        self.locked = None;
     }
+
+    /// Layer of the latest pedal down, or else of the locked one.
+    fn layer(&self) -> Option<u8> {
+        let key = self.held.last().map(|press| press.key).or(self.locked);
+        key.and_then(|key| self.pedal(key)).map(|pedal| pedal.layer)
+    }
+
+    fn locked_name(&self) -> Option<&'static str> {
+        let pedal = self.locked.and_then(|key| self.pedal(key));
+        pedal.map(|pedal| pedal.name)
+    }
+}
+
+/// A press that ended within TAP of starting, with no key typed meanwhile.
+/// A clock that went backwards makes no tap.
+fn tapped(start: Moment, end: Moment) -> bool {
+    end.typed == start.typed && end.at.checked_sub(start.at).is_some_and(|held| held < TAP)
 }
 
 /// What one raw pedal event means. After SYN_DROPPED the kernel's rule
@@ -131,17 +226,26 @@ impl Dropping {
 /// Feeds one fetched batch of raw events to `pedals`. A resync reads the
 /// device's key state (EVIOCGKEY), which also flushes the key events the
 /// kernel still queues for this reader; the rest of the batch is older than
-/// that state, so it goes too.
+/// that state, so it goes too. `typed` counts the keys the Voyager has
+/// reported pressed.
 fn take_batch(
     events: impl IntoIterator<Item = InputEvent>,
     dropping: &mut Dropping,
     pedals: &mut Pedals,
+    typed: &AtomicU64,
     held: impl FnOnce() -> io::Result<Vec<KeyCode>>,
 ) -> io::Result<()> {
     for event in events {
+        let now = Moment {
+            at: event
+                .timestamp()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default(),
+            typed: typed.load(Ordering::Relaxed),
+        };
         match dropping.step(event.event_type().0, event.code(), event.value()) {
-            Step::Key(code, 1) => pedals.press(code),
-            Step::Key(code, _) => pedals.release(code),
+            Step::Key(code, 1) => pedals.press(code, now),
+            Step::Key(code, _) => pedals.release(code, now),
             Step::Resync => {
                 pedals.sync(&held()?);
                 break;
@@ -223,6 +327,7 @@ mod oryx {
     pub const GET_PROTOCOL_VERSION: u8 = 0xFE;
     pub const EVT_PAIRING_SUCCESS: u8 = 4;
     pub const EVT_LAYER: u8 = 5;
+    pub const EVT_KEYDOWN: u8 = 6;
     pub const EVT_PROTOCOL_VERSION: u8 = 0xFE;
     /// Versions with this SET_LAYER: 4 (firmware 25) and 5 (adds auto-mouse).
     pub const KNOWN_VERSIONS: [u8; 2] = [4, 5];
@@ -338,16 +443,20 @@ struct Keyboard {
     hid: File,
     path: PathBuf,
     version: u8,
+    /// Keys the Voyager reported pressed (it does while paired): tells a
+    /// pedal tap from a press typed under.
+    typed: Arc<AtomicU64>,
 }
 
 impl Keyboard {
-    fn connect() -> io::Result<Self> {
+    fn connect(typed: Arc<AtomicU64>) -> io::Result<Self> {
         let path = find_keyboard()?;
         let hid = OpenOptions::new().read(true).write(true).open(&path)?;
         let mut keyboard = Keyboard {
             hid,
             path,
             version: 0,
+            typed,
         };
         keyboard.send(&oryx::report(&[oryx::GET_PROTOCOL_VERSION]))?;
         keyboard.version = keyboard.reply(oryx::EVT_PROTOCOL_VERSION)?[1];
@@ -379,7 +488,10 @@ impl Keyboard {
         let mut buf = [0; 64];
         match self.hid.read(&mut buf)? {
             0 => Err(io::Error::from(io::ErrorKind::UnexpectedEof)),
-            _ => Ok(buf),
+            _ => {
+                self.count(&buf);
+                Ok(buf)
+            }
         }
     }
 
@@ -413,16 +525,24 @@ impl Keyboard {
         Ok(())
     }
 
-    /// Discard what the keyboard sent. While paired it reports every key
-    /// position; reading them keeps the kernel's queue from filling.
+    /// Discard what the keyboard sent, counting key presses. While paired it
+    /// reports every key position; reading them keeps the kernel's queue
+    /// from filling.
     fn drain(&mut self) -> io::Result<()> {
         let mut buf = [0; 64];
         while readable(&self.hid, PollTimeout::ZERO)? {
             if self.hid.read(&mut buf)? == 0 {
                 return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
             }
+            self.count(&buf);
         }
         Ok(())
+    }
+
+    fn count(&self, report: &[u8]) {
+        if report[0] == oryx::EVT_KEYDOWN {
+            self.typed.fetch_add(1, Ordering::Relaxed);
+        }
     }
 }
 
@@ -459,8 +579,13 @@ fn rest(wake: &UnixStream, timeout: PollTimeout) {
 /// Owns the Voyager: applies the latest wanted layer, pairing again after a
 /// replug, so the pedal loop never waits on the keyboard. When stopping,
 /// tells `done` whether the pedal layers are known to be off.
-fn keyboard_worker(wanted: Arc<Mutex<Wanted>>, wake: UnixStream, done: mpsc::Sender<bool>) {
-    let owned: Vec<u8> = PEDALS.iter().map(|&(_, layer)| layer).collect();
+fn keyboard_worker(
+    wanted: Arc<Mutex<Wanted>>,
+    wake: UnixStream,
+    typed: Arc<AtomicU64>,
+    done: mpsc::Sender<bool>,
+) {
+    let owned: Vec<u8> = PEDALS.iter().map(|pedal| pedal.layer).collect();
     let mut keyboard: Option<Keyboard> = None;
     let mut knowledge = Knowledge::new();
     let mut trouble = Trouble::default();
@@ -474,7 +599,7 @@ fn keyboard_worker(wanted: Arc<Mutex<Wanted>>, wake: UnixStream, done: mpsc::Sen
                 let _ = done.send(knowledge.off());
                 return;
             }
-            match Keyboard::connect() {
+            match Keyboard::connect(Arc::clone(&typed)) {
                 Ok(paired) => {
                     if !knowledge.reached {
                         eprintln!(
@@ -548,6 +673,8 @@ fn drain_wake(wake: &UnixStream) {
 struct ToWorker {
     wanted: Arc<Mutex<Wanted>>,
     wake: UnixStream,
+    /// Keys the Voyager reported pressed, counted by the worker.
+    typed: Arc<AtomicU64>,
 }
 
 impl ToWorker {
@@ -575,8 +702,8 @@ fn pedal_loop(worker: ToWorker) {
             }
         };
         let Err(error) = read_pedal(&mut device, &mut pedals, &worker, &mut trouble);
-        // Whatever was held is not any more.
-        pedals.sync(&[]);
+        // Whatever was held is not any more, and nothing can unlock a lock.
+        pedals.lost();
         worker.want(pedals.layer());
         if error.raw_os_error() == Some(Errno::ENODEV as i32) {
             eprintln!("pedal disconnected");
@@ -606,7 +733,19 @@ fn read_pedal(
     let mut dropping = Dropping::default();
     loop {
         let events: Vec<InputEvent> = device.fetch_events()?.collect();
-        take_batch(events, &mut dropping, pedals, || held(device))?;
+        let was = pedals.locked_name();
+        take_batch(events, &mut dropping, pedals, &worker.typed, || {
+            held(device)
+        })?;
+        let is = pedals.locked_name();
+        if was != is {
+            if let Some(name) = was {
+                eprintln!("pedal: {name} unlocked");
+            }
+            if let Some(name) = is {
+                eprintln!("pedal: {name} locked; tap a pedal to unlock");
+            }
+        }
         worker.want(pedals.layer());
     }
 }
@@ -627,12 +766,15 @@ fn main() {
     wake.set_nonblocking(true)
         .expect("non-blocking wake socket");
     let (done, finished) = mpsc::channel();
+    let typed = Arc::new(AtomicU64::new(0));
 
     let worker_wanted = Arc::clone(&wanted);
-    thread::spawn(move || keyboard_worker(worker_wanted, wake_worker, done));
+    let worker_typed = Arc::clone(&typed);
+    thread::spawn(move || keyboard_worker(worker_wanted, wake_worker, worker_typed, done));
     let worker = ToWorker {
         wanted: Arc::clone(&wanted),
         wake: wake.try_clone().expect("wake socket"),
+        typed,
     };
     thread::spawn(move || pedal_loop(worker));
 
@@ -663,49 +805,61 @@ mod tests {
     const MIDDLE: KeyCode = KeyCode::KEY_B;
     const RIGHT: KeyCode = KeyCode::KEY_C;
 
+    /// A moment `ms` milliseconds in, with no key typed.
+    fn ms(ms: u64) -> Moment {
+        Moment {
+            at: Duration::from_millis(ms),
+            typed: 0,
+        }
+    }
+
+    fn down(pedals: &Pedals) -> Vec<KeyCode> {
+        pedals.held.iter().map(|press| press.key).collect()
+    }
+
     #[test]
     fn the_later_pedal_wins_and_hands_back() {
         let mut pedals = Pedals::new(&PEDALS);
-        pedals.press(MIDDLE);
-        assert_eq!(pedals.layer(), Some(MIRROR));
-        pedals.press(RIGHT);
-        assert_eq!(pedals.layer(), Some(MOUSE));
-        pedals.press(LEFT);
+        pedals.press(MIDDLE, ms(0));
         assert_eq!(pedals.layer(), Some(NAV));
-        pedals.release(LEFT);
+        pedals.press(RIGHT, ms(1000));
         assert_eq!(pedals.layer(), Some(MOUSE));
-        pedals.release(RIGHT);
+        pedals.press(LEFT, ms(2000));
         assert_eq!(pedals.layer(), Some(MIRROR));
-        pedals.release(MIDDLE);
+        pedals.release(LEFT, ms(3000));
+        assert_eq!(pedals.layer(), Some(MOUSE));
+        pedals.release(RIGHT, ms(4000));
+        assert_eq!(pedals.layer(), Some(NAV));
+        pedals.release(MIDDLE, ms(5000));
         assert_eq!(pedals.layer(), None);
     }
 
     #[test]
     fn releasing_an_earlier_pedal_leaves_the_later_in_charge() {
         let mut pedals = Pedals::new(&PEDALS);
-        pedals.press(MIDDLE);
-        pedals.press(RIGHT);
-        pedals.release(MIDDLE);
+        pedals.press(MIDDLE, ms(0));
+        pedals.press(RIGHT, ms(1000));
+        pedals.release(MIDDLE, ms(2000));
         assert_eq!(pedals.layer(), Some(MOUSE));
-        pedals.release(RIGHT);
+        pedals.release(RIGHT, ms(3000));
         assert_eq!(pedals.layer(), None);
     }
 
     #[test]
     fn repeats_strays_and_other_keys_change_nothing() {
         let mut pedals = Pedals::new(&PEDALS);
-        pedals.press(LEFT);
-        pedals.press(LEFT);
-        pedals.release(RIGHT);
-        pedals.press(KeyCode::KEY_LEFTSHIFT);
-        assert_eq!(pedals.held, [LEFT]);
+        pedals.press(LEFT, ms(0));
+        pedals.press(LEFT, ms(10));
+        pedals.release(RIGHT, ms(20));
+        pedals.press(KeyCode::KEY_LEFTSHIFT, ms(30));
+        assert_eq!(down(&pedals), [LEFT]);
     }
 
     #[test]
     fn sync_adopts_the_real_state() {
         let mut pedals = Pedals::new(&PEDALS);
-        pedals.press(LEFT);
-        pedals.press(MIDDLE);
+        pedals.press(LEFT, ms(0));
+        pedals.press(MIDDLE, ms(1000));
         pedals.sync(&[RIGHT]);
         assert_eq!(pedals.layer(), Some(MOUSE));
         pedals.sync(&[]);
@@ -717,7 +871,109 @@ mod tests {
         let mut pedals = Pedals::new(&PEDALS);
         pedals.sync(&[RIGHT, KeyCode::KEY_LEFTSHIFT]);
         assert_eq!(pedals.layer(), Some(MOUSE));
-        assert_eq!(pedals.held, [RIGHT], "not a pedal");
+        assert_eq!(down(&pedals), [RIGHT], "not a pedal");
+    }
+
+    #[test]
+    fn a_tap_locks_mirror_or_mouse_and_the_next_tap_unlocks() {
+        let mut pedals = Pedals::new(&PEDALS);
+        pedals.press(LEFT, ms(0));
+        pedals.release(LEFT, ms(120));
+        assert_eq!(pedals.layer(), Some(MIRROR), "locked after the release");
+        // a tap on another pedal unlocks, and does not lock that one
+        pedals.press(RIGHT, ms(1000));
+        assert_eq!(pedals.layer(), Some(MOUSE));
+        pedals.release(RIGHT, ms(1100));
+        assert_eq!(pedals.layer(), None);
+        assert_eq!(pedals.locked, None);
+    }
+
+    #[test]
+    fn a_long_press_or_one_typed_under_is_a_hold() {
+        let mut pedals = Pedals::new(&PEDALS);
+        pedals.press(RIGHT, ms(0));
+        pedals.release(RIGHT, ms(250));
+        assert_eq!(pedals.layer(), None, "250 ms is a hold");
+        let typing = |at: u64, typed: u64| Moment {
+            at: Duration::from_millis(at),
+            typed,
+        };
+        // a quick click on the mouse layer
+        pedals.press(RIGHT, typing(1000, 7));
+        pedals.release(RIGHT, typing(1100, 8));
+        assert_eq!(pedals.layer(), None);
+        // a clock stepped back is no tap
+        pedals.press(RIGHT, ms(5000));
+        pedals.release(RIGHT, ms(4900));
+        assert_eq!(pedals.layer(), None);
+    }
+
+    #[test]
+    fn nav_never_locks_but_its_tap_unlocks() {
+        let mut pedals = Pedals::new(&PEDALS);
+        pedals.press(MIDDLE, ms(0));
+        pedals.release(MIDDLE, ms(50));
+        assert_eq!(pedals.layer(), None);
+        pedals.press(RIGHT, ms(1000));
+        pedals.release(RIGHT, ms(1050));
+        assert_eq!(pedals.layer(), Some(MOUSE));
+        pedals.press(MIDDLE, ms(2000));
+        pedals.release(MIDDLE, ms(2050));
+        assert_eq!(pedals.layer(), None);
+    }
+
+    #[test]
+    fn holding_another_pedal_over_a_lock_hands_back_to_it() {
+        let mut pedals = Pedals::new(&PEDALS);
+        pedals.press(RIGHT, ms(0));
+        pedals.release(RIGHT, ms(80));
+        pedals.press(MIDDLE, ms(1000));
+        assert_eq!(pedals.layer(), Some(NAV));
+        pedals.release(MIDDLE, ms(2000));
+        assert_eq!(pedals.layer(), Some(MOUSE), "still locked");
+    }
+
+    #[test]
+    fn pressing_the_locked_pedal_turns_the_lock_into_a_hold() {
+        let mut pedals = Pedals::new(&PEDALS);
+        pedals.press(LEFT, ms(0));
+        pedals.release(LEFT, ms(80));
+        pedals.press(LEFT, ms(1000));
+        assert_eq!(pedals.layer(), Some(MIRROR));
+        // short, but the end of the lock: not a new one
+        pedals.release(LEFT, ms(1080));
+        assert_eq!(pedals.layer(), None);
+        // held long over a lock: its release ends the lock too
+        pedals.press(LEFT, ms(2000));
+        pedals.release(LEFT, ms(2080));
+        pedals.press(LEFT, ms(3000));
+        pedals.release(LEFT, ms(4000));
+        assert_eq!(pedals.layer(), None);
+    }
+
+    #[test]
+    fn a_resync_keeps_the_lock_and_never_finds_a_tap() {
+        let mut pedals = Pedals::new(&PEDALS);
+        pedals.press(RIGHT, ms(0));
+        pedals.release(RIGHT, ms(80));
+        pedals.sync(&[MIDDLE]);
+        assert_eq!(pedals.layer(), Some(NAV));
+        // released within a drop: no time to judge it by
+        pedals.sync(&[]);
+        assert_eq!(pedals.layer(), Some(MOUSE), "the lock survives");
+        // the locked pedal found down takes the lock over
+        pedals.sync(&[RIGHT]);
+        pedals.sync(&[]);
+        assert_eq!(pedals.layer(), None);
+    }
+
+    #[test]
+    fn losing_the_pedal_drops_the_lock() {
+        let mut pedals = Pedals::new(&PEDALS);
+        pedals.press(LEFT, ms(0));
+        pedals.release(LEFT, ms(80));
+        pedals.lost();
+        assert_eq!(pedals.layer(), None);
     }
 
     #[test]
@@ -739,6 +995,7 @@ mod tests {
     fn a_resync_discards_the_rest_of_its_batch() {
         let mut pedals = Pedals::new(&PEDALS);
         let mut dropping = Dropping::default();
+        let typed = AtomicU64::new(0);
         let key = |code: KeyCode, value| InputEvent::new(EV_KEY, code.code(), value);
         let report = InputEvent::new(EV_SYN, SYN_REPORT, 0);
         // An overflow, then a press already in our batch when the resync
@@ -750,14 +1007,64 @@ mod tests {
             key(LEFT, 1),
             report,
         ];
-        take_batch(events, &mut dropping, &mut pedals, || Ok(vec![MIDDLE])).unwrap();
-        assert_eq!(pedals.held, [MIDDLE], "the state read, not the stale press");
-        // only that batch: the next is taken as it comes
-        take_batch([key(LEFT, 1), report], &mut dropping, &mut pedals, || {
-            unreachable!("no drop, no resync")
+        take_batch(events, &mut dropping, &mut pedals, &typed, || {
+            Ok(vec![MIDDLE])
         })
         .unwrap();
-        assert_eq!(pedals.layer(), Some(NAV));
+        assert_eq!(
+            down(&pedals),
+            [MIDDLE],
+            "the state read, not the stale press"
+        );
+        // only that batch: the next is taken as it comes
+        take_batch(
+            [key(LEFT, 1), report],
+            &mut dropping,
+            &mut pedals,
+            &typed,
+            || unreachable!("no drop, no resync"),
+        )
+        .unwrap();
+        assert_eq!(pedals.layer(), Some(MIRROR));
+    }
+
+    #[test]
+    fn taps_are_judged_by_the_kernels_event_times() {
+        // A press and its release read together, long after the fact (the
+        // daemon was busy): their own times decide.
+        let mut pedals = Pedals::new(&PEDALS);
+        let mut dropping = Dropping::default();
+        let typed = AtomicU64::new(0);
+        let at = |ms: i64, value| {
+            InputEvent::from(nix::libc::input_event {
+                time: nix::libc::timeval {
+                    tv_sec: ms / 1000,
+                    tv_usec: ms % 1000 * 1000,
+                },
+                type_: EV_KEY,
+                code: RIGHT.code(),
+                value,
+            })
+        };
+        let no_resync = || unreachable!("no drop, no resync");
+        take_batch(
+            [at(1000, 1), at(1600, 0)],
+            &mut dropping,
+            &mut pedals,
+            &typed,
+            no_resync,
+        )
+        .unwrap();
+        assert_eq!(pedals.layer(), None, "600 ms apart: a hold");
+        take_batch(
+            [at(2000, 1), at(2100, 0)],
+            &mut dropping,
+            &mut pedals,
+            &typed,
+            no_resync,
+        )
+        .unwrap();
+        assert_eq!(pedals.layer(), Some(MOUSE), "100 ms apart: a tap");
     }
 
     #[test]
