@@ -130,7 +130,8 @@ impl Pedals {
     }
 
     /// A tap unlocks whatever is locked, or else locks a lockable pedal.
-    /// `typed(from, to)` says whether a Voyager key went down in that span.
+    /// `typed(from, to)` says whether a Voyager key went down in that span;
+    /// it is asked only when the answer can lock or unlock.
     fn release(
         &mut self,
         key: KeyCode,
@@ -145,17 +146,19 @@ impl Pedals {
         let Some(start) = self.held.remove(index).seen.filter(short) else {
             return;
         };
-        if typed(start, at) {
+        let lockable = self.pedal(key).is_some_and(|pedal| pedal.lockable);
+        if (self.locked.is_none() && !lockable) || typed(start, at) {
             return;
         }
-        if self.locked.take().is_none() && self.pedal(key).is_some_and(|pedal| pedal.lockable) {
+        if self.locked.take().is_none() && lockable {
             self.locked = Some(key);
         }
     }
 
     /// Adopt the device's real key state: at open and after a drop. A lock
-    /// stays. No press is a tap after this: a drop may have hidden a release
-    /// and a new press of a pedal that is still down.
+    /// stays unless its pedal is found down, which takes it over. No press is
+    /// a tap after this: a drop may have hidden a release and a new press of
+    /// a pedal that is still down.
     fn sync(&mut self, down: &[KeyCode]) {
         self.held.retain(|press| down.contains(&press.key));
         for press in &mut self.held {
@@ -259,10 +262,10 @@ fn take_batch(
     Ok(())
 }
 
-/// When the Voyager reported keys going down, on CLOCK_BOOTTIME as the
-/// reports arrived: tells a pedal tap from a press typed under. The keyboard
-/// worker fills it from what the firmware sends while paired; a pedal press
-/// that could be a tap sends a pairing first.
+/// When the keyboard worker read reports of Voyager keys going down, on
+/// CLOCK_BOOTTIME: tells a pedal tap from a press typed under. Best effort:
+/// it holds only what the firmware sends while paired, read within the grace
+/// after a release.
 #[derive(Default)]
 struct KeyLog(Mutex<VecDeque<Duration>>);
 
@@ -278,14 +281,33 @@ impl KeyLog {
         times.push_back(at);
     }
 
-    /// Whether a key went down from `from` to [`GRACE`] past `to`, after
-    /// waiting out that grace, so a report on its way is counted.
+    /// Whether a key went down from `from` to [`GRACE`] past `to`. Unless one
+    /// already has, waits out that grace first, so a report on its way is
+    /// counted; the rest of the pedal's batch waits with it.
     fn typed(&self, from: Duration, to: Duration) -> bool {
+        self.typed_waiting(from, to, boottime(), thread::sleep)
+    }
+
+    fn typed_waiting(
+        &self,
+        from: Duration,
+        to: Duration,
+        now: Option<Duration>,
+        wait: impl FnOnce(Duration),
+    ) -> bool {
         let until = to + GRACE;
-        if let Some(left) = boottime().and_then(|now| until.checked_sub(now)) {
-            thread::sleep(left.min(GRACE));
+        let seen = || self.0.lock().iter().any(|at| (from..=until).contains(at));
+        if seen() {
+            return true;
         }
-        self.0.lock().iter().any(|at| (from..=until).contains(at))
+        let left = now.and_then(|now| until.checked_sub(now));
+        match left.filter(|left| !left.is_zero()) {
+            Some(left) => {
+                wait(left.min(GRACE));
+                seen()
+            }
+            None => false,
+        }
     }
 }
 
@@ -983,6 +1005,32 @@ mod tests {
             "arrived within the grace after the release"
         );
         assert!(!keys.typed(ms(1950), ms(1980)), "after the grace");
+    }
+
+    #[test]
+    fn a_report_on_its_way_is_waited_for_and_a_seen_one_is_not() {
+        let keys = KeyLog::default();
+        // decided right at the release: the grace is waited out, and a key
+        // read during it counts
+        let read_late = |left| {
+            assert_eq!(left, GRACE);
+            keys.note(ms(1010));
+        };
+        assert!(keys.typed_waiting(ms(900), ms(1000), Some(ms(1000)), read_late));
+        // a key already seen answers at once
+        let no_wait = |_| unreachable!("answered already");
+        assert!(keys.typed_waiting(ms(900), ms(1000), Some(ms(1000)), no_wait));
+        // nor is anything waited for once the grace is over
+        assert!(!keys.typed_waiting(ms(2000), ms(2100), Some(ms(2140)), no_wait));
+    }
+
+    #[test]
+    fn nothing_is_asked_when_the_answer_cannot_matter() {
+        // nav cannot lock, and nothing is locked to undo
+        let mut pedals = Pedals::new(&PEDALS);
+        pedals.press(MIDDLE, ms(0));
+        pedals.release(MIDDLE, ms(50), |_, _| unreachable!("asked"));
+        assert_eq!(pedals.layer(), None);
     }
 
     #[test]
