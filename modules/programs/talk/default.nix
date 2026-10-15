@@ -1,0 +1,36 @@
+{
+  lib,
+  pkgs,
+  ...
+}: let
+  # cargo test runs in buildRustPackage's checkPhase: a failing test means no
+  # package, as for ../foot-pedal.
+  talk = pkgs.rustPlatform.buildRustPackage {
+    pname = "talk";
+    version = "0.1.0";
+    src = lib.fileset.toSource {
+      root = ./.;
+      fileset = lib.fileset.unions [./Cargo.toml ./Cargo.lock ./src];
+    };
+    cargoLock.lockFile = ./Cargo.lock;
+    nativeBuildInputs = [pkgs.makeWrapper];
+    # wpctl drives the default source; notify-send reaches mako, since
+    # Hyprland drops exec output
+    postInstall = ''
+      wrapProgram $out/bin/talk \
+        --prefix PATH : ${lib.makeBinPath [pkgs.wireplumber pkgs.libnotify]}
+    '';
+    meta.mainProgram = "talk";
+  };
+in {
+  # Push-to-talk on F13, a Voyager key set in Oryx: hold to invert the mic's
+  # mute, tap to latch it until the next press (src/main.rs). The binds live
+  # here rather than in hyprland_note.lua, which xpsbipa shares without talk.
+  # F13 is bound by keycode (KEY_F13 183, + 8 for xkb): xkb's evdev keymap
+  # names that key XF86Tools, so the keysym F13 would never match. Locked, as
+  # XF86AudioMicMute is, so locking the screen mid-hold cannot eat the release.
+  wayland.windowManager.hyprland.extraLuaFiles.talk = ''
+    hl.bind("code:191", hl.dsp.exec_cmd("${lib.getExe talk} press"), { locked = true })
+    hl.bind("code:191", hl.dsp.exec_cmd("${lib.getExe talk} release"), { locked = true, release = true })
+  '';
+}
