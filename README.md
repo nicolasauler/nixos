@@ -49,6 +49,24 @@ next rebuild fails. Two traps live here: `--add-fixed --add-root` silently ignor
 the root flag, and modern `nix store add` defaults to recursive hashing while
 `requireFile` expects flat — same file, different hash.
 
+## precision microphone keys
+
+`talkd` handles the Voyager's **F13**: hold to invert the default microphone's
+mute, release to restore, or tap under 250 ms to latch until the next press.
+**F14** is a separate, ordinary default-input mute toggle through `wpctl`; it
+does not send a command to talkd or change the speaker output.
+
+Use F14 before starting an F13 hold/latch cycle to establish the baseline:
+muted gives hold-to-talk; unmuted gives hold-to-mute. Each F14 press uses the
+current default input, including a newly selected headset. F14 is disabled
+while the screen is locked; an existing F13 cycle can still finish.
+
+The expected Oryx assignments are F13 on the base top-right Caps Word position,
+and F14 at the same physical position on Brd+Sys layer 3 (hold Tab). F11 stays
+at that position on sym layer 2 (hold Enter). These are firmware assignments:
+changing or switching this Nix configuration does not flash the keyboard.
+`talkd status` inspects the audio/lock setup without changing it.
+
 ## Secrets
 
 `secrets/*.age`, encrypted with [agenix]. Reading the repo, building it, and
