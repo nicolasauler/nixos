@@ -124,10 +124,10 @@ pub enum Via {
 }
 
 /// collect_node_info: the node's route if it qualifies, else its Props.
-pub fn mixer(
+pub fn mixer<'a>(
     node_device: Option<u32>,
     profile_device: Option<i32>,
-    routes: impl Fn(u32) -> Option<Vec<Route>>,
+    routes: impl Fn(u32) -> Option<&'a [Route]>,
     props_mute: Option<bool>,
 ) -> Option<(Via, bool)> {
     if let (Some(on), Some(device)) = (node_device, profile_device)
@@ -264,27 +264,24 @@ pub mod tests {
 
     #[test]
     fn the_mixer_prefers_the_matching_route_and_falls_back_to_props() {
-        let routes = |on: u32| {
-            (on == 40).then(|| {
-                vec![
-                    Route {
-                        index: 0,
-                        device: 2,
-                        mute: Some(false),
-                    }, // the speakers
-                    Route {
-                        index: 1,
-                        device: 5,
-                        mute: Some(true),
-                    }, // the mic
-                    Route {
-                        index: 2,
-                        device: 6,
-                        mute: None,
-                    },
-                ]
-            })
-        };
+        let available = [
+            Route {
+                index: 0,
+                device: 2,
+                mute: Some(false),
+            }, // speakers
+            Route {
+                index: 1,
+                device: 5,
+                mute: Some(true),
+            }, // mic
+            Route {
+                index: 2,
+                device: 6,
+                mute: None,
+            },
+        ];
+        let routes = |on: u32| (on == 40).then_some(available.as_slice());
         let via = |on, index, device| Via::Route { on, index, device };
         assert_eq!(
             mixer(Some(40), Some(5), routes, Some(false)),

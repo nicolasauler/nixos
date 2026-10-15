@@ -1,7 +1,9 @@
-//! F13 from the Voyager, read from its evdev node(s) without grabbing them:
-//! Hyprland still gets the key (and swallows it with a no-op bind). Only
-//! F13 is looked at; every other key is dropped unread. Event times are the
-//! kernel's, on CLOCK_BOOTTIME.
+//! F13 from the Voyager, read from its evdev node(s) without grabbing them.
+//! Per-fd masks allow only F13 key events and kernel synchronization events.
+//! Events queued before mask installation can exist; the reader ignores other
+//! types/codes without inspecting their value or timestamp. State recovery
+//! briefly receives a key bitmap, retains only F13, and wipes that bitmap.
+//! Event times are the kernel's, on CLOCK_BOOTTIME.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -11,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, UNIX_EPOCH};
 
 use evdev::raw_stream::RawDevice;
-use evdev::{AttributeSetRef, InputId, KeyCode};
+use evdev::{AttributeSetRef, InputEvent, InputId, KeyCode};
 use nix::errno::Errno;
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
@@ -29,7 +31,7 @@ const SYN_DROPPED: u16 = 3;
 pub enum Key {
     Press(Duration),
     Release(Duration),
-    /// The node went away with F13 down.
+    /// An accepted press became uncertain, or its node went away.
     Lost,
 }
 
@@ -40,13 +42,16 @@ pub fn wanted(id: InputId, keys: Option<&AttributeSetRef<KeyCode>>) -> bool {
         && keys.is_some_and(|keys| keys.contains(KeyCode::KEY_F13))
 }
 
-/// One node's F13. After SYN_DROPPED the kernel's rule
-/// (Documentation/input/event-codes.rst) is to drop everything up to the
-/// next SYN_REPORT and read the device's state, which [`F13::resync`] takes.
+/// One node's F13. SYN_DROPPED terminates an accepted hold with Lost; after
+/// the next SYN_REPORT, a snapshot suppresses any down key until release.
+/// No recovered press can become a tap/latch.
 #[derive(Debug, Default)]
 pub struct F13 {
+    /// A press actually delivered to the machine.
     down: bool,
     dropping: bool,
+    /// A startup/recovered hold whose press was not reliably observed.
+    suppressed: bool,
 }
 
 /// What one raw event asks of the reader.
@@ -59,12 +64,11 @@ pub enum Step {
 }
 
 impl F13 {
-    /// At open: F13 may already be down; its press was not seen, so its
-    /// release will not count either.
+    /// At open: an already-held key is suppressed through its release.
     pub fn opened(down: bool) -> Self {
         F13 {
-            down,
-            dropping: false,
+            suppressed: down,
+            ..Self::default()
         }
     }
 
@@ -72,7 +76,7 @@ impl F13 {
         match (kind, code) {
             (EV_SYN, SYN_DROPPED) => {
                 self.dropping = true;
-                Step::Nothing
+                self.lost().map_or(Step::Nothing, Step::Key)
             }
             (EV_SYN, SYN_REPORT) if self.dropping => {
                 self.dropping = false;
@@ -80,9 +84,13 @@ impl F13 {
             }
             _ if self.dropping => Step::Nothing,
             (EV_KEY, code) if code == KeyCode::KEY_F13.code() => match value {
-                1 if !self.down => {
+                1 if !self.down && !self.suppressed => {
                     self.down = true;
                     Step::Key(Key::Press(at))
+                }
+                0 if self.suppressed => {
+                    self.suppressed = false;
+                    Step::Nothing
                 }
                 0 if self.down => {
                     self.down = false;
@@ -94,19 +102,12 @@ impl F13 {
         }
     }
 
-    /// The real state after a drop, read at `at`.
-    pub fn resync(&mut self, down: bool, at: Duration) -> Option<Key> {
-        match (self.down, down) {
-            (false, true) => {
-                self.down = true;
-                Some(Key::Press(at))
-            }
-            (true, false) => {
-                self.down = false;
-                Some(Key::Release(at))
-            }
-            _ => None,
-        }
+    /// Adopt the snapshot without inventing a press time. A down key remains
+    /// suppressed even if it was down before the overflow: a release/repress
+    /// could have been lost in between.
+    pub fn resync(&mut self, down: bool) {
+        self.down = false;
+        self.suppressed = down;
     }
 
     pub fn lost(&mut self) -> Option<Key> {
@@ -121,6 +122,48 @@ struct Node {
 }
 
 nix::ioctl_write_ptr!(eviocsclockid, b'E', 0xa0, nix::libc::c_int);
+nix::ioctl_write_ptr!(eviocsmask, b'E', 0x93, InputMask);
+nix::ioctl_read_buf!(eviocgkey, b'E', 0x18, nix::libc::c_ulong);
+
+/// Linux input.h's input_mask; codes_ptr is a u64 even on 32-bit targets.
+#[repr(C)]
+pub struct InputMask {
+    kind: u32,
+    codes_size: u32,
+    codes_ptr: u64,
+}
+
+const WORD_BITS: usize = nix::libc::c_ulong::BITS as usize;
+const F13_CODE: usize = KeyCode::KEY_F13.code() as usize;
+const KEY_WORDS: usize = F13_CODE / WORD_BITS + 1;
+const TYPE_MASK: [nix::libc::c_ulong; 1] = [1 << EV_KEY];
+const KEY_MASK: [nix::libc::c_ulong; KEY_WORDS] = {
+    let mut mask = [0; KEY_WORDS];
+    mask[F13_CODE / WORD_BITS] = 1 << (F13_CODE % WORD_BITS);
+    mask
+};
+
+fn set_mask(device: &RawDevice, kind: u16, codes: &[nix::libc::c_ulong]) -> io::Result<()> {
+    let mask = InputMask {
+        kind: u32::from(kind),
+        codes_size: std::mem::size_of_val(codes) as u32,
+        codes_ptr: codes.as_ptr() as u64,
+    };
+    // SAFETY: input_mask and its native-word bitmap both live through this
+    // call; their ABI and lengths match Linux EVIOCSMASK.
+    unsafe { eviocsmask(device.as_raw_fd(), &mask) }
+        .map(drop)
+        .map_err(io::Error::from)
+}
+
+fn filter_f13(device: &RawDevice) -> io::Result<()> {
+    // Linux drivers/input/evdev.c: mask type 0 (EV_SYN) is the event-TYPE
+    // bitmap, not a SYN-code bitmap. SYN events always bypass the masks.
+    // Short code masks clear all remaining codes. Neither ioctl flushes
+    // events queued before installation, and neither affects other clients.
+    set_mask(device, EV_KEY, &KEY_MASK)?;
+    set_mask(device, EV_SYN, &TYPE_MASK)
+}
 
 /// Puts the node's event times on CLOCK_BOOTTIME: it never steps, and counts
 /// a suspend between a press and its release.
@@ -133,14 +176,29 @@ fn use_boottime(device: &RawDevice) -> io::Result<()> {
         .map_err(io::Error::from)
 }
 
-fn boottime() -> Duration {
-    nix::time::clock_gettime(nix::time::ClockId::CLOCK_BOOTTIME)
-        .map(Duration::from)
-        .unwrap_or_default()
-}
-
 fn f13_down(device: &RawDevice) -> io::Result<bool> {
-    Ok(device.get_key_state()?.contains(KeyCode::KEY_F13))
+    // EVIOCGKEY returns a bitmap, not a single key. Request only native words
+    // through F13; preceding unrelated key bits are unavoidable. Linux takes
+    // the snapshot and flushes queued EV_KEY under its buffer lock. Events
+    // already fetched into userspace must be discarded BEFORE this ioctl.
+    let mut bits = [0; KEY_WORDS];
+    // SAFETY: the ioctl writes at most the supplied slice's byte length.
+    let result = unsafe { eviocgkey(device.as_raw_fd(), &mut bits) }
+        .map_err(io::Error::from)
+        .and_then(|bytes| {
+            if bytes as usize == std::mem::size_of_val(&bits) {
+                Ok(bits[F13_CODE / WORD_BITS] & KEY_MASK[F13_CODE / WORD_BITS] != 0)
+            } else {
+                Err(io::Error::other("short EVIOCGKEY bitmap"))
+            }
+        });
+    for word in &mut bits {
+        // SAFETY: each pointer refers to a live, exclusively borrowed word.
+        // Volatile writes prevent elimination of this best-effort wipe; this
+        // is not a guarantee against copies made by the kernel/compiler.
+        unsafe { std::ptr::write_volatile(word, 0) };
+    }
+    result
 }
 
 /// Opens the Voyager nodes not open yet.
@@ -164,10 +222,23 @@ fn scan(nodes: &mut BTreeMap<PathBuf, Node>) {
         if !wanted(device.input_id(), device.supported_keys()) {
             continue;
         }
+        if let Err(error) = filter_f13(&device) {
+            eprintln!("input: {}: EVIOCSMASK: {error}", path.display());
+            continue; // never fetch from an unfiltered fd
+        }
         if let Err(error) = use_boottime(&device) {
             eprintln!("input: {}: EVIOCSCLOCKID: {error}", path.display());
+            continue; // never interpret timestamps from an unknown clock
         }
-        let down = f13_down(&device).unwrap_or(false);
+        // Changing the clock flushes pending old-clock events (and may queue
+        // SYN_DROPPED). The snapshot also flushes any queued EV_KEY.
+        let down = match f13_down(&device) {
+            Ok(down) => down,
+            Err(error) => {
+                eprintln!("input: {}: EVIOCGKEY: {error}", path.display());
+                continue;
+            }
+        };
         eprintln!("input: reading F13 from {}", path.display());
         nodes.insert(
             path,
@@ -179,28 +250,53 @@ fn scan(nodes: &mut BTreeMap<PathBuf, Node>) {
     }
 }
 
-/// Reads one node's pending events; Err once it is unusable.
-fn read(node: &mut Node, send: &impl Fn(Key)) -> io::Result<()> {
-    let events: Vec<_> = node.device.fetch_events()?.collect();
+/// Inspect payload/time lazily, after accepting the type/code. SYN payloads
+/// and all events during overflow recovery are irrelevant.
+fn reader_event(
+    f13: &mut F13,
+    kind: u16,
+    code: u16,
+    payload: impl FnOnce() -> (i32, Duration),
+) -> Step {
+    match (kind, code) {
+        (EV_SYN, SYN_DROPPED | SYN_REPORT) => f13.event(kind, code, 0, Duration::ZERO),
+        (EV_KEY, code) if code == KeyCode::KEY_F13.code() && !f13.dropping => {
+            let (value, at) = payload();
+            f13.event(kind, code, value, at)
+        }
+        _ => Step::Nothing,
+    }
+}
+
+/// Consume one fetched batch; true requests a snapshot. Own the iterator so
+/// returning drops evdev's Drain and discards every unconsumed, older event
+/// before the caller issues EVIOCGKEY. No second raw-event buffer is made.
+pub(crate) fn read_batch(
+    f13: &mut F13,
+    events: impl Iterator<Item = InputEvent>,
+    mut send: impl FnMut(Key),
+) -> bool {
     for event in events {
-        let at = event
-            .timestamp()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default();
-        match node
-            .f13
-            .event(event.event_type().0, event.code(), event.value(), at)
-        {
+        match reader_event(f13, event.event_type().0, event.code(), || {
+            let at = event
+                .timestamp()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default();
+            (event.value(), at)
+        }) {
             Step::Key(key) => send(key),
-            Step::Resync => {
-                let down = f13_down(&node.device)?;
-                if let Some(key) = node.f13.resync(down, boottime()) {
-                    send(key);
-                }
-                break; // the rest of the batch is older than that state
-            }
+            Step::Resync => return true,
             Step::Nothing => {}
         }
+    }
+    false
+}
+
+/// Reads one node's pending events; Err once it is unusable.
+fn read(node: &mut Node, send: &impl Fn(Key)) -> io::Result<()> {
+    if read_batch(&mut node.f13, node.device.fetch_events()?, send) {
+        let down = f13_down(&node.device)?;
+        node.f13.resync(down);
     }
     Ok(())
 }
@@ -291,18 +387,80 @@ mod tests {
         Duration::from_millis(ms)
     }
 
-    /// Feeds raw events, as the kernel would hand them over, and collects the
-    /// keys; `state` answers the key-state read of a resync.
+    fn raw(kind: u16, code: u16, value: i32, at: u64) -> InputEvent {
+        nix::libc::input_event {
+            time: nix::libc::timeval {
+                tv_sec: (at / 1000) as _,
+                tv_usec: ((at % 1000) * 1000) as _,
+            },
+            type_: kind,
+            code,
+            value,
+        }
+        .into()
+    }
+
+    /// Exercise the actual reader boundary with evdev's Drain semantics,
+    /// without opening any device. `state` supplies the post-drop snapshot.
     fn feed(f13: &mut F13, events: &[(u16, u16, i32, u64)], state: bool) -> Vec<Key> {
         let mut keys = Vec::new();
-        for &(kind, code, value, at) in events {
-            match f13.event(kind, code, value, ms(at)) {
-                Step::Key(key) => keys.push(key),
-                Step::Resync => keys.extend(f13.resync(state, ms(at))),
-                Step::Nothing => {}
-            }
+        let mut buffer: Vec<_> = events
+            .iter()
+            .map(|&(kind, code, value, at)| raw(kind, code, value, at))
+            .collect();
+        let snapshot = read_batch(f13, buffer.drain(..), |key| keys.push(key));
+        assert!(
+            buffer.is_empty(),
+            "drop the entire batch before the snapshot"
+        );
+        if snapshot {
+            f13.resync(state);
         }
         keys
+    }
+
+    #[test]
+    fn masks_allow_only_key_type_and_f13_code() {
+        assert_eq!(TYPE_MASK[0], 1 << EV_KEY);
+        // EV_SYN bypasses filtering in the kernel; bit 0 is NOT a SYN mask.
+        assert_eq!(TYPE_MASK[0] & (1 << EV_SYN), 0);
+        for bit in 0..KEY_WORDS * WORD_BITS {
+            assert_eq!(
+                KEY_MASK[bit / WORD_BITS] & (1 << (bit % WORD_BITS)) != 0,
+                bit == F13_CODE
+            );
+        }
+        // EVIOCSMASK zero-fills all codes beyond this short bitmap.
+        assert_eq!(std::mem::size_of::<InputMask>(), 16);
+    }
+
+    #[test]
+    fn reader_boundary_ignores_other_key_and_scancode_payloads() {
+        let mut f13 = F13::default();
+        for (kind, code) in [
+            (EV_KEY, A),
+            (4, 4),      // EV_MSC / MSC_SCAN
+            (4, F13),    // a non-key event with the same numeric code
+            (EV_SYN, 1), // SYN_CONFIG is not needed
+            (EV_SYN, SYN_REPORT),
+        ] {
+            assert_eq!(
+                reader_event(&mut f13, kind, code, || panic!("unrelated payload read")),
+                Step::Nothing
+            );
+        }
+        assert_eq!(
+            reader_event(&mut f13, EV_SYN, SYN_DROPPED, || panic!("SYN payload read")),
+            Step::Nothing
+        );
+        assert_eq!(
+            reader_event(&mut f13, EV_KEY, F13, || panic!("dropped payload read")),
+            Step::Nothing
+        );
+        assert_eq!(
+            reader_event(&mut f13, EV_SYN, SYN_REPORT, || panic!("SYN payload read")),
+            Step::Resync
+        );
     }
 
     #[test]
@@ -326,7 +484,7 @@ mod tests {
     }
 
     #[test]
-    fn a_drop_hiding_the_release_is_resynchronised_at_its_report() {
+    fn a_drop_hiding_the_release_terminates_without_a_short_release() {
         let mut f13 = F13::default();
         let keys = feed(
             &mut f13,
@@ -338,18 +496,127 @@ mod tests {
             ],
             false,
         );
-        assert_eq!(keys, [Key::Press(ms(10)), Key::Release(ms(40))]);
-        // and one hiding a press shows it, late
-        let keys = feed(
-            &mut f13,
-            &[(EV_SYN, SYN_DROPPED, 0, 50), (EV_SYN, SYN_REPORT, 0, 60)],
-            true,
+        assert_eq!(keys, [Key::Press(ms(10)), Key::Lost]);
+        assert_eq!(
+            feed(
+                &mut f13,
+                &[(EV_KEY, F13, 1, 50), (EV_KEY, F13, 0, 400)],
+                false
+            ),
+            [Key::Press(ms(50)), Key::Release(ms(400))]
         );
-        assert_eq!(keys, [Key::Press(ms(60))]);
     }
 
     #[test]
-    fn a_node_lost_with_f13_down_is_a_release_and_otherwise_nothing() {
+    fn losing_an_unseen_long_press_never_synthesizes_a_tap() {
+        let mut f13 = F13::default();
+        // The unseen physical press was at 0; snapshot discovers it at 1 s.
+        assert!(
+            feed(
+                &mut f13,
+                &[(EV_SYN, SYN_DROPPED, 0, 990), (EV_SYN, SYN_REPORT, 0, 1000)],
+                true
+            )
+            .is_empty()
+        );
+        assert!(
+            feed(
+                &mut f13,
+                &[(EV_KEY, F13, 2, 1010), (EV_KEY, F13, 0, 1020)],
+                false
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            feed(
+                &mut f13,
+                &[(EV_KEY, F13, 1, 2000), (EV_KEY, F13, 0, 2300)],
+                false
+            ),
+            [Key::Press(ms(2000)), Key::Release(ms(2300))]
+        );
+    }
+
+    #[test]
+    fn losing_a_release_and_repress_while_down_ends_the_original_hold() {
+        let mut f13 = F13::default();
+        assert_eq!(
+            feed(
+                &mut f13,
+                &[
+                    (EV_KEY, F13, 1, 10),
+                    (EV_SYN, SYN_DROPPED, 0, 1000),
+                    (EV_KEY, F13, 0, 1010), // uncertain release/repress
+                    (EV_KEY, F13, 1, 1020),
+                    (EV_SYN, SYN_REPORT, 0, 1100),
+                ],
+                true
+            ),
+            [Key::Press(ms(10)), Key::Lost]
+        );
+        assert!(
+            feed(
+                &mut f13,
+                &[(EV_KEY, F13, 1, 1110), (EV_KEY, F13, 0, 1120)],
+                false
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            feed(
+                &mut f13,
+                &[(EV_KEY, F13, 1, 2000), (EV_KEY, F13, 0, 2300)],
+                false
+            ),
+            [Key::Press(ms(2000)), Key::Release(ms(2300))]
+        );
+    }
+
+    #[test]
+    fn dropped_hold_is_terminated_before_waiting_for_a_report() {
+        let mut f13 = F13::default();
+        assert_eq!(
+            feed(
+                &mut f13,
+                &[(EV_KEY, F13, 1, 10), (EV_SYN, SYN_DROPPED, 0, 20)],
+                false
+            ),
+            [Key::Press(ms(10)), Key::Lost]
+        );
+        assert!(feed(&mut f13, &[(EV_SYN, SYN_DROPPED, 0, 30)], false).is_empty());
+        assert_eq!(f13.lost(), None, "never deliver the same loss twice");
+    }
+
+    #[test]
+    fn stale_events_after_the_report_are_discarded_before_snapshot() {
+        for down in [false, true] {
+            let mut f13 = F13::default();
+            assert!(
+                feed(
+                    &mut f13,
+                    &[
+                        (EV_SYN, SYN_DROPPED, 0, 10),
+                        (EV_SYN, SYN_REPORT, 0, 20),
+                        (EV_KEY, F13, 0, 30), // would clear suppression
+                        (EV_KEY, F13, 1, 40), // would invent a press
+                        (EV_KEY, F13, 0, 50), // would turn it into a tap
+                    ],
+                    down
+                )
+                .is_empty()
+            );
+            // If the snapshot was down, the next real release only lifts
+            // suppression. If up, this unmatched release is also ignored.
+            assert!(feed(&mut f13, &[(EV_KEY, F13, 0, 60)], false).is_empty());
+            assert_eq!(
+                feed(&mut f13, &[(EV_KEY, F13, 1, 70)], false),
+                [Key::Press(ms(70))]
+            );
+        }
+    }
+
+    #[test]
+    fn a_node_lost_with_an_accepted_press_emits_lost_only_once() {
         let mut f13 = F13::default();
         feed(&mut f13, &[(EV_KEY, F13, 1, 10)], false);
         assert_eq!(f13.lost(), Some(Key::Lost));
@@ -359,12 +626,27 @@ mod tests {
     #[test]
     fn a_key_already_down_at_open_has_its_release_ignored_too() {
         let mut f13 = F13::opened(true);
-        // its release goes through; the machine finds no press to match
-        assert_eq!(
-            feed(&mut f13, &[(EV_KEY, F13, 0, 10)], false),
-            [Key::Release(ms(10))]
+        assert!(
+            feed(
+                &mut f13,
+                &[
+                    (EV_KEY, F13, 1, 5),
+                    (EV_KEY, F13, 2, 7),
+                    (EV_KEY, F13, 0, 10)
+                ],
+                false
+            )
+            .is_empty()
         );
-        assert_eq!(F13::opened(true).lost(), Some(Key::Lost));
+        assert_eq!(
+            feed(
+                &mut f13,
+                &[(EV_KEY, F13, 1, 20), (EV_KEY, F13, 0, 400)],
+                false
+            ),
+            [Key::Press(ms(20)), Key::Release(ms(400))]
+        );
+        assert_eq!(F13::opened(true).lost(), None);
     }
 
     #[test]

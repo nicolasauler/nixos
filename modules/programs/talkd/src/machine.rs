@@ -49,12 +49,12 @@ pub enum Event {
     Release(Duration),
     /// The keyboard went away; a hold ends as if released, never latched.
     DeviceLost,
-    Lock(Lock),
     /// Connected and synced to the server with this cookie.
     ServerUp(u32),
     ServerGone,
-    /// A node's mute, as the mixer reads it, changed to this.
-    Observed(Pin, bool),
+    /// A request-scoped readback, taken after the server processed the
+    /// corresponding write. Unsolicited/cached mute values cannot confirm it.
+    Confirmed(u64, Pin, bool),
     NodeGone(Pin),
     /// A confirmation deadline set through [`World::arm`] passed.
     Deadline(u64),
@@ -122,10 +122,14 @@ impl Problem {
 pub trait World {
     /// The default source and its mute.
     fn default_source(&self) -> Option<(Pin, bool)>;
-    /// A node's mute; None once it is gone (or no longer known).
+    /// The current lock state, queried only before a new engagement.
+    fn lock_state(&mut self) -> Lock;
+    /// Whether the bound node still exists, independently of parameter refresh.
+    fn exists(&self, pin: Pin) -> bool;
+    /// A settled mute snapshot; None while refreshing or if unavailable.
     fn muted(&self, pin: Pin) -> Option<bool>;
-    /// Sends a mute change. Err only if it certainly was not sent.
-    fn set_mute(&mut self, pin: Pin, muted: bool) -> Result<(), String>;
+    /// Sends a mute change identified by `token`. Err only if certainly not sent.
+    fn set_mute(&mut self, pin: Pin, muted: bool, token: u64) -> Result<(), String>;
     fn save(&mut self, obligation: &Obligation) -> Result<(), String>;
     fn clear(&mut self) -> Result<(), String>;
     /// Delivers [`Event::Deadline`]`(token)` after `after`.
@@ -142,6 +146,7 @@ struct Pending {
     pin: Pin,
     target: bool,
     restore: bool,
+    expired: bool,
 }
 
 #[derive(Debug)]
@@ -150,14 +155,12 @@ pub struct Machine {
     /// When the press that engaged went down, while it is still down.
     hold: Option<Duration>,
     pending: Option<Pending>,
-    /// A restore was sent: seeing `was_muted` completes the cycle, even
-    /// after its deadline.
+    /// A restore was sent; only its request-scoped confirmation may finish it.
     restoring: bool,
-    /// The engage's change has shown, or can no longer be in flight. Until
-    /// then a mute still at `was_muted` proves nothing: the flip may yet land.
+    /// The engage's request has been confirmed. Until then the original
+    /// cached mute proves nothing: the flip may still land.
     engage_seen: bool,
     server: Option<u32>,
-    lock: Lock,
     /// Saved by a previous run, settled at the first [`Event::ServerUp`].
     recovering: Option<Obligation>,
     tokens: u64,
@@ -173,7 +176,6 @@ impl Machine {
             restoring: false,
             engage_seen: true,
             server: None,
-            lock: Lock::Unknown,
             recovering: saved,
             tokens: 0,
             stopping: false,
@@ -184,7 +186,9 @@ impl Machine {
     /// outcome known (confirmed, failed, or unconfirmed past its deadline).
     pub fn settled(&self) -> bool {
         self.stopping
-            && (self.obligation.is_none() || self.server.is_none() || self.pending.is_none())
+            && (self.obligation.is_none()
+                || self.server.is_none()
+                || self.pending.is_none_or(|pending| pending.expired))
     }
 
     pub fn handle(&mut self, event: Event, world: &mut impl World) {
@@ -192,7 +196,6 @@ impl Machine {
             Event::Press(at) => self.press(at, world),
             Event::Release(at) => self.release(Some(at), world),
             Event::DeviceLost => self.release(None, world),
-            Event::Lock(lock) => self.lock = lock,
             Event::ServerUp(server) => {
                 self.server = Some(server);
                 if let Some(saved) = self.recovering.take() {
@@ -205,28 +208,34 @@ impl Machine {
                     self.void(Problem::ServerGone, world);
                 }
             }
-            Event::Observed(pin, muted) => self.observed(pin, muted, world),
+            Event::Confirmed(token, pin, muted) => self.confirmed(token, pin, muted, world),
             Event::NodeGone(pin) => {
                 if self.obligation.is_some_and(|owed| owed.pin == pin) {
                     self.void(Problem::NodeGone, world);
                 }
             }
             Event::Deadline(token) => {
-                if let Some(pending) = self.pending.filter(|pending| pending.token == token) {
-                    self.pending = None;
-                    if pending.restore {
-                        // sent after the engage, so that one is done too
-                        self.engage_seen = true;
-                        world.problem(Problem::RestoreUnconfirmed);
+                if let Some(pending) = self
+                    .pending
+                    .as_mut()
+                    .filter(|pending| pending.token == token)
+                {
+                    pending.expired = true;
+                    world.problem(if pending.restore {
+                        Problem::RestoreUnconfirmed
                     } else {
-                        world.problem(Problem::EngageUnconfirmed);
-                    }
+                        Problem::EngageUnconfirmed
+                    });
+                    // A deadline changes only waiting/reporting, never what
+                    // the server is known to have done. Keep the request id.
                 }
             }
             Event::Stop => {
                 self.stopping = true;
                 self.hold = None;
-                let restoring = self.pending.is_some_and(|pending| pending.restore);
+                let restoring = self
+                    .pending
+                    .is_some_and(|pending| pending.restore && !pending.expired);
                 if self.obligation.is_some() && self.server.is_some() && !restoring {
                     self.restore(world);
                 }
@@ -248,13 +257,13 @@ impl Machine {
             return self.engage(at, world);
         };
         match world.muted(owed.pin) {
-            None => self.void(Problem::NodeGone, world),
-            // put back outside talkd: this press starts afresh
-            Some(muted) if muted == owed.was_muted && self.engage_seen => {
+            // Put back outside talkd after a confirmed flip, with no restore
+            // in flight: this press may start afresh.
+            Some(muted) if muted == owed.was_muted && self.engage_seen && !self.restoring => {
                 self.finish(world);
                 self.engage(at, world);
             }
-            Some(_) => self.restore(world),
+            _ => self.restore(world),
         }
     }
 
@@ -263,15 +272,16 @@ impl Machine {
         let Some(since) = self.hold.take() else {
             return; // not the engaging press's: ignored
         };
-        let tap = at.is_some_and(|at| at.checked_sub(since).is_none_or(|held| held < LATCH));
+        let tap = at.is_some_and(|at| at.checked_sub(since).is_some_and(|held| held < LATCH));
         if !tap {
             self.restore(world);
         }
     }
 
     fn engage(&mut self, at: Duration, world: &mut impl World) {
-        if self.lock != Lock::Unlocked {
-            return world.problem(Problem::Locked(self.lock));
+        let lock = world.lock_state();
+        if lock != Lock::Unlocked {
+            return world.problem(Problem::Locked(lock));
         }
         let Some((pin, muted)) = world.default_source() else {
             return world.problem(Problem::NoDefaultSource);
@@ -287,10 +297,12 @@ impl Machine {
         self.obligation = Some(owed);
         self.restoring = false;
         self.engage_seen = false;
-        match world.set_mute(pin, !muted) {
+        self.tokens += 1;
+        let token = self.tokens;
+        match world.set_mute(pin, !muted, token) {
             Ok(()) => {
                 self.hold = Some(at);
-                self.expect(pin, !muted, false, world);
+                self.expect(pin, !muted, false, token, world);
             }
             Err(why) => {
                 // certainly not sent, so nothing is owed
@@ -308,59 +320,51 @@ impl Machine {
             return;
         };
         self.hold = None;
-        match world.muted(owed.pin) {
-            None => self.void(Problem::NodeGone, world),
-            Some(muted) if muted == owed.was_muted && self.engage_seen => self.finish(world),
-            Some(_) => {
+        if !world.exists(owed.pin) {
+            return self.void(Problem::NodeGone, world);
+        }
+        if world.muted(owed.pin) == Some(owed.was_muted) && self.engage_seen && !self.restoring {
+            return self.finish(world);
+        }
+        self.tokens += 1;
+        let token = self.tokens;
+        match world.set_mute(owed.pin, owed.was_muted, token) {
+            Ok(()) => {
                 self.restoring = true;
-                match world.set_mute(owed.pin, owed.was_muted) {
-                    Ok(()) => self.expect(owed.pin, owed.was_muted, true, world),
-                    // still owed: the next press, or a late confirmation, ends it
-                    Err(why) => world.problem(Problem::RestoreFailed(why)),
-                }
+                self.expect(owed.pin, owed.was_muted, true, token, world);
             }
+            // Still owed, including when params are temporarily unavailable.
+            // Do not discard a previous in-flight request on a failed retry.
+            Err(why) => world.problem(Problem::RestoreFailed(why)),
         }
     }
 
-    fn observed(&mut self, pin: Pin, muted: bool, world: &mut impl World) {
-        if self
-            .obligation
-            .is_some_and(|owed| owed.pin == pin && owed.was_muted != muted)
-        {
-            self.engage_seen = true;
-        }
-        if self
-            .pending
-            .is_some_and(|pending| pending.pin == pin && pending.target == muted)
-        {
-            self.pending = None;
-        }
-        if self.restoring
-            && self
-                .obligation
-                .is_some_and(|owed| owed.pin == pin && owed.was_muted == muted)
-        {
+    fn confirmed(&mut self, token: u64, pin: Pin, muted: bool, world: &mut impl World) {
+        let Some(pending) = self.pending.filter(|pending| {
+            pending.token == token && pending.pin == pin && pending.target == muted
+        }) else {
+            return;
+        };
+        self.pending = None;
+        if pending.restore {
             self.finish(world);
+        } else {
+            self.engage_seen = true;
         }
     }
 
     fn recover(&mut self, saved: Obligation, server: u32, world: &mut impl World) {
-        // its run's connection is closed: nothing of it is still in flight
-        self.engage_seen = true;
         if saved.pin.server != server {
             return self.void(Problem::Stale("PipeWire restarted since"), world);
         }
-        match world.muted(saved.pin) {
-            None => self.void(Problem::Stale("its mic is gone"), world),
-            Some(muted) if muted == saved.was_muted => {
-                self.obligation = Some(saved);
-                self.finish(world);
-            }
-            Some(_) => {
-                self.obligation = Some(saved);
-                self.restore(world);
-            }
+        if !world.exists(saved.pin) {
+            return self.void(Problem::Stale("its mic is gone"), world);
         }
+        self.obligation = Some(saved);
+        // Startup snapshots do not order writes queued on the old connection.
+        // Send our own restore and require its fresh, request-scoped readback.
+        self.engage_seen = false;
+        self.restore(world);
     }
 
     /// The cycle is over and the mic is where the user left it.
@@ -389,13 +393,20 @@ impl Machine {
         self.engage_seen = true;
     }
 
-    fn expect(&mut self, pin: Pin, target: bool, restore: bool, world: &mut impl World) {
-        self.tokens += 1;
+    fn expect(
+        &mut self,
+        pin: Pin,
+        target: bool,
+        restore: bool,
+        token: u64,
+        world: &mut impl World,
+    ) {
         self.pending = Some(Pending {
-            token: self.tokens,
+            token,
             pin,
             target,
             restore,
+            expired: false,
         });
         world.arm(self.tokens, CONFIRM);
     }
@@ -418,8 +429,8 @@ pub mod tests {
     /// What [`set_mute`] does to the fake server.
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub enum Apply {
-        /// Applies at once; the change, if any, shows up at [`Fake::settle`].
-        /// As in PipeWire, setting what already is shows nothing.
+        /// Applies now; the barrier and readback arrive at [`Fake::settle`],
+        /// including when the value was already equal.
         Normally,
         /// Applies only at [`Fake::settle`], in order, each change showing
         /// as it lands: a message still on its way.
@@ -435,14 +446,17 @@ pub mod tests {
     /// A fake PipeWire, store, clock and notifier.
     pub struct Fake {
         pub nodes: Vec<(Pin, bool)>,
+        /// Client observations deliberately differ from the fake server.
+        pub observed: Vec<(Pin, bool)>,
+        pub lock: Lock,
         pub default: Pin,
         pub saved: Option<Obligation>,
         pub save_fails: bool,
         pub apply: Apply,
-        /// Changes applied but not yet observed.
-        pub unseen: Vec<(Pin, bool)>,
-        /// Changes sent but not yet applied.
-        pub sent: Vec<(Pin, bool)>,
+        /// Request-scoped readbacks not yet delivered.
+        pub unseen: Vec<(u64, Pin, bool)>,
+        /// Writes not yet processed by the server.
+        pub sent: Vec<(u64, Pin, bool)>,
         pub armed: Vec<u64>,
         pub problems: Vec<Problem>,
         pub recoveries: usize,
@@ -454,6 +468,8 @@ pub mod tests {
         pub fn new(muted: bool) -> Self {
             Fake {
                 nodes: vec![(MIC, muted)],
+                observed: vec![(MIC, muted)],
+                lock: Lock::Unlocked,
                 default: MIC,
                 saved: None,
                 save_fails: false,
@@ -479,22 +495,34 @@ pub mod tests {
             }
         }
 
-        /// The mute key, or any client but talkd: changed and observed.
-        pub fn external(&mut self, machine: &mut Machine, pin: Pin, muted: bool) {
-            self.put(pin, muted);
-            machine.handle(Event::Observed(pin, muted), self);
+        fn observe(&mut self, pin: Pin, muted: bool) {
+            if let Some(entry) = self.observed.iter_mut().find(|(node, _)| *node == pin) {
+                entry.1 = muted;
+            } else {
+                self.observed.push((pin, muted));
+            }
         }
 
-        /// Delivers what is on its way: param events of applied changes, then
-        /// the changes still to land.
+        /// Another client changed the server; a fresh snapshot then arrived.
+        pub fn external(&mut self, pin: Pin, muted: bool) {
+            self.put(pin, muted);
+            self.observe(pin, muted);
+        }
+
+        pub fn confirm(&mut self, machine: &mut Machine, token: u64, pin: Pin, muted: bool) {
+            self.observe(pin, muted);
+            machine.handle(Event::Confirmed(token, pin, muted), self);
+        }
+
+        /// Delivers the queued barriers/readbacks, never speculative state.
         pub fn settle(&mut self, machine: &mut Machine) {
-            for (pin, muted) in std::mem::take(&mut self.unseen) {
-                machine.handle(Event::Observed(pin, muted), self);
+            for (token, pin, muted) in std::mem::take(&mut self.unseen) {
+                self.confirm(machine, token, pin, muted);
             }
-            for (pin, muted) in std::mem::take(&mut self.sent) {
-                if self.get(pin).is_some_and(|now| now != muted) {
+            for (token, pin, muted) in std::mem::take(&mut self.sent) {
+                if self.get(pin).is_some() {
                     self.put(pin, muted);
-                    machine.handle(Event::Observed(pin, muted), self);
+                    self.confirm(machine, token, pin, muted);
                 }
             }
         }
@@ -508,25 +536,34 @@ pub mod tests {
 
     impl World for Fake {
         fn default_source(&self) -> Option<(Pin, bool)> {
-            self.get(self.default).map(|muted| (self.default, muted))
+            self.muted(self.default).map(|muted| (self.default, muted))
+        }
+
+        fn lock_state(&mut self) -> Lock {
+            self.lock
+        }
+
+        fn exists(&self, pin: Pin) -> bool {
+            self.get(pin).is_some()
         }
 
         fn muted(&self, pin: Pin) -> Option<bool> {
-            self.get(pin)
+            self.get(pin)?;
+            self.observed
+                .iter()
+                .find_map(|&(node, muted)| (node == pin).then_some(muted))
         }
 
-        fn set_mute(&mut self, pin: Pin, muted: bool) -> Result<(), String> {
+        fn set_mute(&mut self, pin: Pin, muted: bool, token: u64) -> Result<(), String> {
             self.saved_at_set.push(self.saved);
             match self.apply {
                 Apply::Refuse => return Err("not connected".to_owned()),
                 Apply::Drop => {}
                 Apply::Normally => {
-                    if self.get(pin).is_some_and(|now| now != muted) {
-                        self.put(pin, muted);
-                        self.unseen.push((pin, muted));
-                    }
+                    self.put(pin, muted);
+                    self.unseen.push((token, pin, muted));
                 }
-                Apply::Later => self.sent.push((pin, muted)),
+                Apply::Later => self.sent.push((token, pin, muted)),
                 Apply::Silently => self.put(pin, muted),
             }
             Ok(())
@@ -570,7 +607,6 @@ pub mod tests {
         let mut fake = Fake::new(muted);
         let mut machine = Machine::new(None);
         machine.handle(Event::ServerUp(SERVER), &mut fake);
-        machine.handle(Event::Lock(Lock::Unlocked), &mut fake);
         (machine, fake)
     }
 
@@ -667,7 +703,7 @@ pub mod tests {
                 &mut fake,
                 &[Event::Press(ms(1_000)), Event::Release(ms(1_100))],
             );
-            fake.external(&mut machine, MIC, start); // the mic mute key
+            fake.external(MIC, start); // the mic mute key
             assert_eq!(
                 fake.saved.map(|owed| owed.was_muted),
                 Some(start),
@@ -685,7 +721,7 @@ pub mod tests {
     fn a_hold_undone_outside_is_not_restored_over() {
         let (mut machine, mut fake) = ready(MUTED);
         run(&mut machine, &mut fake, &[Event::Press(ms(1_000))]);
-        fake.external(&mut machine, MIC, MUTED);
+        fake.external(MIC, MUTED);
         let sets = fake.saved_at_set.len();
         run(&mut machine, &mut fake, &[Event::Release(ms(3_000))]);
         assert_eq!(fake.saved_at_set.len(), sets, "no set-mute");
@@ -696,6 +732,7 @@ pub mod tests {
     fn a_cycle_stays_on_its_node_and_the_next_one_takes_the_new_default() {
         let (mut machine, mut fake) = ready(MUTED);
         fake.nodes.push((HEADSET, MUTED));
+        fake.observe(HEADSET, MUTED);
         run(
             &mut machine,
             &mut fake,
@@ -746,6 +783,7 @@ pub mod tests {
             MUTED,
         )];
         fake.default = fake.nodes[0].0;
+        fake.observed = fake.nodes.clone();
         run(&mut machine, &mut fake, &[Event::Press(ms(3_000))]);
         assert_eq!(fake.nodes[0].1, LIVE);
     }
@@ -756,12 +794,9 @@ pub mod tests {
         run(
             &mut machine,
             &mut fake,
-            &[
-                Event::Press(ms(1_000)),
-                Event::Release(ms(1_100)),
-                Event::Lock(Lock::Locked),
-            ],
+            &[Event::Press(ms(1_000)), Event::Release(ms(1_100))],
         );
+        fake.lock = Lock::Locked;
         assert_eq!(fake.get(MIC), Some(LIVE), "latched before the lock");
         run(&mut machine, &mut fake, &[Event::Press(ms(5_000))]);
         assert_eq!(fake.get(MIC), Some(MUTED), "ended while locked");
@@ -773,14 +808,14 @@ pub mod tests {
         assert_eq!(fake.get(MIC), Some(MUTED), "but not started");
         assert_eq!(fake.problems, [Problem::Locked(Lock::Locked)]);
         // a latch put back outside while locked: the press ends it, no more
-        run(&mut machine, &mut fake, &[Event::Lock(Lock::Unlocked)]);
+        fake.lock = Lock::Unlocked;
         run(
             &mut machine,
             &mut fake,
             &[Event::Press(ms(7_000)), Event::Release(ms(7_100))],
         );
-        run(&mut machine, &mut fake, &[Event::Lock(Lock::Unknown)]);
-        fake.external(&mut machine, MIC, MUTED);
+        fake.lock = Lock::Unknown;
+        fake.external(MIC, MUTED);
         run(&mut machine, &mut fake, &[Event::Press(ms(8_000))]);
         assert_eq!(fake.get(MIC), Some(MUTED));
         assert_eq!(fake.saved, None);
@@ -864,7 +899,8 @@ pub mod tests {
         run(&mut machine, &mut fake, &[Event::Release(ms(3_000))]);
         fake.expire(&mut machine);
         assert!(fake.saved.is_some());
-        machine.handle(Event::Observed(MIC, MUTED), &mut fake);
+        let token = machine.pending.unwrap().token;
+        fake.confirm(&mut machine, token, MIC, MUTED);
         assert_eq!(fake.saved, None);
         assert_eq!(fake.recoveries, 1);
     }
@@ -902,12 +938,12 @@ pub mod tests {
         assert_eq!(fake.get(MIC), Some(MUTED));
         assert_eq!(fake.saved, None);
 
-        // already put back: just cleared
+        // Already put back: fresh readback still completes recovery.
         let mut fake = Fake::new(MUTED);
         fake.saved = Some(owed);
         let mut machine = Machine::new(Some(owed));
         run(&mut machine, &mut fake, &[Event::ServerUp(SERVER)]);
-        assert_eq!((fake.saved, fake.saved_at_set.len()), (None, 0));
+        assert_eq!(fake.saved, None);
 
         // another server, or the node gone: dropped, with a report
         for (server, nodes) in [(SERVER + 1, vec![(MIC, LIVE)]), (SERVER, Vec::new())] {
@@ -955,7 +991,7 @@ pub mod tests {
         machine.handle(Event::DeviceLost, &mut fake);
         assert_eq!(
             fake.sent,
-            [(MIC, LIVE), (MIC, MUTED)],
+            [(1, MIC, LIVE), (2, MIC, MUTED)],
             "restore sent behind it"
         );
         assert!(fake.saved.is_some());
@@ -969,7 +1005,7 @@ pub mod tests {
         machine.handle(Event::Press(ms(1_200)), &mut fake);
         assert_eq!(
             fake.sent,
-            [(MIC, LIVE), (MIC, MUTED)],
+            [(1, MIC, LIVE), (2, MIC, MUTED)],
             "a restore, not a fresh flip"
         );
         fake.settle(&mut machine);
@@ -977,24 +1013,19 @@ pub mod tests {
     }
 
     #[test]
-    fn a_dropped_engage_is_restored_anyway_reported_then_released() {
+    fn a_dropped_flip_can_be_restored_and_confirmed_without_a_value_change() {
         let (mut machine, mut fake) = ready(MUTED);
         fake.apply = Apply::Drop;
         run(&mut machine, &mut fake, &[Event::Press(ms(1_000))]);
         fake.expire(&mut machine);
         fake.apply = Apply::Normally;
         run(&mut machine, &mut fake, &[Event::Release(ms(3_000))]);
-        assert_eq!(fake.saved_at_set.len(), 2, "the restore is sent");
-        fake.expire(&mut machine); // nothing changes, so nothing confirms it
+        assert_eq!(fake.get(MIC), Some(MUTED));
         assert_eq!(
-            fake.problems,
-            [Problem::EngageUnconfirmed, Problem::RestoreUnconfirmed]
+            fake.saved, None,
+            "fresh readback proves an unchanged restore too"
         );
-        assert!(fake.saved.is_some(), "kept, reported");
-        // the next press sees it settled and starts afresh
-        run(&mut machine, &mut fake, &[Event::Press(ms(9_000))]);
-        assert_eq!(fake.get(MIC), Some(LIVE));
-        assert_eq!(fake.recoveries, 1);
+        assert_eq!(fake.problems, [Problem::EngageUnconfirmed]);
     }
 
     #[test]
@@ -1007,6 +1038,130 @@ pub mod tests {
         fake.settle(&mut machine);
         assert!(machine.settled());
         assert_eq!((fake.get(MIC), fake.saved), (Some(MUTED), None));
+    }
+
+    #[test]
+    fn a_restore_deadline_never_proves_a_queued_flip_finished() {
+        for stop in [true, false] {
+            let (mut machine, mut fake) = ready(MUTED);
+            fake.apply = Apply::Later;
+            machine.handle(Event::Press(ms(1_000)), &mut fake);
+            machine.handle(Event::Release(ms(2_000)), &mut fake);
+            fake.expire(&mut machine);
+            fake.lock = Lock::Locked;
+            machine.handle(
+                if stop {
+                    Event::Stop
+                } else {
+                    Event::Press(ms(3_000))
+                },
+                &mut fake,
+            );
+            assert_eq!(
+                fake.saved,
+                Some(Obligation {
+                    pin: MIC,
+                    was_muted: MUTED
+                })
+            );
+            assert_eq!(
+                fake.get(MIC),
+                Some(MUTED),
+                "the old observation proves nothing"
+            );
+            fake.settle(&mut machine);
+            assert_eq!(
+                fake.saved, None,
+                "only request-scoped readback completes it"
+            );
+            assert_eq!(fake.get(MIC), Some(MUTED));
+        }
+    }
+
+    #[test]
+    fn stale_or_mismatched_confirmations_cannot_clear_a_restore() {
+        let (mut machine, mut fake) = ready(MUTED);
+        fake.apply = Apply::Later;
+        machine.handle(Event::Press(ms(1_000)), &mut fake);
+        let flip = machine.pending.unwrap().token;
+        machine.handle(Event::Release(ms(2_000)), &mut fake);
+        let restore = machine.pending.unwrap().token;
+        for event in [
+            Event::Confirmed(flip, MIC, MUTED),
+            Event::Confirmed(restore, HEADSET, MUTED),
+            Event::Confirmed(restore, MIC, LIVE),
+        ] {
+            machine.handle(event, &mut fake);
+            assert!(fake.saved.is_some());
+        }
+        fake.expire(&mut machine);
+        machine.handle(Event::Confirmed(restore, MIC, MUTED), &mut fake);
+        assert_eq!(
+            fake.saved, None,
+            "a late but fresh matching readback is sufficient"
+        );
+    }
+
+    #[test]
+    fn silent_server_changes_are_not_client_observations() {
+        let (mut machine, mut fake) = ready(MUTED);
+        fake.apply = Apply::Silently;
+        machine.handle(Event::Press(ms(1_000)), &mut fake);
+        assert_eq!(fake.get(MIC), Some(LIVE), "server applied it");
+        assert_eq!(
+            fake.muted(MIC),
+            Some(MUTED),
+            "client has no fresh observation"
+        );
+        machine.handle(Event::Release(ms(2_000)), &mut fake);
+        fake.expire(&mut machine);
+        assert!(
+            fake.saved.is_some(),
+            "neither a cached value nor timeout confirms"
+        );
+    }
+
+    #[test]
+    fn reader_overflow_never_turns_an_uncertain_hold_into_a_latch() {
+        use crate::input::{self, Key};
+        fn raw(kind: u16, code: u16, value: i32, at: u64) -> evdev::InputEvent {
+            nix::libc::input_event {
+                time: nix::libc::timeval {
+                    tv_sec: (at / 1000) as _,
+                    tv_usec: ((at % 1000) * 1000) as _,
+                },
+                type_: kind,
+                code,
+                value,
+            }
+            .into()
+        }
+        for seen_press in [false, true] {
+            let (mut machine, mut fake) = ready(MUTED);
+            let mut reader = input::F13::default();
+            let mut feed = |reader: &mut input::F13, events: Vec<evdev::InputEvent>| {
+                input::read_batch(reader, events.into_iter(), |key| {
+                    let event = match key {
+                        Key::Press(at) => Event::Press(at),
+                        Key::Release(at) => Event::Release(at),
+                        Key::Lost => Event::DeviceLost,
+                    };
+                    machine.handle(event, &mut fake);
+                    fake.settle(&mut machine);
+                })
+            };
+            if seen_press {
+                feed(&mut reader, vec![raw(1, 183, 1, 1_000)]);
+            }
+            assert!(feed(
+                &mut reader,
+                vec![raw(0, 3, 0, 2_000), raw(0, 0, 0, 2_000)]
+            ));
+            reader.resync(true); // physically held for a second, not a new press
+            feed(&mut reader, vec![raw(1, 183, 0, 2_020)]);
+            assert_eq!(fake.get(MIC), Some(MUTED));
+            assert_eq!(fake.saved, None);
+        }
     }
 
     #[test]

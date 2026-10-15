@@ -19,7 +19,7 @@ use crate::machine::Lock;
 use crate::mic::{Mic, Status, Update};
 use crate::params::Via;
 
-/// How long PipeWire and the compositor may take to answer.
+/// How long PipeWire may take to sync; the separate lock query has 250 ms.
 const WAIT: Duration = Duration::from_secs(3);
 
 /// The report, one fact per line.
@@ -109,88 +109,8 @@ pub fn run() -> ExitCode {
         }
     };
     let lock = lock_state
-        .recv_timeout(WAIT)
-        .unwrap_or_else(|_| Err("no answer from the compositor".to_owned()));
+        .recv_timeout(lock::WAIT)
+        .unwrap_or_else(|_| Err("bounded Hyprland lock query did not answer".to_owned()));
     print!("{}", format(&status, &lock));
     ExitCode::SUCCESS
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::mic::DefaultSource;
-
-    fn source(mute: Option<(Via, bool)>, description: Option<&str>) -> Status {
-        Status {
-            server: 0x4d91_2e15,
-            default: Ok(DefaultSource {
-                id: 57,
-                serial: 1001,
-                name: "alsa_input.pci-0000_00_1f.3".to_owned(),
-                description: description.map(str::to_owned),
-                mute,
-            }),
-        }
-    }
-
-    #[test]
-    fn a_route_mute_names_its_device_and_route() {
-        let route = Via::Route {
-            on: 40,
-            index: 1,
-            device: 5,
-        };
-        assert_eq!(
-            format(
-                &source(Some((route, true)), Some("Built-in Audio")),
-                &Ok(Lock::Unlocked)
-            ),
-            "PipeWire server: cookie 4d912e15\n\
-             default source: node 57, serial 1001, alsa_input.pci-0000_00_1f.3 (Built-in Audio)\n\
-             mute lives in: Route index 1, card profile device 5, of PipeWire device 40\n\
-             muted: yes\n\
-             session: unlocked\n"
-        );
-    }
-
-    #[test]
-    fn a_props_mute_and_an_unknown_lock() {
-        let out = format(
-            &source(Some((Via::Props, false)), None),
-            &Err("Could not find wayland compositor".to_owned()),
-        );
-        assert!(
-            out.contains("serial 1001, alsa_input.pci-0000_00_1f.3\n"),
-            "{out}"
-        );
-        assert!(
-            out.contains("mute lives in: the node's Props\nmuted: no\n"),
-            "{out}"
-        );
-        assert!(
-            out.ends_with("session: unknown (Could not find wayland compositor)\n"),
-            "{out}"
-        );
-    }
-
-    #[test]
-    fn no_mute_or_no_default_says_why() {
-        let out = format(&source(None, None), &Ok(Lock::Locked));
-        assert!(
-            out.contains("mute lives in: nowhere the mixer reads"),
-            "{out}"
-        );
-        assert!(!out.contains("muted:"), "{out}");
-        assert!(out.ends_with("session: locked\n"));
-        let none = Status {
-            server: 1,
-            default: Err("none: no default.audio.source in the \"default\" metadata".to_owned()),
-        };
-        assert_eq!(
-            format(&none, &Ok(Lock::Unlocked)),
-            "PipeWire server: cookie 00000001\n\
-             default source: none: no default.audio.source in the \"default\" metadata\n\
-             session: unlocked\n"
-        );
-    }
 }

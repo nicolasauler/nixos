@@ -12,7 +12,7 @@
     version = "0.1.0";
     src = lib.fileset.toSource {
       root = ./.;
-      fileset = lib.fileset.unions [./Cargo.toml ./Cargo.lock ./src ./protocols];
+      fileset = lib.fileset.unions [./Cargo.toml ./Cargo.lock ./src];
     };
     cargoLock.lockFile = ./Cargo.lock;
     nativeBuildInputs = [pkgs.pkg-config pkgs.rustPlatform.bindgenHook pkgs.makeWrapper];
@@ -27,6 +27,8 @@
     meta.mainProgram = "talkd";
   };
 in {
+  home.packages = [talkd];
+
   # Push-to-talk on F13, a Voyager key set in Oryx: hold to invert the mic's
   # mute, tap to latch it until the next press; while the session is locked a
   # press only ends a cycle (src/main.rs). talkd reads F13 from the Voyager's
@@ -50,11 +52,12 @@ in {
     Install.WantedBy = ["graphical-session.target"];
   };
 
-  # F13 still reaches Hyprland, as XF86Tools (xkb's evdev keymap). Swallow it
-  # so no focused app acts on a key that means "mic" here; auto_consuming
-  # keeps the bind from claiming keys typed while F13 is held, and locked
-  # keeps it swallowed under hyprlock too.
+  # F13 still reaches Hyprland, as XF86Tools (xkb's evdev keymap). While this
+  # bind is active, swallow it with any modifiers so focused apps do not act
+  # on the mic key. Shortcut inhibitors or input capture can bypass the bind.
+  # auto_consuming leaves keys typed while F13 is held alone; locked keeps
+  # the bind active under hyprlock too.
   wayland.windowManager.hyprland.extraLuaFiles.talkd = ''
-    hl.bind("code:191", hl.dsp.no_op(), { locked = true, auto_consuming = true })
+    hl.bind("code:191", hl.dsp.no_op(), { locked = true, auto_consuming = true, ignore_mods = true })
   '';
 }

@@ -48,7 +48,6 @@ const NOTIFY: Duration = Duration::from_secs(5);
 /// What the other threads hand the main loop.
 enum Msg {
     Key(input::Key),
-    Lock(Lock),
     Wake(Wake),
     /// notify-send's outcome for a message: delivered or not.
     Sent(String, bool),
@@ -72,16 +71,17 @@ struct Daemon {
     stopping: bool,
     /// Reaching PipeWire failed, and that was logged.
     unreachable: bool,
-    lock: Option<Lock>,
+    lock_error: Option<String>,
 }
 
 /// The machine's view of the daemon.
 struct Effects<'a> {
-    mic: &'a Mic,
+    mic: &'a mut Mic,
     store: &'a Store,
     notices: &'a mut Notices,
     timers: &'a mpsc::Sender<(Wake, Instant)>,
     notifier: &'a mpsc::Sender<String>,
+    lock_error: &'a mut Option<String>,
 }
 
 impl Effects<'_> {
@@ -101,12 +101,32 @@ impl World for Effects<'_> {
         self.mic.default_source()
     }
 
+    fn lock_state(&mut self) -> Lock {
+        match lock::now() {
+            Ok(state) => {
+                *self.lock_error = None;
+                state
+            }
+            Err(error) => {
+                if self.lock_error.as_ref() != Some(&error) {
+                    eprintln!("lock: {error}; new cycles are disabled");
+                    *self.lock_error = Some(error);
+                }
+                Lock::Unknown
+            }
+        }
+    }
+
+    fn exists(&self, pin: Pin) -> bool {
+        self.mic.exists(pin)
+    }
+
     fn muted(&self, pin: Pin) -> Option<bool> {
         self.mic.muted(pin)
     }
 
-    fn set_mute(&mut self, pin: Pin, muted: bool) -> Result<(), String> {
-        self.mic.set_mute(pin, muted)
+    fn set_mute(&mut self, pin: Pin, muted: bool, token: u64) -> Result<(), String> {
+        self.mic.set_mute(pin, muted, token)
     }
 
     fn save(&mut self, obligation: &Obligation) -> Result<(), String> {
@@ -136,11 +156,12 @@ impl Daemon {
     /// The machine, and the rest as its world.
     fn split(&mut self) -> (&mut Machine, Effects<'_>) {
         let effects = Effects {
-            mic: &self.mic,
+            mic: &mut self.mic,
             store: &self.store,
             notices: &mut self.notices,
             timers: &self.timers,
             notifier: &self.notifier,
+            lock_error: &mut self.lock_error,
         };
         (&mut self.machine, effects)
     }
@@ -171,7 +192,9 @@ impl Daemon {
                     self.unreachable = false;
                     self.feed(Event::ServerUp(server));
                 }
-                MicEvent::Observed(pin, muted) => self.feed(Event::Observed(pin, muted)),
+                MicEvent::Confirmed(token, pin, muted) => {
+                    self.feed(Event::Confirmed(token, pin, muted))
+                }
                 MicEvent::Gone(pin) => self.feed(Event::NodeGone(pin)),
                 MicEvent::Lost(why) => {
                     eprintln!("mic: {why}; reconnecting");
@@ -199,13 +222,6 @@ impl Daemon {
             Msg::Key(input::Key::Press(at)) => self.feed(Event::Press(at)),
             Msg::Key(input::Key::Release(at)) => self.feed(Event::Release(at)),
             Msg::Key(input::Key::Lost) => self.feed(Event::DeviceLost),
-            Msg::Lock(lock) => {
-                if self.lock != Some(lock) {
-                    eprintln!("lock: {lock:?}");
-                    self.lock = Some(lock);
-                }
-                self.feed(Event::Lock(lock));
-            }
             Msg::Wake(Wake::Deadline(token)) => self.feed(Event::Deadline(token)),
             Msg::Wake(Wake::Reconnect) => self.reconnect(),
             Msg::Wake(Wake::GiveUp) => {
@@ -365,12 +381,6 @@ fn main() -> ExitCode {
                 let _ = send.send(Msg::Key(key));
             })
         });
-        let send = sender;
-        thread::spawn(move || {
-            lock::run(move |lock| {
-                let _ = send.send(Msg::Lock(lock));
-            })
-        });
     }
 
     let daemon = Rc::new_cyclic(|weak: &Weak<RefCell<Daemon>>| {
@@ -390,7 +400,7 @@ fn main() -> ExitCode {
             main_loop: main_loop.downgrade(),
             stopping: false,
             unreachable: false,
-            lock: None,
+            lock_error: None,
         })
     });
     {
