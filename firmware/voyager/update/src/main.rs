@@ -575,7 +575,7 @@ fn run() -> Result<(), String> {
         "{layout}: {current} -> {} ({})",
         latest.hash_id, latest.title
     );
-    println!("next: nix build .#voyager-firmware && nix run nixpkgs#zapp -- flash result/*.bin");
+    println!("next: nix build .#voyager-firmware; after review, flash its local .bin with: env NIXPKGS_ALLOW_UNFREE=1 nix run --impure nixpkgs#zapp -- flash result/*.bin");
     Ok(())
 }
 

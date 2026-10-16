@@ -61,10 +61,11 @@ muted gives hold-to-talk; unmuted gives hold-to-mute. Each F14 press uses the
 current default input, including a newly selected headset. F14 is disabled
 while the screen is locked; an existing F13 cycle can still finish.
 
-The expected Oryx assignments are F13 on the base top-right Caps Word position,
-and F14 at the same physical position on Brd+Sys layer 3 (hold Tab). F11 stays
-at that position on sym layer 2 (hold Enter). These are firmware assignments:
-changing or switching this Nix configuration does not flash the keyboard.
+The accepted Oryx revision **JqpmQ/EeKlbD** assigns F13 to base top-right
+(formerly Caps Word). F14 is **hold Enter, press AltGr**; the owner chose this
+instead of Tab+top-right, which falls through to F13. The symbol layer also has
+F13 on minus and F15–F17 on slash/period/comma; F1–F12 are unchanged.
+Changing or switching this Nix configuration does not flash the keyboard.
 `talkd status` inspects the audio/lock setup without changing it.
 
 ## Secrets
@@ -126,10 +127,10 @@ Enter closes it when a result is selected. Neither executes an action, and
 accepting a row emits no row text. Auto-select is disabled so a single match
 stays visible. Symbol searches, including a literal `-`, are not negation filters.
 
-`voyager-help` reads the connected Voyager's USB **layout/revision** metadata,
-then generates the reference from that exact Oryx revision—not the latest saved
-layout. It reads no input events or raw-HID devices and runs only when opened.
-There is no hand-maintained list of your key positions or proposed mappings.
+`voyager-help` reads the connected Voyager's USB **layout/revision and product**
+metadata, then generates the reference from that exact Oryx revision—not the
+latest saved layout. It reads no input events or raw-HID devices and runs only
+when opened. There is no hand-maintained list of user key positions.
 
 The first lookup of a revision needs network access. Its validated Oryx response
 is cached in `$XDG_CACHE_HOME/voyager-help/` (normally `~/.cache/voyager-help/`);
@@ -148,10 +149,66 @@ in the helper, but ordinary key positions and layer paths come from Oryx.
 Oryx custom labels such as “Prev Tab” are searchable aliases, not assumed
 executable semantics.
 
-**USB revision is not firmware attestation.** Custom QMK patches can preserve an
-Oryx revision string while changing behavior. Those changes cannot be recovered
-from Oryx's data; the view warns about that boundary. Keep custom-build identity
-and annotations aligned when introducing such firmware, including PR #33.
+Custom builds from `firmware/voyager` keep the Oryx serial and add
+`Voyager nic-swap-v1:<source fingerprint>` as the USB product. The same Nix
+derivation produces a reference profile, embedded in the matching helper.
+It binds the layout/revision, source pins and bytes, layer parameters and
+Voyager geometry. Selecting profile metadata does not build the firmware.
+
+For a recognized custom build, the helper applies Swap Hands before layer
+lookup and shows normal and mirrored recipes. It tracks physical holds and
+their mapped press positions to avoid recommending QMK cache collisions.
+Mirror/nav pedal routes require the matching daemon. Releasing only mirror
+preserves unrelated keyboard layers; ambiguous combined-pedal release paths
+are not used when separate/coalesced releases could produce different layers.
+
+Stock `Voyager` product metadata keeps the ordinary Oryx interpretation. Unknown
+custom products or mismatched serial/profile data are refused rather than
+silently interpreted as stock. **This is source identification, not hardware
+attestation:** a device can copy descriptors, and an unmarked custom build can
+still look stock. Arbitrary new C behavior also needs an updated semantic model.
+
+## Voyager firmware build and flash
+
+Oryx remains the editor. Save and compile there, then from the firmware checkout:
+
+```sh
+nix run .#voyager-layout-update
+nix build .#voyager-firmware --out-link result-voyager
+```
+
+Review the fetched revision before flashing. Layer 6 must be entirely
+transparent; it activates the custom Swap Hands module. Layer 7 is an alias,
+not an Oryx layer: mirror plus navigation pedals request 7, which the hook
+expands to navigation 4 plus mirror 6. Mouse 5 is not combined by the pedals.
+The accepted layout puts navigation Shift on Tab and GUI/Ctrl/Alt on A/R/S,
+keeps mouse 5 unchanged, and uses equals/quote as keyboard mirror holds.
+
+After review, outside a call with all keys/pedals released:
+
+```sh
+systemctl --user stop foot-pedal talkd
+env NIXPKGS_ALLOW_UNFREE=1 nix run --impure nixpkgs#zapp -- flash result-voyager/*-swap.bin
+systemctl --user start foot-pedal talkd
+```
+
+Press the physical reset button when Zapp requests bootloader mode; wait for
+success before the last command. Use the local custom binary, not an Oryx URL
+or `zapp update`, which would install stock firmware. Keep the known-good stock
+binary and laptop keyboard available for recovery.
+
+**Flash before activating the alias-7 daemon.** Verify ordinary keys, mirror
+holds and F13/F14 first; merge only after the owner's explicit go, then rebuild
+and test mirror+nav together. Until that switch, use the matching preview
+`voyager-help` package for custom-firmware lookup, not the older installed helper.
+Rolling back NixOS does not reflash the keyboard; restoring stock firmware also
+requires stopping or rolling back the alias-7 daemon.
+
+Accepted QMK boundaries remain: wait for a layer-tap mirror hold to resolve
+(about 200 ms) before typing; keyboard/pedal layer bits are shared; do not hold
+a key through a mirror transition and then press its counterpart. For a stuck
+modifier, return to unmirrored base, hold its owning mod-tap past the tapping
+term, then release it.
 
 ## CI
 

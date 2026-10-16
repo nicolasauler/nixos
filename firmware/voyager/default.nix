@@ -30,16 +30,95 @@
   # oryx/oryx.json). Oryx does not publish the exact commit it builds with.
   # Plus the submodules a Voyager build reads; the fork's .gitmodules also
   # pins pico-sdk, lvgl, vusb and googletest: other MCUs and tests.
-  github = owner: repo: rev: hash: fetchFromGitHub {inherit owner repo rev hash;};
-  qmkFirmware = github "zsa" "qmk_firmware" "93b2b9ec3368f86c5eb5a2e3f934049f8daef885" "sha256-YMdZSfexFhynEBOMkawD35u6acVX6PnRoRXvdw28jfc=";
-  submodules = {
-    "lib/chibios" = github "qmk" "ChibiOS" "be44b3305f9a9fe5f2f49a4e7b978db322dc463e" "sha256-e0K+zXbTbfh/kP7JbTS624gGhtrKSg56yOfkq2salA8=";
-    "lib/chibios-contrib" = github "qmk" "ChibiOS-Contrib" "77cb0a4f7589f89e724f5e6ecb1d76d514dd1212" "sha256-DHizIK4XWe3wnYC/MaeoQu+idL2lXApu7BxzcbchdYY=";
+  githubPin = owner: repo: rev: hash: {inherit owner repo rev hash;};
+  qmkPin = githubPin "zsa" "qmk_firmware" "93b2b9ec3368f86c5eb5a2e3f934049f8daef885" "sha256-YMdZSfexFhynEBOMkawD35u6acVX6PnRoRXvdw28jfc=";
+  submodulePins = {
+    "lib/chibios" = githubPin "qmk" "ChibiOS" "be44b3305f9a9fe5f2f49a4e7b978db322dc463e" "sha256-e0K+zXbTbfh/kP7JbTS624gGhtrKSg56yOfkq2salA8=";
+    "lib/chibios-contrib" = githubPin "qmk" "ChibiOS-Contrib" "77cb0a4f7589f89e724f5e6ecb1d76d514dd1212" "sha256-DHizIK4XWe3wnYC/MaeoQu+idL2lXApu7BxzcbchdYY=";
     # ChibiOS's USB layer includes LUFA's HID class headers (lufa_utils)
-    "lib/lufa" = github "qmk" "lufa" "549b97320d515bfca2f95c145a67bd13be968faa" "sha256-BCaLSOn9ksj0+gYNdiTkZqrgKbGEbWNxnxrh3TOpsOY=";
-    "lib/printf" = github "qmk" "printf" "c2e3b4e10d281e7f0f694d3ecbd9f320977288cc" "sha256-RgeQ1Hg1j9DF4C2N/0Qh6iGAFg8vAY1NdbxFMCcMoGQ=";
-    "modules/zsa" = github "zsa" "qmk_modules" "13890cd7856175de20798689d15ba6a46bf0c5c7" "sha256-QrwXzNAtX7UakXz0jzL5R3vU1zbg6Juk9aO5daZN7+I=";
+    "lib/lufa" = githubPin "qmk" "lufa" "549b97320d515bfca2f95c145a67bd13be968faa" "sha256-BCaLSOn9ksj0+gYNdiTkZqrgKbGEbWNxnxrh3TOpsOY=";
+    "lib/printf" = githubPin "qmk" "printf" "c2e3b4e10d281e7f0f694d3ecbd9f320977288cc" "sha256-RgeQ1Hg1j9DF4C2N/0Qh6iGAFg8vAY1NdbxFMCcMoGQ=";
+    "modules/zsa" = githubPin "zsa" "qmk_modules" "13890cd7856175de20798689d15ba6a46bf0c5c7" "sha256-QrwXzNAtX7UakXz0jzL5R3vU1zbg6Juk9aO5daZN7+I=";
   };
+  qmkFirmware = fetchFromGitHub qmkPin;
+  submodules = lib.mapAttrs (_: fetchFromGitHub) submodulePins;
+
+  # This is a source/semantics identity, not binary or compiler attestation.
+  # Only local bytes and shared source pins are read: selecting this passthru
+  # does not realize QMK, its submodules, or the firmware derivation.
+  profile = {
+    schema = 1;
+    inherit (pin) layout revision;
+    swap_layer = swapOnLayer;
+    nav_layer =
+      if alias
+      then navLayer
+      else null;
+    alias_layer =
+      if alias
+      then mirroredNavLayer
+      else null;
+    # Oryx order is four six-key rows then two thumbs, on each hand.
+    # Compose Voyager's physical-to-matrix geometry with hand_swap_config
+    # (row +/- 6, column 6 - column), then map back to Oryx order.
+    # The inner bottom-row V/K matrix exceptions cancel in this composition.
+    # Geometry is tied to qmkPin; updating that pin requires rechecking it.
+    position_map = lib.genList (i: let
+      right = i >= 26;
+      local =
+        if right
+        then i - 26
+        else i;
+      row = builtins.div local 6;
+      column = local - row * 6;
+      opposite =
+        if right
+        then 0
+        else 26;
+    in
+      opposite
+      + (
+        if local < 24
+        then row * 6 + 5 - column
+        else 49 - local
+      ))
+    52;
+  };
+  sourceInputs = {
+    fingerprint_schema = 1;
+    semantics = "qmk-swap-hands-before-layer-lookup;transparent-swap-layer;alias-to-nav-and-swap;module-first";
+    inherit pin profile;
+    parameters = {inherit swapOnLayer mirroredNavLayer navLayer;};
+    qmk = qmkPin;
+    submodules = submodulePins;
+    sha256 = lib.mapAttrs (_: path: builtins.hashFile "sha256" path) {
+      oryx = ./oryx/oryx.json;
+      keymap_c = ./oryx/keymap.c;
+      config_h = ./oryx/config.h;
+      rules_mk = ./oryx/rules.mk;
+      keymap_json = ./oryx/keymap.json;
+      swap_module_c = ./swap_on_layer/swap_on_layer.c;
+      swap_module_metadata = ./swap_on_layer/qmk_module.json;
+      build_recipe = ./default.nix;
+    };
+  };
+  fingerprint = builtins.hashString "sha256" (builtins.toJSON sourceInputs);
+  product = "Voyager nic-swap-v1:${fingerprint}";
+  referenceProfile =
+    if !swap
+    then null
+    else
+      assert checked;
+      assert alias -> aliasChecked;
+      # USB string descriptors have a one-byte length including two header
+      # bytes. This ASCII tag is 84 UTF-16 code units: 170 bytes total.
+      assert 2 + 2 * builtins.stringLength product <= 255; {
+        inherit product fingerprint;
+        file = writeText "voyager-reference-profile.json" (builtins.toJSON {
+          inherit fingerprint product profile;
+          sources = sourceInputs;
+        });
+      };
 
   # Swap Hands mirrors key positions before any layer lookup, so the layer that
   # turns it on must be fully transparent: the layers below show through,
@@ -251,8 +330,11 @@
   keymapJson =
     writeText "keymap.json" (builtins.toJSON (oryxKeymap
         // lib.optionalAttrs swap {modules = ["nic/swap_on_layer"] ++ (oryxKeymap.modules or []);}));
+  # QMK's generated info_config.h uses #ifndef PRODUCT (generate/config_h.py)
+  # and is included before the keymap config (build_keyboard.mk). Explicitly
+  # undefine its stock value here; SERIAL_NUMBER and USB protocol stay Oryx's.
   configH = writeText "config.h" (builtins.readFile ./oryx/config.h
-    + lib.optionalString swap "\n#define SWAP_ON_LAYER ${toString swapOnLayer}\n"
+    + lib.optionalString swap "\n#undef PRODUCT\n#define PRODUCT \"${referenceProfile.product}\"\n#define SWAP_ON_LAYER ${toString swapOnLayer}\n"
     + lib.optionalString alias "#define MIRRORED_NAV_LAYER ${toString mirroredNavLayer}\n#define NAV_LAYER ${toString navLayer}\n");
 
   keymap = "keyboards/zsa/voyager/keymaps/oryx";
@@ -296,6 +378,7 @@ in
       install -Dm444 zsa_voyager_oryx.bin $out/voyager-${pin.layout}-${pin.revision}${lib.optionalString swap "-swap"}.bin
       runHook postInstall
     '';
+    passthru = {inherit referenceProfile;};
 
     meta = {
       description = "ZSA Voyager firmware: Oryx layout ${pin.layout}/${pin.revision}";

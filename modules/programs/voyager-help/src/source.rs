@@ -21,6 +21,12 @@ pub struct Identity {
     pub revision: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Attached {
+    identity: Identity,
+    product: String,
+}
+
 fn parse_identity(serial: &str) -> Result<Identity, String> {
     // sysfs appends one newline; other whitespace is not part of an Oryx ID.
     let serial = serial.strip_suffix('\n').unwrap_or(serial);
@@ -75,10 +81,10 @@ fn usb_id(path: &Path, expected: &str) -> Result<bool, String> {
     }
 }
 
-fn discover(root: &Path) -> Result<Identity, String> {
+fn discover(root: &Path) -> Result<Attached, String> {
     let devices = fs::read_dir(root)
         .map_err(|error| format!("Cannot inspect USB metadata {}: {error}", root.display()))?;
-    let mut identity: Option<Identity> = None;
+    let mut identity: Option<Attached> = None;
     for device in devices {
         let path = device
             .map_err(|error| format!("Cannot enumerate USB metadata: {error}"))?
@@ -93,13 +99,32 @@ fn discover(root: &Path) -> Result<Identity, String> {
                 serial_path.display()
             )
         })?;
-        let found = parse_identity(&serial)
+        let parsed = parse_identity(&serial)
             .map_err(|error| format!("{}: {error}", serial_path.display()))?;
+        let product_path = path.join("product");
+        let mut product = metadata(&product_path).map_err(|error| {
+            format!(
+                "Cannot read Voyager build identity {}: {error}",
+                product_path.display()
+            )
+        })?;
+        if product.ends_with('\n') {
+            product.pop();
+        }
+        let found = Attached {
+            identity: parsed,
+            product,
+        };
         if let Some(previous) = &identity {
             if previous != &found {
                 return Err(format!(
-                    "Ambiguous Voyagers: connected keyboards report different Oryx identities ({}/{} and {}/{}); connect only the intended keyboard",
-                    previous.layout, previous.revision, found.layout, found.revision
+                    "Ambiguous Voyagers: connected keyboards report different firmware identities ({}/{} {:?} and {}/{} {:?}); connect only the intended keyboard",
+                    previous.identity.layout,
+                    previous.identity.revision,
+                    previous.product,
+                    found.identity.layout,
+                    found.identity.revision,
+                    found.product
                 ));
             }
         } else {
@@ -194,15 +219,17 @@ fn load_from(
     cache: &Path,
     fetcher: impl FnOnce(&Identity) -> Result<Vec<u8>, String>,
 ) -> Result<Layout, String> {
-    let identity = discover(sysfs)?;
-    let path = cache_path(cache, &identity);
+    let attached = discover(sysfs)?;
+    let identity = &attached.identity;
+    let custom = crate::profile::select(&attached.product, &identity.layout, &identity.revision)?;
+    let path = cache_path(cache, identity);
     let cached = read_bounded(&path, MAX_RESPONSE)
         .map_err(|error| format!("Cache {}: {error}", path.display()))
         .and_then(|bytes| parse_response(&bytes, &identity.layout, &identity.revision));
-    let layout = match cached {
+    let mut layout = match cached {
         Ok(layout) => layout,
         Err(cache_error) => {
-            let bytes = fetcher(&identity).map_err(|error| format!(
+            let bytes = fetcher(identity).map_err(|error| format!(
                 "No valid cached reference for {}/{} ({cache_error}); {error}. Connect to the network to retrieve this exact revision",
                 identity.layout, identity.revision
             ))?;
@@ -223,11 +250,19 @@ fn load_from(
     let current = discover(sysfs).map_err(|error| {
         format!("Voyager identity could not be rechecked; no reference will be shown: {error}")
     })?;
-    if current != identity {
+    if current != attached {
         return Err(format!(
-            "Voyager changed while loading the reference ({}/{} -> {}/{}); open the reference again",
-            identity.layout, identity.revision, current.layout, current.revision
+            "Voyager changed while loading the reference ({}/{} {:?} -> {}/{} {:?}); open the reference again",
+            identity.layout,
+            identity.revision,
+            attached.product,
+            current.identity.layout,
+            current.identity.revision,
+            current.product
         ));
+    }
+    if let Some(profile) = custom {
+        crate::layout::apply_profile(&mut layout, profile)?;
     }
     Ok(layout)
 }
@@ -274,6 +309,7 @@ mod tests {
             fs::write(path.join("idVendor"), "3297\n").unwrap();
             fs::write(path.join("idProduct"), "1977\n").unwrap();
             fs::write(path.join("serial"), serial).unwrap();
+            fs::write(path.join("product"), "Voyager\n").unwrap();
         }
 
         fn load(
@@ -392,9 +428,37 @@ mod tests {
         assert!(discover(&fixture.usb()).is_err());
         fixture.device("1-2", "JqpmQ/revA\n");
         assert_eq!(
-            discover(&fixture.usb()).unwrap(),
+            discover(&fixture.usb()).unwrap().identity,
             parse_identity("JqpmQ/revA").unwrap()
         );
+        fs::write(
+            fixture.usb().join("1-2/product"),
+            "Voyager unknown custom\n",
+        )
+        .unwrap();
+        assert!(
+            discover(&fixture.usb()).is_err(),
+            "same serial does not make different firmware builds equivalent"
+        );
+    }
+
+    #[test]
+    fn an_unknown_custom_build_never_reuses_a_stock_interpretation() {
+        let fixture = Fixture::new();
+        fixture.device("1-1", "JqpmQ/revA\n");
+        let bytes = response("JqpmQ", "revA");
+        let cached = fixture.cached("JqpmQ/revA", &bytes);
+        fs::write(
+            fixture.usb().join("1-1/product"),
+            "Voyager unknown custom\n",
+        )
+        .unwrap();
+        assert!(
+            fixture
+                .load(|_| panic!("Unknown firmware must not fetch a stock map"))
+                .is_err()
+        );
+        assert_eq!(fs::read(cached).unwrap(), bytes);
     }
 
     #[test]
@@ -497,6 +561,17 @@ mod tests {
             });
             assert!(result.is_err());
         }
+    }
+
+    #[test]
+    fn a_product_only_change_rejects_an_inflight_stock_lookup() {
+        let fixture = Fixture::new();
+        fixture.device("1-1", "JqpmQ/revA\n");
+        let result = fixture.load(|_| {
+            fs::write(fixture.usb().join("1-1/product"), "Voyager changed build\n").unwrap();
+            Ok(response("JqpmQ", "revA"))
+        });
+        assert!(result.is_err());
     }
 
     #[test]

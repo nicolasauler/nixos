@@ -14,6 +14,7 @@ pub struct Layout {
     pub layout: String,
     pub revision: String,
     pub title: String,
+    pub profile: Option<crate::profile::SwapProfile>,
     layers: Vec<Layer>,
 }
 
@@ -230,6 +231,7 @@ pub fn parse_response(
         layout: layout.to_owned(),
         revision: revision.to_owned(),
         title,
+        profile: None,
         layers,
     })
 }
@@ -239,6 +241,30 @@ fn required_string<'a>(object: &'a Value, field: &str) -> Result<&'a str, String
         .get(field)
         .and_then(Value::as_str)
         .ok_or_else(|| format!("Oryx {field} must be a string"))
+}
+
+pub fn apply_profile(
+    layout: &mut Layout,
+    profile: crate::profile::SwapProfile,
+) -> Result<(), String> {
+    profile.validate()?;
+    if profile.layout != layout.layout || profile.revision != layout.revision {
+        return Err("Custom profile does not match the Oryx layout/revision".into());
+    }
+    if layout
+        .layers
+        .get(profile.swap_layer)
+        .is_none_or(|layer| !layer.keys.iter().all(Key::transparent))
+    {
+        return Err("Custom mirror layer must exist and be entirely transparent".into());
+    }
+    if let (Some(nav), Some(alias)) = (profile.nav_layer, profile.alias_layer)
+        && (nav >= layout.layers.len() || alias < layout.layers.len())
+    {
+        return Err("Custom navigation must exist and its alias must be unused".into());
+    }
+    layout.profile = Some(profile);
+    Ok(())
 }
 
 // Coordinates are the Oryx Voyager geometry: left 24 + 2 thumbs, then right
@@ -277,6 +303,11 @@ struct State {
     // 0 = up, 255 = a held persistent gateway, otherwise target layer + 1.
     // A momentary release clears the layer; QMK does not reference-count it.
     held: [u8; POSITIONS],
+    // Physical keys remain down even if swap changes. QMK also caches the
+    // layer at the mapped press position: do not reuse that slot while held.
+    pressed_at: [u8; POSITIONS],
+    // Canonical pedal entry only: 1 = mirror, 2 = mirror + navigation.
+    pedal: u8,
 }
 
 impl State {
@@ -285,6 +316,8 @@ impl State {
             active: 0,
             default: 0,
             held: [0; POSITIONS],
+            pressed_at: [0; POSITIONS],
+            pedal: 0,
         }
     }
 }
@@ -294,9 +327,12 @@ enum Step {
     Action {
         layer: usize,
         key: usize,
+        mapped: usize,
         gesture: usize,
     },
     Release(usize),
+    Pedal(u8),
+    ReleasePedals,
 }
 
 struct Node {
@@ -304,7 +340,81 @@ struct Node {
     parent: Option<(usize, Step)>,
 }
 
+#[derive(Clone, Copy)]
+struct ShiftRoute {
+    node: usize,
+    physical: usize,
+    gesture: usize,
+}
+
+fn normalize(layout: &Layout, state: &mut State) {
+    if let Some(profile) = &layout.profile
+        && let (Some(nav), Some(alias)) = (profile.nav_layer, profile.alias_layer)
+        && state.active & (1 << alias) != 0
+    {
+        state.active = (state.active & !(1 << alias)) | (1 << nav) | (1 << profile.swap_layer);
+    }
+}
+
+fn mirrored(layout: &Layout, state: &State) -> bool {
+    layout
+        .profile
+        .as_ref()
+        .is_some_and(|profile| state.active & (1 << profile.swap_layer) != 0)
+}
+
+fn mapped_position(layout: &Layout, state: &State, physical: usize) -> usize {
+    if mirrored(layout, state) {
+        layout.profile.as_ref().unwrap().position_map[physical]
+    } else {
+        physical
+    }
+}
+
+fn available(state: &State, physical: usize, mapped: usize) -> bool {
+    state.held[physical] == 0
+        && !state
+            .held
+            .iter()
+            .zip(&state.pressed_at)
+            .any(|(&held, &position)| held != 0 && position as usize == mapped)
+}
+
+fn release(layout: &Layout, mut state: State, physical: usize) -> State {
+    if state.held[physical] != u8::MAX {
+        state.active &= !(1 << (state.held[physical] - 1));
+    }
+    state.held[physical] = 0;
+    state.pressed_at[physical] = 0;
+    normalize(layout, &mut state);
+    state
+}
+
+fn release_pedals(layout: &Layout, mut state: State) -> Option<State> {
+    let profile = layout
+        .profile
+        .as_ref()
+        .expect("pedal routes require a profile");
+    let mut cleared = 1 << profile.swap_layer;
+    if state.pedal == 2 {
+        cleared |= 1
+            << profile
+                .nav_layer
+                .expect("combined pedal route has navigation");
+        // Two releases may be coalesced (unset only the pedal bits) or may
+        // pass through layer_move(nav/mirror), dropping other keyboard layers.
+        // Do not invent one deterministic result when those outcomes differ.
+        if state.active & !cleared != 0 {
+            return None;
+        }
+    }
+    state.active &= !cleared;
+    state.pedal = 0;
+    Some(state)
+}
+
 fn resolved(layout: &Layout, state: &State, key: usize) -> Option<usize> {
+    let key = mapped_position(layout, state, key);
     let active = state.active | (1u32 << state.default) | 1;
     (0..layout.layers.len()).rev().find(|&layer| {
         active & (1u32 << layer) != 0 && !layout.layers[layer].keys[key].transparent()
@@ -391,7 +501,13 @@ fn unsupported_gesture(key: &Key, gesture: usize) -> Option<String> {
     })
 }
 
-fn transition(action: &Action, gesture: usize, state: State, key: usize) -> Option<State> {
+fn transition(
+    layout: &Layout,
+    action: &Action,
+    gesture: usize,
+    state: State,
+    key: usize,
+) -> Option<State> {
     let layer = action.layer?;
     let mut next = state;
     match action.code.as_str() {
@@ -407,6 +523,10 @@ fn transition(action: &Action, gesture: usize, state: State, key: usize) -> Opti
     if action.code != "MO" && (gesture == 1 || gesture == 3) {
         next.held[key] = u8::MAX;
     }
+    if next.held[key] != 0 {
+        next.pressed_at[key] = mapped_position(layout, &state, key) as u8;
+    }
+    normalize(layout, &mut next);
     Some(next)
 }
 
@@ -414,6 +534,7 @@ fn invocation(
     layout: &Layout,
     layer: usize,
     index: usize,
+    physical: usize,
     gesture: usize,
     labels: &[String],
 ) -> String {
@@ -436,7 +557,7 @@ fn invocation(
         2 => "Double-tap",
         _ => "Tap, then hold",
     };
-    let mut text = format!("{verb} {}", labels[index]);
+    let mut text = format!("{verb} {}", labels[physical]);
     if key.dance() {
         text.push_str(
             " without interruption; wait for the tap dance to resolve before the next key",
@@ -460,9 +581,18 @@ fn recipe(nodes: &[Node], mut node: usize, layout: &Layout, labels: &[String]) -
             Step::Action {
                 layer,
                 key,
+                mapped,
                 gesture,
-            } => invocation(layout, layer, key, gesture, labels),
+            } => invocation(layout, layer, mapped, key, gesture, labels),
             Step::Release(key) => format!("Release {}", labels[key]),
+            Step::Pedal(1) => "Hold the left mirror pedal".into(),
+            Step::Pedal(_) => {
+                "Hold the mirror + navigation pedal combination (matching pedal daemon required)"
+                    .into()
+            }
+            Step::ReleasePedals => {
+                "Release the held pedals (their mirror/navigation layers clear)".into()
+            }
         })
         .collect::<Vec<_>>()
         .join(", then ")
@@ -505,14 +635,55 @@ pub fn generate(layout: &Layout) -> Result<Vec<Entry>, String> {
         parent: None,
     }];
     let mut seen = HashSet::from([State::neutral()]);
-    let mut routes = vec![[[None; 4]; POSITIONS]; layout.layers.len()];
-    let mut shifted_routes: Vec<[Option<(usize, usize, usize)>; POSITIONS]> =
-        vec![[None; POSITIONS]; layout.layers.len()];
+    // Retain a shortest route in each orientation, not just the first route
+    // to a logical action (which would always prefer the unswapped base).
+    let variants = if layout.profile.is_some() { 2 } else { 1 };
+    let mut routes = vec![vec![[[None; 4]; POSITIONS]; layout.layers.len()]; variants];
+    let mut shifted_routes: Vec<Vec<[Option<ShiftRoute>; POSITIONS]>> =
+        vec![vec![[None; POSITIONS]; layout.layers.len()]; variants];
     let mut exits = vec![None; layout.layers.len()];
     let mut limited = false;
+    if let Some(profile) = &layout.profile {
+        for pedal in 1..=2 {
+            let target = if pedal == 1 {
+                profile.swap_layer
+            } else if let Some(alias) = profile.alias_layer {
+                alias
+            } else {
+                continue;
+            };
+            let mut state = State::neutral();
+            state.active = 1 << target;
+            state.pedal = pedal;
+            normalize(layout, &mut state);
+            enqueue(
+                state,
+                0,
+                Step::Pedal(pedal),
+                &mut nodes,
+                &mut seen,
+                &mut limited,
+            );
+        }
+    }
     let mut cursor = 0;
     while cursor < nodes.len() {
         let state = nodes[cursor].state;
+        let variant = usize::from(mirrored(layout, &state));
+        let positions: [usize; POSITIONS] =
+            std::array::from_fn(|key| mapped_position(layout, &state, key));
+        if state.pedal != 0
+            && let Some(next) = release_pedals(layout, state)
+        {
+            enqueue(
+                next,
+                cursor,
+                Step::ReleasePedals,
+                &mut nodes,
+                &mut seen,
+                &mut limited,
+            );
+        }
         let visible: [Option<usize>; POSITIONS] =
             std::array::from_fn(|key| resolved(layout, &state, key));
         // Two distinct Shift positions suffice: at most one can collide with
@@ -520,14 +691,15 @@ pub fn generate(layout: &Layout) -> Result<Vec<Entry>, String> {
         let mut shifts = [None; 2];
         let mut shift_count = 0;
         for key in 0..POSITIONS {
-            if state.held[key] != 0 {
+            let mapped = positions[key];
+            if !available(&state, key, mapped) {
                 continue;
             }
             let Some(layer) = visible[key] else { continue };
             if let Some(gesture) = (0..2).find(|&gesture| {
-                plain[layer][key][gesture]
-                    && (gesture == 1 || layout.layers[layer].keys[key].sustained_tap())
-                    && layout.layers[layer].keys[key].actions[gesture]
+                plain[layer][mapped][gesture]
+                    && (gesture == 1 || layout.layers[layer].keys[mapped].sustained_tap())
+                    && layout.layers[layer].keys[mapped].actions[gesture]
                         .as_ref()
                         .is_some_and(|a| is_shift(&a.code))
             }) {
@@ -540,11 +712,7 @@ pub fn generate(layout: &Layout) -> Result<Vec<Entry>, String> {
         }
         for key in 0..POSITIONS {
             if state.held[key] != 0 {
-                let mut next = state;
-                if state.held[key] != u8::MAX {
-                    next.active &= !(1 << (state.held[key] - 1));
-                }
-                next.held[key] = 0;
+                let next = release(layout, state, key);
                 enqueue(
                     next,
                     cursor,
@@ -555,29 +723,38 @@ pub fn generate(layout: &Layout) -> Result<Vec<Entry>, String> {
                 );
                 continue;
             }
+            let mapped = positions[key];
+            if !available(&state, key, mapped) {
+                continue;
+            }
             let Some(layer) = visible[key] else { continue };
-            let mapping = &layout.layers[layer].keys[key];
+            let mapping = &layout.layers[layer].keys[mapped];
             for (gesture, action) in mapping.actions.iter().enumerate() {
                 let Some(action) = action else { continue };
-                routes[layer][key][gesture].get_or_insert(cursor);
+                routes[variant][layer][mapped][gesture].get_or_insert(cursor);
                 if gesture == 0
                     && shifted(&action.code).is_some()
-                    && plain[layer][key][gesture]
+                    && plain[layer][mapped][gesture]
                     && let Some(&(shift_key, shift_gesture)) = shifts
                         .iter()
                         .flatten()
                         .find(|(shift_key, _)| *shift_key != key)
                 {
-                    shifted_routes[layer][key].get_or_insert((cursor, shift_key, shift_gesture));
+                    shifted_routes[variant][layer][mapped].get_or_insert(ShiftRoute {
+                        node: cursor,
+                        physical: shift_key,
+                        gesture: shift_gesture,
+                    });
                 }
-                if let Some(next) = plain[layer][key][gesture]
-                    .then(|| transition(action, gesture, state, key))
+                if let Some(next) = plain[layer][mapped][gesture]
+                    .then(|| transition(layout, action, gesture, state, key))
                     .flatten()
                 {
-                    if action.code == "MO" && state.held.iter().all(|&h| h == 0) {
+                    if action.code == "MO" && state.pedal == 0 && state.held.iter().all(|&h| h == 0)
+                    {
                         let target = action.layer.unwrap();
                         if state.active & (1 << target) != 0 && target != state.default as usize {
-                            exits[target].get_or_insert((cursor, layer, key, gesture));
+                            exits[target].get_or_insert((cursor, layer, key, mapped, gesture));
                         }
                     }
                     enqueue(
@@ -586,6 +763,7 @@ pub fn generate(layout: &Layout) -> Result<Vec<Entry>, String> {
                         Step::Action {
                             layer,
                             key,
+                            mapped,
                             gesture,
                         },
                         &mut nodes,
@@ -598,105 +776,145 @@ pub fn generate(layout: &Layout) -> Result<Vec<Entry>, String> {
         cursor += 1;
     }
     let mut entries = Vec::new();
-    for (layer, mapping) in layout.layers.iter().enumerate() {
-        for (key, mapping) in mapping.keys.iter().enumerate() {
-            if mapping.transparent() {
-                continue;
-            }
-            for (gesture, action) in mapping.actions.iter().enumerate() {
-                let Some(action) = action else { continue };
-                let (mut name, _) = action_name(action);
-                if let Some(target) = action.layer {
-                    name.push_str(&format!(" — {}", layer_name(layout, target)));
-                }
-                let mods = modifiers(action).unwrap_or_default();
-                if !mods.is_empty() {
-                    name = format!("{} + {name}", mods.join(" + "));
-                }
-                let mut aliases = aliases(action);
-                aliases.push(GESTURES[gesture].into());
-                if let Some(label) = &mapping.custom_label {
-                    aliases.push(label.clone());
-                }
-                let mut text = if let Some(node) = routes[layer][key][gesture] {
-                    append_step(
-                        recipe(&nodes, node, layout, &labels),
-                        invocation(layout, layer, key, gesture, &labels),
-                    )
+    for variant in 0..variants {
+        for (layer, mapping) in layout.layers.iter().enumerate() {
+            for (key, mapping) in mapping.keys.iter().enumerate() {
+                let physical = if variant == 1 {
+                    layout.profile.as_ref().unwrap().position_map[key]
                 } else {
-                    format!(
-                        "{}: assigned to {} ({}) but no neutral-base route found{}",
-                        if limited {
-                            "Route unresolved"
-                        } else {
-                            "Unreachable through supported layer transitions"
-                        },
-                        labels[key],
-                        GESTURES[gesture],
-                        if limited {
-                            " within the bounded layer search"
-                        } else {
-                            " (shadowed, held gateway collision, or unsupported gateway)"
-                        }
-                    )
+                    key
                 };
-                let unknown = unsupported_gesture(mapping, gesture);
-                if let Some(reason) = unknown {
-                    name = format!("Unsupported: {name}");
-                    text.push_str(&format!("; semantics not inferred: {reason}"));
-                    aliases.push("unsupported".into());
-                } else {
-                    append_notes(&mut text, action, mapping, gesture);
+                if mapping.transparent() {
+                    continue;
                 }
-                if let Some(description) = action.description.as_deref().filter(|s| !s.is_empty()) {
-                    text.push_str(&format!("; Oryx description: {description}"));
+                for (gesture, action) in mapping.actions.iter().enumerate() {
+                    let Some(action) = action else { continue };
+                    let route = routes[variant][layer][key][gesture];
+                    if route.is_none()
+                        && (variant == 1
+                            || variants == 2 && routes[1][layer][key][gesture].is_some())
+                    {
+                        continue;
+                    }
+                    let (mut name, _) = action_name(action);
+                    if let Some(target) = action.layer {
+                        name.push_str(&format!(" — {}", layer_name(layout, target)));
+                    }
+                    let mods = modifiers(action).unwrap_or_default();
+                    if !mods.is_empty() {
+                        name = format!("{} + {name}", mods.join(" + "));
+                    }
+                    let mut aliases = aliases(action);
+                    aliases.push(GESTURES[gesture].into());
+                    if let Some(label) = &mapping.custom_label {
+                        aliases.push(label.clone());
+                    }
+                    if variant == 1 {
+                        aliases.push("mirrored".into());
+                    }
+                    let mut text = if let Some(node) = route {
+                        append_step(
+                            recipe(&nodes, node, layout, &labels),
+                            invocation(layout, layer, key, physical, gesture, &labels),
+                        )
+                    } else {
+                        format!(
+                            "{}: assigned to {} ({}) but no neutral-base route found{}",
+                            if limited {
+                                "Route unresolved"
+                            } else {
+                                "Unreachable through supported layer transitions"
+                            },
+                            labels[key],
+                            GESTURES[gesture],
+                            if limited {
+                                " within the bounded layer search"
+                            } else {
+                                " (shadowed, held gateway collision, or unsupported gateway)"
+                            }
+                        )
+                    };
+                    let unknown = unsupported_gesture(mapping, gesture);
+                    if let Some(reason) = unknown {
+                        name = format!("Unsupported: {name}");
+                        text.push_str(&format!("; semantics not inferred: {reason}"));
+                        aliases.push("unsupported".into());
+                    } else {
+                        append_notes(&mut text, action, mapping, gesture);
+                    }
+                    if let Some(description) =
+                        action.description.as_deref().filter(|s| !s.is_empty())
+                    {
+                        text.push_str(&format!("; Oryx description: {description}"));
+                    }
+                    if route.is_some_and(|node| nodes[node].state.held.iter().any(|&h| h != 0)) {
+                        text.push_str(
+                            "; keep gateway keys held through the action, then release them",
+                        );
+                    }
+                    if route.is_some_and(|node| nodes[node].state.pedal != 0) {
+                        text.push_str(
+                            "; keep the pedals held through the action, then release them",
+                        );
+                    }
+                    if variant == 1 {
+                        text.push_str("; mirrored physical position");
+                    }
+                    entries.push(Entry {
+                        name,
+                        gesture: text,
+                        layer: layer_name(layout, layer),
+                        aliases,
+                    });
                 }
-                if routes[layer][key][gesture]
-                    .is_some_and(|node| nodes[node].state.held.iter().any(|&h| h != 0))
+                if variant == 0 && mapping.dance() && mapping.actions[3].is_none() {
+                    let mut text = format!(
+                        "{}: tap then hold (double-hold) has no assigned action",
+                        labels[key]
+                    );
+                    text.push_str("; with a single tap assigned, an interrupted single hold falls back to it, an interrupted double-tap emits two single taps, and three or more taps emit that many single taps");
+                    entries.push(Entry {
+                        name: "Tap-dance timing and unassigned double-hold".into(),
+                        gesture: text,
+                        layer: layer_name(layout, layer),
+                        aliases: vec!["tap dance".into(), "timing".into(), "double hold".into()],
+                    });
+                }
+                if let Some(ShiftRoute {
+                    node,
+                    physical: shift_key,
+                    gesture: shift_gesture,
+                }) = shifted_routes[variant][layer][key]
                 {
-                    text.push_str("; keep gateway keys held through the action, then release them");
-                }
-                entries.push(Entry {
-                    name,
-                    gesture: text,
-                    layer: layer_name(layout, layer),
-                    aliases,
-                });
-            }
-            if mapping.dance() && mapping.actions[3].is_none() {
-                let mut text = format!(
-                    "{}: tap then hold (double-hold) has no assigned action",
-                    labels[key]
-                );
-                text.push_str("; with a single tap assigned, an interrupted single hold falls back to it, an interrupted double-tap emits two single taps, and three or more taps emit that many single taps");
-                entries.push(Entry {
-                    name: "Tap-dance timing and unassigned double-hold".into(),
-                    gesture: text,
-                    layer: layer_name(layout, layer),
-                    aliases: vec!["tap dance".into(), "timing".into(), "double hold".into()],
-                });
-            }
-            if let Some((node, shift_key, shift_gesture)) = shifted_routes[layer][key] {
-                let action = mapping.actions[0].as_ref().unwrap();
-                let shift_layer = resolved(layout, &nodes[node].state, shift_key).unwrap();
-                let prefix = append_step(
-                    recipe(&nodes, node, layout, &labels),
-                    invocation(layout, shift_layer, shift_key, shift_gesture, &labels),
-                );
-                entries.push(Entry {
+                    let action = mapping.actions[0].as_ref().unwrap();
+                    let shift_layer = resolved(layout, &nodes[node].state, shift_key).unwrap();
+                    let shift_mapped = mapped_position(layout, &nodes[node].state, shift_key);
+                    let prefix = append_step(
+                        recipe(&nodes, node, layout, &labels),
+                        invocation(
+                            layout,
+                            shift_layer,
+                            shift_mapped,
+                            shift_key,
+                            shift_gesture,
+                            &labels,
+                        ),
+                    );
+                    entries.push(Entry {
                     name: shifted(&action.code).unwrap().into(),
-                    gesture: format!("{}, then tap {} once; release the Shift key without tapping, then release any gateways; glyph assumes host US / altgr-intl", prefix, labels[key]),
+                    gesture: format!("{}, then tap {} once; release the Shift key without tapping, then release any gateways{}; glyph assumes host US / altgr-intl{}", prefix, labels[physical], if nodes[node].state.pedal != 0 { " and pedals" } else { "" }, if variant == 1 { "; mirrored physical position" } else { "" }),
                     layer: format!("{} + Shift", layer_name(layout, layer)),
                     aliases: vec!["symbol".into(), "punctuation".into(), "shift".into(), action.code.clone()],
                 });
+                }
             }
         }
     }
     for (target, exit) in exits.into_iter().enumerate() {
-        if let Some((node, layer, key, gesture)) = exit {
+        if let Some((node, layer, key, mapped, gesture)) = exit {
             entries.push(Entry {
                 name: format!("Leave latched layer {}", layer_name(layout, target)),
-                gesture: format!("{}, then release {}; the momentary hold's release clears layer {target} (not a toggle)", append_step(recipe(&nodes, node, layout, &labels), invocation(layout, layer, key, gesture, &labels)), labels[key]),
+                gesture: format!("{}, then release {}; the momentary hold's release clears layer {target} (not a toggle)", append_step(recipe(&nodes, node, layout, &labels), invocation(layout, layer, mapped, key, gesture, &labels)), labels[key]),
                 layer: layer_name(layout, target),
                 aliases: vec!["layer".into(), "exit".into(), "unlatch".into()],
             });
@@ -1052,6 +1270,299 @@ mod tests {
             .iter()
             .find(|e| e.name == name && e.layer == format!("Layer {layer} ({layer})"))
             .unwrap()
+    }
+
+    #[test]
+    fn generated_routes_never_type_through_a_held_mapped_source_cache_slot() {
+        let mut value = response(7);
+        put(&mut value, 0, 6, "hold", json!({"code":"MO","layer":3}));
+        put(&mut value, 3, 7, "tap", json!({"code":"TG","layer":6}));
+        put(&mut value, 3, 6, "tap", json!({"code":"KC_F1"}));
+        let entries = generate(&custom(&value)).unwrap();
+        assert!(entry(&entries, "F1", 3).gesture.starts_with("Unreachable"));
+        assert!(!entries.iter().any(
+            |entry| entry.name == "F1" && entry.gesture.contains("mirrored physical position")
+        ));
+        // A genuinely independent gateway makes both orientations possible.
+        put(&mut value, 0, 8, "hold", json!({"code":"MO","layer":3}));
+        let entries = generate(&custom(&value)).unwrap();
+        assert!(!entry(&entries, "F1", 3).gesture.starts_with("Unreachable"));
+        let mirrored = mirrored_entry(&entries, "KC_F1");
+        assert!(mirrored.gesture.contains("[right row 2 col 6]"));
+        assert!(mirrored.gesture.contains("until the hold resolves"));
+    }
+
+    fn profile() -> crate::profile::SwapProfile {
+        // Derive test geometry from rows, not a table of user assignments.
+        let mut position_map = vec![0; POSITIONS];
+        for left in 0..26 {
+            let right = if left < 24 {
+                26 + 6 * (left / 6) + 5 - left % 6
+            } else {
+                75 - left
+            };
+            position_map[left] = right;
+            position_map[right] = left;
+        }
+        crate::profile::SwapProfile {
+            schema: 1,
+            layout: "layout".into(),
+            revision: "revision".into(),
+            swap_layer: 6,
+            nav_layer: Some(4),
+            alias_layer: Some(7),
+            position_map,
+        }
+    }
+
+    fn custom(value: &Value) -> Layout {
+        let mut layout = parse(value).unwrap();
+        apply_profile(&mut layout, profile()).unwrap();
+        layout
+    }
+
+    fn mirrored_entry<'a>(entries: &'a [Entry], code: &str) -> &'a Entry {
+        entries
+            .iter()
+            .find(|entry| {
+                entry.aliases.iter().any(|alias| alias == code)
+                    && entry.gesture.contains("mirrored physical position")
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn custom_routes_keep_normal_and_mirrored_actions_on_physical_legends() {
+        let mut value = response(7);
+        for (key, code) in [
+            (0, "KC_GRAVE"),
+            (31, "KC_F13"),
+            (7, "KC_Q"),
+            (36, "KC_SCLN"),
+            (24, "KC_SPACE"),
+            (51, "KC_BSPC"),
+            (1, "KC_1"),
+            (30, "KC_9"),
+        ] {
+            put(&mut value, 0, key, "tap", json!({"code":code}));
+        }
+        put(&mut value, 0, 51, "hold", json!({"code":"KC_LEFT_SHIFT"}));
+        let entries = generate(&custom(&value)).unwrap();
+        let f13 = mirrored_entry(&entries, "KC_F13");
+        assert!(
+            f13.gesture
+                .starts_with("Hold the left mirror pedal, then Press")
+        );
+        assert!(f13.gesture.contains("[left row 1 col 1]"));
+        assert!(entries.iter().any(|entry| entry.name == "F13"
+            && entry.gesture.starts_with("Press F13 [right row 1 col 6]")));
+        assert!(
+            mirrored_entry(&entries, "KC_SCLN")
+                .gesture
+                .contains("Tap Q [left row 2 col 2]")
+        );
+        assert!(
+            mirrored_entry(&entries, "KC_Q")
+                .gesture
+                .contains("[right row 2 col 5]")
+        );
+        assert!(
+            mirrored_entry(&entries, "KC_LEFT_SHIFT")
+                .gesture
+                .contains("Hold Space [left thumb 1] until the hold resolves")
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|entry| entry.name == "Left parenthesis — ("
+                    && entry.gesture.contains("Hold Space [left thumb 1]")
+                    && entry.gesture.contains("tap 1 [left row 1 col 2]"))
+        );
+    }
+
+    #[test]
+    fn alias_pedal_navigation_preserves_left_hand_gateway_positions() {
+        let mut value = response(7);
+        for (key, code) in [(13, "KC_A"), (14, "KC_R"), (15, "KC_S"), (16, "KC_T")] {
+            put(&mut value, 0, key, "tap", json!({"code":code}));
+        }
+        // Accepted EeKlbD navigation has the arrows on the right home row.
+        for (key, code) in [
+            (39, "KC_LEFT"),
+            (40, "KC_DOWN"),
+            (41, "KC_UP"),
+            (42, "KC_RIGHT"),
+        ] {
+            put(&mut value, 4, key, "tap", json!({"code":code}));
+        }
+        let layout = custom(&value);
+        let entries = generate(&layout).unwrap();
+        for (code, legend) in [
+            ("KC_LEFT", "T"),
+            ("KC_DOWN", "S"),
+            ("KC_UP", "R"),
+            ("KC_RIGHT", "A"),
+        ] {
+            let route = &mirrored_entry(&entries, code).gesture;
+            assert!(route.starts_with("Hold the mirror + navigation pedal combination"));
+            assert!(route.contains("matching pedal daemon required"));
+            assert!(route.contains(&format!("then Tap {legend} [left row 3")));
+            assert!(!route.contains("gateway keys held"));
+        }
+        assert!(
+            !entries
+                .iter()
+                .any(|entry| entry.gesture.contains("mouse pedal"))
+        );
+        let mut state = State::neutral();
+        state.active = 1 << 7;
+        normalize(&layout, &mut state);
+        assert_eq!(state.active, (1 << 4) | (1 << 6));
+        assert_eq!(resolved(&layout, &state, 16), Some(4));
+    }
+
+    #[test]
+    fn releasing_mirror_uses_press_cache_and_default_layer_is_not_swap() {
+        let mut value = response(7);
+        put(&mut value, 0, 6, "tap", json!({"code":"KC_EQUAL"}));
+        put(&mut value, 0, 6, "hold", json!({"code":"MO","layer":6}));
+        put(&mut value, 0, 37, "tap", json!({"code":"KC_QUOTE"}));
+        put(&mut value, 4, 37, "tap", json!({"code":"KC_F1"}));
+        let layout = custom(&value);
+        let action = layout.layers[0].keys[6].actions[1].as_ref().unwrap();
+        let state = transition(&layout, action, 1, State::neutral(), 6).unwrap();
+        assert!(mirrored(&layout, &state));
+        assert_eq!(state.pressed_at[6], 6);
+        // Physical gateway and counterpart both conflict: the counterpart
+        // would overwrite the mapped QMK source-layer cache slot.
+        assert!(!available(&state, 6, mapped_position(&layout, &state, 6)));
+        assert!(!available(&state, 37, mapped_position(&layout, &state, 37)));
+        assert!(available(&state, 7, mapped_position(&layout, &state, 7)));
+        let released = release(&layout, state, 6);
+        assert!(!mirrored(&layout, &released));
+        assert!(available(&released, 6, 6));
+        assert!(available(&released, 37, 37));
+        let mut default = State::neutral();
+        default.default = 6;
+        assert!(!mirrored(&layout, &default));
+        assert_eq!(mapped_position(&layout, &default, 6), 6);
+        default.active = 1 << 4;
+        assert_eq!(resolved(&layout, &default, 37), Some(4));
+        let labels = (0..POSITIONS)
+            .map(|key| label(&layout, key))
+            .collect::<Vec<_>>();
+        assert!(invocation(&layout, 0, 6, 6, 1, &labels).contains("until the hold resolves"));
+    }
+
+    #[test]
+    fn release_across_swap_does_not_retarget_a_held_gateway() {
+        let mut value = response(7);
+        put(&mut value, 0, 37, "hold", json!({"code":"MO","layer":4}));
+        let layout = custom(&value);
+        let mut state = State::neutral();
+        state.active = 1 << 6;
+        let action = layout.layers[0].keys[37].actions[1].as_ref().unwrap();
+        let mut state = transition(&layout, action, 1, state, 6).unwrap();
+        assert_eq!(state.pressed_at[6], 37);
+        state.active &= !(1 << 6);
+        assert!(!available(&state, 37, 37));
+        assert!(!available(&state, 6, 6));
+        let state = release(&layout, state, 6);
+        assert_eq!(state.active, 0);
+        assert!(available(&state, 37, 37));
+    }
+
+    #[test]
+    fn releasing_pedals_preserves_keyboard_held_layers() {
+        let mut value = response(7);
+        put(&mut value, 0, 50, "hold", json!({"code":"MO","layer":2}));
+        put(&mut value, 0, 0, "tap", json!({"code":"KC_F13"}));
+        put(&mut value, 2, 0, "tap", json!({"code":"KC_F1"}));
+        let layout = custom(&value);
+        for pedal in [1, 2] {
+            let mut state = State::neutral();
+            state.active = (1 << 6) | if pedal == 2 { 1 << 4 } else { 0 };
+            state.pedal = pedal;
+            let action = layout.layers[0].keys[50].actions[1].as_ref().unwrap();
+            let held = transition(&layout, action, 1, state, 25).unwrap();
+            if pedal == 1 {
+                let released = release_pedals(&layout, held).unwrap();
+                assert_eq!(resolved(&layout, &released, 0), Some(2));
+                assert!(!mirrored(&layout, &released));
+                assert_eq!(released.held[25], 3);
+            } else {
+                assert!(
+                    release_pedals(&layout, held).is_none(),
+                    "coalesced and separate combo releases differ with another active layer"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn latched_swap_frees_a_cache_collision_only_after_gateway_release() {
+        let mut value = response(7);
+        put(&mut value, 0, 6, "hold", json!({"code":"TO","layer":6}));
+        put(&mut value, 0, 6, "tap", json!({"code":"KC_F1"}));
+        let layout = custom(&value);
+        let action = layout.layers[0].keys[6].actions[1].as_ref().unwrap();
+        let held = transition(&layout, action, 1, State::neutral(), 6).unwrap();
+        assert!(!available(&held, 37, 6));
+        let freed = release(&layout, held, 6);
+        assert!(mirrored(&layout, &freed));
+        assert!(available(&freed, 37, 6));
+        assert_eq!(resolved(&layout, &freed, 37), Some(0));
+    }
+
+    #[test]
+    fn invalid_profiles_are_rejected_without_changing_stock_semantics() {
+        let value = response(7);
+        let mut layout = parse(&value).unwrap();
+        for change in 0..6 {
+            let mut bad = profile();
+            match change {
+                0 => bad.revision = "other".into(),
+                1 => bad.position_map[0] = 52,
+                2 => bad.swap_layer = 8,
+                3 => bad.alias_layer = Some(5),
+                4 => bad.nav_layer = Some(8),
+                _ => bad.alias_layer = None,
+            }
+            assert!(apply_profile(&mut layout, bad).is_err());
+            assert!(layout.profile.is_none());
+        }
+        let mut opaque = value.clone();
+        put(&mut opaque, 6, 0, "tap", json!({"code":"KC_A"}));
+        assert!(apply_profile(&mut parse(&opaque).unwrap(), profile()).is_err());
+        let mut disabled_alias = profile();
+        disabled_alias.nav_layer = None;
+        disabled_alias.alias_layer = None;
+        apply_profile(&mut layout, disabled_alias).unwrap();
+        assert!(
+            !generate(&layout)
+                .unwrap()
+                .iter()
+                .any(|entry| entry.gesture.contains("pedal combination"))
+        );
+        let mut stock = value;
+        put(&mut stock, 0, 0, "tap", json!({"code":"KC_GRAVE"}));
+        put(&mut stock, 0, 31, "tap", json!({"code":"KC_F13"}));
+        put(&mut stock, 0, 6, "hold", json!({"code":"MO","layer":6}));
+        let entries = generate(&parse(&stock).unwrap()).unwrap();
+        assert_eq!(
+            entries.iter().filter(|entry| entry.name == "F13").count(),
+            1
+        );
+        assert!(
+            entry(&entries, "F13", 0)
+                .gesture
+                .starts_with("Press F13 [right row 1 col 6]")
+        );
+        assert!(
+            !entries
+                .iter()
+                .any(|entry| entry.gesture.contains("pedal") || entry.gesture.contains("mirrored"))
+        );
     }
 
     #[test]
