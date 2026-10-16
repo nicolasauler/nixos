@@ -42,16 +42,20 @@ fn parse_identity(serial: &str) -> Result<Identity, String> {
     })
 }
 
-fn read_bounded(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
+fn read_limited(reader: impl Read, limit: u64) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
-    File::open(path)?.take(limit + 1).read_to_end(&mut bytes)?;
+    reader.take(limit + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > limit {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "file exceeds size limit",
+            "input exceeds size limit",
         ));
     }
     Ok(bytes)
+}
+
+fn read_bounded(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
+    read_limited(File::open(path)?, limit)
 }
 
 fn metadata(path: &Path) -> io::Result<String> {
@@ -175,11 +179,13 @@ fn fetch(identity: &Identity) -> Result<Vec<u8>, String> {
         .header("Content-Type", "application/json")
         .send(request.to_string())
         .map_err(|error| format!("Oryx GraphQL request failed: {error}"))?;
-    response
-        .body_mut()
-        .with_config()
-        .limit(MAX_RESPONSE)
-        .read_to_vec()
+    response_bytes(response.body_mut(), MAX_RESPONSE)
+}
+
+fn response_bytes(body: &mut ureq::Body, limit: u64) -> Result<Vec<u8>, String> {
+    // ureq limits encoded bytes before decompression. Bound the decoded stream
+    // separately; the extra byte probes overflow while accepting exactly limit.
+    read_limited(body.with_config().limit(limit + 1).reader(), limit)
         .map_err(|error| format!("Oryx GraphQL response failed: {error}"))
 }
 
@@ -506,5 +512,99 @@ mod tests {
         fs::remove_file(&path).unwrap();
         assert!(fixture.load(|_| Ok(too_large)).is_err());
         assert!(!path.exists());
+    }
+
+    fn http_body(data: Vec<u8>, encoding: &str) -> ureq::Body {
+        use std::net::TcpListener;
+        use std::thread;
+        use std::time::Instant;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Encoding: {encoding}\r\nConnection: close\r\n\r\n",
+            data.len()
+        );
+        let server = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        assert!(Instant::now() < deadline, "test client did not connect");
+                        thread::sleep(Duration::from_millis(1));
+                    }
+                    Err(error) => panic!("test listener: {error}"),
+                }
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                request.push(byte[0]);
+                assert!(request.len() < 8192);
+            }
+            stream.write_all(headers.as_bytes()).unwrap();
+            stream.write_all(&data).unwrap();
+        });
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .proxy(None)
+            .timeout_global(Some(Duration::from_secs(5)))
+            .build()
+            .into();
+        let response = agent.get(format!("http://{address}/")).call().unwrap();
+        server.join().unwrap();
+        response.into_body()
+    }
+
+    fn gzip_spaces(length: u64) -> Vec<u8> {
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        io::copy(&mut io::repeat(b' ').take(length), &mut encoder).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    #[test]
+    fn gzip_decoded_body_respects_the_same_inclusive_limit() {
+        let limit = 64;
+        let mut expanded = http_body(gzip_spaces(8192), "gzip");
+        let result = response_bytes(&mut expanded, limit);
+        assert!(
+            result.is_err(),
+            "compressed body expanded to {} bytes before rejection",
+            result.unwrap().len()
+        );
+        for encoding in ["identity", "gzip"] {
+            for length in [limit, limit + 1] {
+                let data = if encoding == "gzip" {
+                    gzip_spaces(length)
+                } else {
+                    vec![b' '; length as usize]
+                };
+                let mut body = http_body(data, encoding);
+                let result = response_bytes(&mut body, limit);
+                if length == limit {
+                    assert_eq!(result.unwrap(), vec![b' '; limit as usize]);
+                } else {
+                    assert!(result.is_err());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn decoded_overflow_stops_reading_at_the_boundary() {
+        let mut body = http_body(gzip_spaces(8192), "gzip");
+        let mut reader = body.with_config().limit(65).reader();
+        assert!(read_limited(&mut reader, 64).is_err());
+        let mut remaining = Vec::new();
+        reader.read_to_end(&mut remaining).unwrap();
+        assert_eq!(remaining, vec![b' '; 8192 - 65]);
     }
 }

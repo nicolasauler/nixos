@@ -34,6 +34,7 @@ struct Layer {
 #[derive(Debug)]
 struct Key {
     actions: [Option<Action>; 4],
+    custom_label: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -169,6 +170,17 @@ pub fn parse_response(
                     ));
                 }
             }
+            let custom_label = object
+                .get("customLabel")
+                .filter(|value| !value.is_null())
+                .map(|value| {
+                    value.as_str().ok_or_else(|| {
+                        format!("Layer {index}, key {position}: custom label must be text")
+                    })
+                })
+                .transpose()?
+                .filter(|label| !label.is_empty())
+                .map(str::to_owned);
             let mut actions = [None, None, None, None];
             for (gesture, field) in GESTURES.iter().enumerate() {
                 let Some(value) = object.get(*field).filter(|v| !v.is_null()) else {
@@ -204,7 +216,10 @@ pub fn parse_response(
                 }
                 actions[gesture] = Some(action);
             }
-            parsed.push(Key { actions });
+            parsed.push(Key {
+                actions,
+                custom_label,
+            });
         }
         layers.push(Layer {
             title,
@@ -290,7 +305,7 @@ struct Node {
 }
 
 fn resolved(layout: &Layout, state: &State, key: usize) -> Option<usize> {
-    let active = state.active | (1u32 << state.default);
+    let active = state.active | (1u32 << state.default) | 1;
     (0..layout.layers.len()).rev().find(|&layer| {
         active & (1u32 << layer) != 0 && !layout.layers[layer].keys[key].transparent()
     })
@@ -600,6 +615,9 @@ pub fn generate(layout: &Layout) -> Result<Vec<Entry>, String> {
                 }
                 let mut aliases = aliases(action);
                 aliases.push(GESTURES[gesture].into());
+                if let Some(label) = &mapping.custom_label {
+                    aliases.push(label.clone());
+                }
                 let mut text = if let Some(node) = routes[layer][key][gesture] {
                     append_step(
                         recipe(&nodes, node, layout, &labels),
@@ -1179,6 +1197,23 @@ mod tests {
             assert!(!route.starts_with("Unreachable"));
             assert!(!route.contains("gateway keys held"));
         }
+    }
+
+    #[test]
+    fn changed_default_retains_transparent_base_shift_fallback() {
+        let mut value = response(2);
+        put(&mut value, 0, 0, "tap", json!({"code":"DF","layer":1}));
+        put(&mut value, 0, 1, "tap", json!({"code":"KC_LEFT_SHIFT"}));
+        put(&mut value, 1, 2, "tap", json!({"code":"KC_1"}));
+        let entries = generate(&parse(&value).unwrap()).unwrap();
+        let symbol = entries
+            .iter()
+            .find(|entry| {
+                entry.name == "Exclamation mark (!)" && entry.layer == "Layer 1 (1) + Shift"
+            })
+            .expect("DF's transparent positions still fall back to layer-zero Shift");
+        assert!(symbol.gesture.contains("left row 1 col 2"));
+        assert!(symbol.gesture.contains("left row 1 col 3"));
     }
 
     #[test]

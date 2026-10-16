@@ -153,6 +153,20 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
+fn diagnostic(error: &str) -> String {
+    let mut message = String::with_capacity(error.len() + 128);
+    message.push_str("Voyager reference unavailable\n");
+    for c in error.chars() {
+        if c == '\0' {
+            message.push_str("\\0");
+        } else {
+            message.push(c);
+        }
+    }
+    message.push_str("\nNo mapping from another revision was substituted.");
+    message
+}
+
 fn main() -> ExitCode {
     if env::args_os().len() != 1 {
         eprintln!("usage: voyager-help");
@@ -162,9 +176,7 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("voyager-help: {error}");
-            let message = format!(
-                "Voyager reference unavailable\n{error}\nNo mapping from another revision was substituted."
-            );
+            let message = diagnostic(&error);
             if let Err(display_error) = rofi().and_then(|mut command| {
                 command
                     .args(["-e", &message])
@@ -176,5 +188,42 @@ fn main() -> ExitCode {
             }
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn diagnostic_text_is_valid_argv_without_reinterpreting_markup() {
+        let message = diagnostic("returned id Other\0; literal <b>&amp;</b>");
+        assert!(!message.as_bytes().contains(&0));
+        assert!(message.contains("Other\\0"));
+        assert!(message.contains("<b>&amp;</b>"));
+    }
+
+    #[test]
+    fn source_controls_and_markup_cannot_create_menu_structure() {
+        let malicious = "<b>fake</b>&amp;\0display\u{1f}payload\nextra\tcolumn";
+        let entries = [layout::Entry {
+            name: malicious.into(),
+            gesture: "x".repeat(WRAP * 2 + 1),
+            layer: malicious.into(),
+            aliases: vec![malicious.into()],
+        }];
+        let (rows, height) = render(&entries);
+        assert_eq!(rows.lines().count(), 1);
+        assert_eq!(rows.bytes().filter(|&byte| byte == b'\t').count(), 1);
+        assert!(
+            !rows
+                .chars()
+                .any(|c| c == '\0' || c == '\u{1f}' || c == '\r')
+        );
+        assert!(!rows.contains("<b>fake</b>"));
+        assert!(rows.contains("&lt;b&gt;fake&lt;/b&gt;&amp;amp;"));
+        let wrapped_word = format!("{}&#10;{}&#10;x", "x".repeat(WRAP), "x".repeat(WRAP));
+        assert!(rows.contains(&wrapped_word));
+        assert!(height >= 5);
     }
 }

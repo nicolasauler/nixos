@@ -145,6 +145,8 @@ physical positions even when base labels are repeated. Unknown actions/macros
 remain explicit; the bounded route search reports unresolved routes, not guesses.
 Friendly action names, search aliases and precision's F13/F14 host meanings live
 in the helper, but ordinary key positions and layer paths come from Oryx.
+Oryx custom labels such as “Prev Tab” are searchable aliases, not assumed
+executable semantics.
 
 **USB revision is not firmware attestation.** Custom QMK patches can preserve an
 Oryx revision string while changing behavior. Those changes cannot be recovered
