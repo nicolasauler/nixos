@@ -126,16 +126,30 @@ Enter closes it when a result is selected. Neither executes an action, and
 accepting a row emits no row text. Auto-select is disabled so a single match
 stays visible. Symbol searches, including a literal `-`, are not negation filters.
 
-This is a maintained reference for **JqpmQ/bvrAW7**, not live keyboard detection.
-**Planned** rows describe target mappings, not verified active keys. Recipes
-start from the unmirrored base and use its Colemak key labels; symbol glyphs
-assume the configured `us / altgr-intl` host layout.
+`voyager-help` reads the connected Voyager's USB **layout/revision** metadata,
+then generates the reference from that exact Oryx revision—not the latest saved
+layout. It reads no input events or raw-HID devices and runs only when opened.
+There is no hand-maintained list of your key positions or proposed mappings.
 
-Update `modules/programs/voyager-help/keymap.nix` and its revision together when
-the exported layout changes. It covers non-letter functions and explicit
-alternate routes, not every transparent-layer duplicate or possible modifier
-combination. The feature is a Nix-generated data file and native Rofi launcher,
-not a background service or a firmware parser.
+The first lookup of a revision needs network access. Its validated Oryx response
+is cached in `$XDG_CACHE_HOME/voyager-help/` (normally `~/.cache/voyager-help/`);
+subsequent lookups of that revision work offline. A changed revision selects its
+own cache. Missing, malformed or ambiguous keyboard identities, or an unavailable
+exact revision, produce an error rather than silently showing an older map.
+
+Recipes start from base with no held keys or latches. The generator follows
+momentary/move/toggle/default layer actions, whole-key precedence and held-key
+collisions. It describes tap/hold/double-tap/tap-hold actions and derives Shift
+symbols for the configured `us / altgr-intl` host layout. Coordinates identify
+physical positions even when base labels are repeated. Unknown actions/macros
+remain explicit; the bounded route search reports unresolved routes, not guesses.
+Friendly action names, search aliases and precision's F13/F14 host meanings live
+in the helper, but ordinary key positions and layer paths come from Oryx.
+
+**USB revision is not firmware attestation.** Custom QMK patches can preserve an
+Oryx revision string while changing behavior. Those changes cannot be recovered
+from Oryx's data; the view warns about that boundary. Keep custom-build identity
+and annotations aligned when introducing such firmware, including PR #33.
 
 ## CI
 
