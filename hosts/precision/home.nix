@@ -28,6 +28,7 @@
     ../../modules/programs/shell-aliases.nix
     ../../modules/programs/starship.nix
     ../../modules/programs/talkd
+    ../../modules/programs/voyager-help
     ../../modules/programs/waybar/waybar_note.nix
     ../../modules/programs/zathura.nix
     ../../modules/programs/zellij.nix

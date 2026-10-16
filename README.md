@@ -117,6 +117,42 @@ it is a literal in a public repo either way.
 
 [agenix]: https://github.com/ryantm/agenix
 
+## precision keyboard reference
+
+Open **Super+D**, search **Voyager Keyboard Reference**, then search a function,
+key or alias such as `caps`, `F11`, `click`, `underscore` or `mirror`.
+The Rofi view shows the physical hold/tap recipe and layer. Escape closes it;
+Enter closes it when a result is selected. Neither executes an action, and
+accepting a row emits no row text. Auto-select is disabled so a single match
+stays visible. Symbol searches, including a literal `-`, are not negation filters.
+
+`voyager-help` reads the connected Voyager's USB **layout/revision** metadata,
+then generates the reference from that exact Oryx revision—not the latest saved
+layout. It reads no input events or raw-HID devices and runs only when opened.
+There is no hand-maintained list of your key positions or proposed mappings.
+
+The first lookup of a revision needs network access. Its validated Oryx response
+is cached in `$XDG_CACHE_HOME/voyager-help/` (normally `~/.cache/voyager-help/`);
+subsequent lookups of that revision work offline. A changed revision selects its
+own cache. Missing, malformed or ambiguous keyboard identities, or an unavailable
+exact revision, produce an error rather than silently showing an older map.
+
+Recipes start from base with no held keys or latches. The generator follows
+momentary/move/toggle/default layer actions, whole-key precedence and held-key
+collisions. It describes tap/hold/double-tap/tap-hold actions and derives Shift
+symbols for the configured `us / altgr-intl` host layout. Coordinates identify
+physical positions even when base labels are repeated. Unknown actions/macros
+remain explicit; the bounded route search reports unresolved routes, not guesses.
+Friendly action names, search aliases and precision's F13/F14 host meanings live
+in the helper, but ordinary key positions and layer paths come from Oryx.
+Oryx custom labels such as “Prev Tab” are searchable aliases, not assumed
+executable semantics.
+
+**USB revision is not firmware attestation.** Custom QMK patches can preserve an
+Oryx revision string while changing behavior. Those changes cannot be recovered
+from Oryx's data; the view warns about that boundary. Keep custom-build identity
+and annotations aligned when introducing such firmware, including PR #33.
+
 ## CI
 
 Two jobs, and only one of them gates a merge.
