@@ -4,6 +4,7 @@
   pkgs,
   ...
 }: let
+  firmware = pkgs.callPackage ../../../firmware/voyager {};
   reference = pkgs.rustPlatform.buildRustPackage {
     pname = "voyager-help";
     version = "0.1.0";
@@ -13,6 +14,7 @@
     };
     cargoLock.lockFile = ./Cargo.lock;
     ROFI_BIN = lib.getExe config.programs.rofi.finalPackage;
+    VOYAGER_PROFILE_JSON = firmware.referenceProfile.file;
     meta = {
       description = "Search the USB-reported Voyager revision's Oryx mappings";
       mainProgram = "voyager-help";

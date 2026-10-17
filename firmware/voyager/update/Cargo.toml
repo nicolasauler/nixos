@@ -1,0 +1,11 @@
+[package]
+name = "voyager-layout-update"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+nix = { version = "0.31", default-features = false, features = ["fs"] }
+serde_json = "1"
+ureq = "3"
+zip = { version = "9", default-features = false, features = ["deflate"] }

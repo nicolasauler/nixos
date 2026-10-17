@@ -1,4 +1,5 @@
 mod layout;
+mod profile;
 mod source;
 
 use std::env;
@@ -102,7 +103,19 @@ fn run() -> Result<(), String> {
             layout.layout, layout.revision, layout.title
         ),
     );
-    message.push_str("Generated from that exact revision, not Oryx latest. Custom firmware patches are not identified by the Oryx revision. Start from base with no held keys or latches; symbols assume us / altgr-intl. Escape closes; Enter closes a selected result, without executing it.");
+    if let Some(profile) = &layout.profile {
+        escape(
+            &mut message,
+            &format!(
+                "Recognized custom Swap Hands build (mirror layer {}). Normal and mirrored routes are separate; pedal-combo routes require the matching daemon. ",
+                profile.swap_layer
+            ),
+        );
+    } else {
+        message
+            .push_str("Stock Oryx interpretation; unmarked custom patches cannot be identified. ");
+    }
+    message.push_str("Generated from the exact reported revision, not Oryx latest. Start from base with no held keys or latches; symbols assume us / altgr-intl. Escape closes; Enter closes a selected result, without executing it.");
     let visible_rows = (20 / height).clamp(1, 4);
     let mut child = rofi()?
         .args([

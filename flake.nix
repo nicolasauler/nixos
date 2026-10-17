@@ -213,6 +213,13 @@
       };
     };
 
+    # The Voyager's firmware, built here rather than in Oryx so it can carry a QMK
+    # module (Swap Hands on the mirror layer): see firmware/voyager/default.nix.
+    packages.${system} = {
+      voyager-firmware = pkgs.callPackage ./firmware/voyager {};
+      voyager-layout-update = pkgs.callPackage ./firmware/voyager/update {};
+    };
+
     nixosConfigurations = {
       notebook = nixpkgs.lib.nixosSystem {
         inherit pkgs;
