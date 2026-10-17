@@ -118,6 +118,49 @@ it is a literal in a public repo either way.
 
 [agenix]: https://github.com/ryantm/agenix
 
+## Desktop status bar
+
+All four desktop hosts share `modules/programs/waybar/waybar.nix` and its
+Gruvbox stylesheet; laptop homes append the battery module. The package is
+stock nixpkgs Waybar, without the redundant experimental build override.
+
+Workspaces and the focused window stay on the left, the clock in the middle,
+and compact system/audio/network status on the right. CPU and RAM expose
+details on hover and open htop on click. Disk usage appears only at 85% used
+(critical at 95%). Laptop battery warnings start at 20% and become critical
+at 10%. Network addresses, throughput and battery estimates live in tooltips.
+There is no per-core strip, GPU polling, hard-coded temperature sensor or
+per-module rainbow.
+
+The microphone indicator is read-only:
+
+- **MIC MUTED**: the current default input is muted.
+- **MIC LIVE**: that input is unmuted, not proof that an application is recording.
+- **MIC ?**: the default input or its mute state is unavailable/synchronizing.
+
+`talkd waybar` supplies newline-delimited JSON using the same PipeWire
+Route/Props reader as F13. It starts unknown, updates on events, and reconnects
+after server loss without retaining a stale muted label. It never opens input
+devices, changes mute/volume, queries the compositor, writes restoration state
+or sends notifications. It runs only as a Waybar child, not another systemd
+service. Device text is escaped by Waybar, and clicking/scrolling this indicator
+does nothing.
+
+The bar follows the **default input**, not an active talkd cycle. If the default
+changes during an F13 hold/latch, that cycle stays on its original microphone.
+F14 remains the explicit baseline toggle before starting a cycle.
+
+Output volume uses the native WirePlumber module: scroll adjusts it, click opens
+pavucontrol. Unlike the microphone stream, the native output widget does not
+reconnect after a PipeWire restart; reload Waybar then. Also reload after
+installing a changed bar configuration (Hyprland owns its launch):
+
+```nu
+pkill --signal USR2 waybar
+```
+
+This reloads the bar; `Super+B` only hides/shows it.
+
 ## precision keyboard reference
 
 Open **Super+D**, search **Voyager Keyboard Reference**, then search a function,

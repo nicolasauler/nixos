@@ -29,10 +29,12 @@
     ../../modules/programs/starship.nix
     ../../modules/programs/talkd
     ../../modules/programs/voyager-help
-    ../../modules/programs/waybar/waybar_note.nix
+    ../../modules/programs/waybar/waybar.nix
     ../../modules/programs/zathura.nix
     ../../modules/programs/zellij.nix
   ];
+
+  programs.waybar.settings.mainBar.modules-right = lib.mkAfter ["battery"];
 
   colorScheme = inputs.nix-colors.colorSchemes.gruvbox-dark-medium;
 
