@@ -37,8 +37,6 @@ in {
 
       "hyprland/workspaces" = {
         format = "{id}";
-        on-click = "activate";
-        disable-scroll = true;
         all-outputs = false;
       };
       "hyprland/window" = {
@@ -109,8 +107,8 @@ in {
         format-linked = "NO IP";
         format-disconnected = "OFFLINE";
         format-disabled = "RADIO OFF";
-        tooltip-format = "{ifname}\n{ipaddr}/{cidr}\nDown {bandwidthDownBytes} · up {bandwidthUpBytes}";
-        tooltip-format-wifi = "{essid} · {signalStrength}%\n{ifname} · {ipaddr}/{cidr}\nDown {bandwidthDownBytes} · up {bandwidthUpBytes}";
+        tooltip-format = "{ifname}\n{ipaddr}";
+        tooltip-format-wifi = "{essid} · {signalStrength}%\n{ifname}\n{ipaddr}";
         tooltip-format-disconnected = "No network connection";
         tooltip-format-disabled = "Wireless radio disabled";
       };

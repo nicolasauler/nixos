@@ -128,7 +128,7 @@ Workspaces and the focused window stay on the left, the clock in the middle,
 and compact system/audio/network status on the right. CPU and RAM expose
 details on hover and open htop on click. Disk usage appears only at 85% used
 (critical at 95%). Laptop battery warnings start at 20% and become critical
-at 10%. Network addresses, throughput and battery estimates live in tooltips.
+at 10%. Network addresses and battery estimates live in tooltips.
 There is no per-core strip, GPU polling, hard-coded temperature sensor or
 per-module rainbow.
 
@@ -148,7 +148,8 @@ does nothing.
 
 The bar follows the **default input**, not an active talkd cycle. If the default
 changes during an F13 hold/latch, that cycle stays on its original microphone.
-F14 remains the explicit baseline toggle before starting a cycle.
+On precision, F14 remains the explicit baseline toggle before starting a cycle;
+the other hosts get the indicator without enabling talkd's keyboard controls.
 
 Output volume uses the native WirePlumber module: scroll adjusts it, click opens
 pavucontrol. Unlike the microphone stream, the native output widget does not

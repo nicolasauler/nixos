@@ -14,7 +14,7 @@ rustPlatform.buildRustPackage {
   version = "0.1.0";
   src = lib.fileset.toSource {
     root = ./.;
-    fileset = lib.fileset.unions [./Cargo.toml ./Cargo.lock ./src];
+    fileset = lib.fileset.unions [./Cargo.toml ./Cargo.lock ./src ./tests];
   };
   cargoLock.lockFile = ./Cargo.lock;
   nativeBuildInputs = [pkg-config rustPlatform.bindgenHook makeWrapper];

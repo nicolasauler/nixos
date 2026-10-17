@@ -34,7 +34,7 @@ fn publish(out: &mut impl Write, status: Option<&Status>) -> io::Result<()> {
             _ => "Audio unavailable or synchronizing.\n".to_owned(),
         },
     };
-    tooltip.push_str("Unmuted does not mean an application is recording.\nF14 sets the baseline; F13 temporarily inverts it.\nAn active F13 cycle stays on its original input if the default changes.");
+    tooltip.push_str("Unmuted does not mean an application is recording.\nWhen talkd's keyboard controls are configured:\nF14 sets the baseline; F13 temporarily inverts it.\nAn active F13 cycle stays on its original input if the default changes.");
     // Static state names need no escaping; serialize the untrusted device text.
     // Waybar's escape=true additionally treats it as text rather than Pango.
     write!(
