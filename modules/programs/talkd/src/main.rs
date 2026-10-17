@@ -18,6 +18,11 @@ mod notices;
 mod params;
 mod status;
 mod store;
+mod waybar;
+
+#[cfg(test)]
+#[path = "../tests/support/mod.rs"]
+mod test_support;
 
 use std::cell::RefCell;
 use std::env;
@@ -313,8 +318,9 @@ fn main() -> ExitCode {
     match (args.next().as_deref(), args.next()) {
         (None, _) => {}
         (Some("status"), None) => return status::run(),
+        (Some("waybar"), None) => return waybar::run(),
         _ => {
-            eprintln!("usage: talkd [status]");
+            eprintln!("usage: talkd [status|waybar]");
             return ExitCode::from(2);
         }
     }
