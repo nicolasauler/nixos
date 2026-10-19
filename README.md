@@ -118,6 +118,96 @@ it is a literal in a public repo either way.
 
 [agenix]: https://github.com/ryantm/agenix
 
+## Desktop status bar
+
+All four desktop hosts share `modules/programs/waybar/waybar.nix` and its
+Gruvbox stylesheet; laptop homes append the battery module. The package is
+stock nixpkgs Waybar, without the redundant experimental build override.
+
+Workspaces and the focused window's title sit on the left. Everything else is
+right-aligned on one line: the hardware block (CPU, per-CPU strip, RAM, disk and
+precision's sensors), then microphone, output volume, network, clock, tray and,
+on laptops, battery. Text is bold 15px InconsolataGo Nerd Font Mono (Alacritty's
+family, registered with fontconfig on every host): blue labels, white values
+and a purple clock, date and time alike, in a 24px bar. Network text is capped
+at 26 characters and the click-to-toggle date is short. With those longest
+strings, ten workspaces and two tray icons, precision's right-aligned modules
+need about 1640px, so its 1920px and 2160px screens fit: the window title and
+network name shorten with `…` as needed before anything would clip. The 1080px
+portrait monitor that desktop and notebook configure still cuts off the right
+side. Nothing hides behind hover drawers:
+
+- CPU: overall utilization, **load** = 1-minute load average (tasks running,
+  waiting for a CPU or blocked on disk; not utilization and not divided by the
+  CPU count, so compare it with the 22 logical CPUs), and average reported
+  GHz. These help distinguish a busy build, a serial phase and reduced clocks.
+  The overall figure is native Waybar's, which adds guest (VM) time on top of
+  the user/nice time that already contains it: while virtual machines run, it
+  can read higher than the per-CPU strip.
+- Per-logical-CPU usage: one `▁`–`█` bar per observed CPU, all on one line;
+  the tooltip gives each bar's actual `cpuN` and exact percentage. More CPUs
+  lengthen the strip, never the bar's height. `waybar-cores` samples
+  `/proc/stat` every two seconds, handles hotplug by ID, excludes guest
+  double-counting and idle/iowait, and shows `?` for an invalid or
+  unestablished delta rather than fake idle time. It is a std-only Rust Waybar
+  child, not a service or per-update shell command.
+- RAM: used/total GiB continuously; available RAM and swap remain in the
+  tooltip. Click CPU, the strip or RAM for htop.
+- Root filesystem: used percentage and available bytes continuously. The
+  85%/95% thresholds change color, not visibility.
+- On precision: the identified coretemp package sensor and NVMe controller 0
+  composite temperature. Their stable device paths resolve the changing
+  `hwmonN` child at startup/reload. A path missing at startup/reload disables
+  that widget rather than falling back to an unrelated ACPI zone. If an
+  already-selected path disappears later, the native widget can retain its
+  last reading until reload. Other hosts' sensor paths are not guessed.
+  UI warning/critical thresholds are 90/100°C for CPU and 70/80°C for NVMe,
+  not claims about hardware shutdown limits.
+
+Network shows the interface and the Wi-Fi network, or the interface and `wired`;
+both addresses stay in its tooltip. With both connected, it shows the one
+carrying the default route (normally the wired link). The clock reads
+day/month; hovering shows the whole year with today highlighted, a click
+toggles the full date, right click switches between year and month, and
+scrolling moves through them. Laptop
+battery warnings start at 20% and become critical at 10%. Battery estimates
+remain in its tooltip. There is no GPU polling,
+fan/SMM probing, per-module rainbow or blinking. Reload Waybar if a driver
+re-enumerates its sensor paths.
+
+The microphone indicator is read-only:
+
+- **MIC MUTED**: the current default input is muted.
+- **MIC LIVE**: that input is unmuted, not proof that an application is recording.
+- **MIC ?**: the default input or its mute state is unavailable/synchronizing.
+
+`talkd waybar` supplies newline-delimited JSON using the same PipeWire
+Route/Props reader as F13. It starts unknown, updates on events, and reconnects
+after server loss without retaining a stale muted label. It never opens input
+devices, changes mute/volume, queries the compositor, writes restoration state
+or sends notifications. It runs only as a Waybar child, not another systemd
+service. Device text is escaped by Waybar, and clicking/scrolling this indicator
+does nothing.
+
+The bar follows the **default input**, not an active talkd cycle. If the default
+changes during an F13 hold/latch, that cycle stays on its original microphone.
+On precision, F14 remains the explicit baseline toggle before starting a cycle;
+the other hosts get the indicator without enabling talkd's keyboard controls.
+
+Output volume uses the native WirePlumber module: scroll adjusts it, click opens
+pavucontrol. Unlike the microphone stream, the native output widget does not
+reconnect after a PipeWire restart; reload Waybar then. Also reload after
+installing a changed bar configuration (Hyprland owns its launch):
+
+```nu
+pkill --signal USR2 waybar
+```
+
+This reloads the bar; `Super+B` only hides/shows it. Waybar itself hosts the
+tray's StatusNotifierWatcher, and both this reload and a restart replace it:
+apps that do not register again (Slack and 1Password here; nm-applet does)
+lose their tray icon until they are restarted.
+
 ## precision keyboard reference
 
 Open **Super+D**, search **Voyager Keyboard Reference**, then search a function,

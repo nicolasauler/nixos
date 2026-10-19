@@ -1,5 +1,6 @@
 {
   config,
+  lib,
   pkgs,
   inputs,
   ...
@@ -23,10 +24,12 @@
     ../../modules/home/nixpkgs.nix
     ../../modules/programs/shell-aliases.nix
     ../../modules/programs/starship.nix
-    ../../modules/programs/waybar/waybar_note.nix
+    ../../modules/programs/waybar/waybar.nix
     ../../modules/programs/zathura.nix
     ../../modules/programs/zellij.nix
   ];
+
+  programs.waybar.settings.mainBar.modules-right = lib.mkAfter ["battery"];
 
   colorScheme = inputs.nix-colors.colorSchemes.gruvbox-dark-medium;
 
@@ -70,6 +73,10 @@
     #   echo "Hello, ${config.home.username}!"
     # '')
   ];
+
+  # Fonts in home.packages stay invisible to fontconfig unless Home Manager
+  # registers them; Waybar and Alacritty both name InconsolataGo.
+  fonts.fontconfig.enable = true;
 
   # Home Manager is pretty good at managing dotfiles. The primary way to manage
   # plain files is through 'home.file'.
