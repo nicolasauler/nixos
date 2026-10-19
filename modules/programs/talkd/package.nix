@@ -7,10 +7,8 @@
   wireplumber,
   libnotify,
 }:
-# cargo test runs in buildRustPackage's checkPhase: a failing test means no
-# package. --include-ignored adds the PipeWire test (src/mic.rs), which
-# spawns its own pipewire and wireplumber inside the build sandbox: no
-# sound card, no session bus, no user's PipeWire to reach.
+# Include the isolated PipeWire regression: no sound card, session bus or
+# user's PipeWire is reachable from the build sandbox.
 rustPlatform.buildRustPackage {
   pname = "talkd";
   version = "0.1.0";
@@ -24,7 +22,7 @@ rustPlatform.buildRustPackage {
   checkFlags = ["--include-ignored"];
   PW_TEST_PIPEWIRE = lib.getExe' pipewire "pipewire";
   PW_TEST_WIREPLUMBER = lib.getExe' wireplumber "wireplumber";
-  # notify-send reaches mako for the errors that leave the mic flipped
+  # Only the keyboard daemon sends notifications; status/waybar are read-only.
   postInstall = ''
     wrapProgram $out/bin/talkd --prefix PATH : ${lib.makeBinPath [libnotify]}
   '';
