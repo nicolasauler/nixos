@@ -187,9 +187,7 @@
 in {
   programs.waybar = {
     enable = true;
-    package = pkgs.waybar.overrideAttrs (oldAttrs: {
-      mesonFlags = oldAttrs.mesonFlags ++ ["-Dexperimental=true"];
-    });
+    package = pkgs.waybar;
     settings = {mainBar = mainWaybarConfig;};
     style = ./style.css;
     # style = ./style.css;
