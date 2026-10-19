@@ -1,290 +1,159 @@
-/* Keyframes */
-
-@keyframes blink-critical {
-	to {
-		/*color: @white;*/
-		background-color: @critical;
-	}
-}
-
-
-/* Styles */
-
-/* Colors (gruvbox) */
-@define-color black	#282828;
-@define-color red	#cc241d;
-@define-color green	#98971a;
-@define-color yellow	#d79921;
-@define-color blue	#458588;
-@define-color purple	#b16286;
-@define-color aqua	#689d6a;
-@define-color gray	#a89984;
-@define-color brgray	#928374;
-@define-color brred	#fb4934;
-@define-color brgreen	#b8bb26;
-@define-color bryellow	#fabd2f;
-@define-color brblue	#83a598;
-@define-color brpurple	#d3869b;
-@define-color braqua	#8ec07c;
-@define-color white	#ebdbb2;
-@define-color bg2	#504945;
-@define-color orange #d65d0e;
-
-
-@define-color warning 	@bryellow;
-@define-color critical	@red;
-@define-color mode	@black;
-@define-color unfocused	@bg2;
-@define-color focused	@braqua;
-@define-color inactive	@purple;
-@define-color sound	@brpurple;
-@define-color network	@purple;
-@define-color memory	@braqua;
-@define-color cpu	@yellow;
-@define-color temp	@blue;
-@define-color layout	@red;
-@define-color battery	@aqua;
-@define-color clock @gray;
-@define-color disk @orange;
-@define-color gpu @green;
-
-/* Reset all styles */
+/* Colors come from the host's nix-colors palette in waybar.nix. Bold, like
+   Alacritty's InconsolataGo: the regular strokes read thin at bar size. */
 * {
-	border: none;
-	border-radius: 0;
-	min-height: 0;
-	margin: 0;
-	padding: 0;
-	box-shadow: none;
-	text-shadow: none;
-	icon-shadow: none;
+  border: none;
+  border-radius: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  box-shadow: none;
+  text-shadow: none;
+  -gtk-icon-shadow: none;
+  font-family: "InconsolataGo Nerd Font Mono", monospace;
+  font-size: 15px;
+  font-weight: bold;
 }
 
-/* The whole bar */
-#waybar {
-	background: rgba(40, 40, 40, 0.8784313725); /* #282828e0 */
-	color: @white;
-	font-family: JetBrains Mono, Siji;
-	font-size: 10pt;
-	/*font-weight: bold;*/
+window#waybar {
+  background: @bar-bg;
+  color: @bar-fg;
+  border-bottom: 1px solid @bar-border;
 }
 
-/* Each module */
-#battery,
-#clock,
-#cpu,
-#custom-gpu_usage,
-#custom-gpu_temp,
-#language,
-#memory,
-#mode,
-#network,
-#pulseaudio,
-#temperature,
-#tray,
-#backlight,
-#idle_inhibitor,
-#disk,
-#user,
-#mpris {
-	padding-left: 8pt;
-	padding-right: 8pt;
+tooltip {
+  background: @bar-bg;
+  border: 1px solid @bar-border;
+  border-radius: 4px;
 }
 
-/* Each critical module */
-#mode,
-#memory.critical,
-#cpu.critical,
-#temperature.critical,
-#battery.critical.discharging {
-	animation-timing-function: linear;
-	animation-iteration-count: infinite;
-	animation-direction: alternate;
-	animation-name: blink-critical;
-	animation-duration: 1s;
+tooltip label {
+  color: @bar-fg;
+  padding: 8px;
 }
 
-/* Each warning */
-#network.disconnected,
-#memory.warning,
-#cpu.warning,
-#temperature.warning,
-#battery.warning.discharging {
-	color: @warning;
+#workspaces {
+  margin-left: 6px;
 }
 
-/* And now modules themselves in their respective order */
-
-/* Current sway mode (resize etc) */
-#mode {
-	color: @white;
-	background: @mode;
-}
-
-/* Workspaces stuff */
 #workspaces button {
-	/*font-weight: bold;*/
-	padding-left: 2pt;
-	padding-right: 2pt;
-	color: @white;
-	background: @unfocused;
+  color: @bar-fg;
+  /* Two digits wide, so 10 matches 1-9. */
+  min-width: 16px;
+  padding: 0 4px;
+  border-bottom: 2px solid transparent;
 }
 
-/* Inactive (on unfocused output) */
+/* Shown on this monitor while another one has focus. */
 #workspaces button.visible {
-	color: @white;
-	background: @inactive;
+  border-bottom-color: @bar-fg;
 }
 
-/* Active (on focused output) */
-#workspaces button.focused {
-	color: @black;
-	background: @focused;
+#workspaces button.active {
+  color: @bar-accent;
+  border-bottom-color: @bar-accent;
 }
 
-/* Contains an urgent window */
-#workspaces button.urgent {
-	color: @black;
-	background: @warning;
-}
-
-/* Style when cursor is on the button */
 #workspaces button:hover {
-	background: @black;
-	color: @white;
+  background: @bar-hover;
 }
 
-#window {
-	margin-right: 5pt;
-	margin-left: 5pt;
+/* A solid block: a text color alone is easy to miss. */
+#workspaces button.urgent {
+  color: @bar-bg;
+  background: @bar-warning;
+  border-bottom-color: @bar-warning;
 }
 
-#pulseaudio {
-	background: @sound;
-	color: @black;
-    min-width: 34px;
+#window,
+#cpu,
+#custom-cores,
+#memory,
+#disk,
+#temperature,
+#custom-microphone,
+#wireplumber,
+#network,
+#clock,
+#battery,
+#tray {
+  padding: 0 9px;
 }
 
-#network {
-	background: @network;
-	color: @white;
-    min-width: 72px;
+#custom-cores.pending {
+  color: @bar-muted;
 }
 
-#memory {
-	background: @memory;
-	color: @black;
-    min-width: 68px;
+#custom-cores.unavailable {
+  color: @bar-warning;
 }
-
-#cpu {
-	background: @cpu;
-	color: @black;
-}
-
-#custom-gpu_usage {
-	background: @gpu;
-	color: @black;
-    min-width: 40px;
-	padding-left: 0pt;
-	padding-right: 1pt;
-}
-
-#custom-gpu_temp {
-	background: @gpu;
-	color: @black;
-    min-width: 40px;
-	padding-left: 0pt;
-	padding-right: 1pt;
-}
-
-#temperature {
-	background: @temp;
-	color: @black;
-}
-
-#language {
-	background: @layout;
-	color: @black;
-    min-width: 30px;
-}
-
-#disk {
-    background: @disk;
-    color: @black;
-    min-width: 38px;
-}
-
-#battery {
-	background: @battery;
-	color: @white;
-}
-
-/* #tray { */
-/*	background: @date; */
-/* } */
 
 #clock {
-	background: @clock;
-	color: @black;
+  color: @bar-clock;
 }
 
-#custom-arrow1 {
-	font-size: 11pt;
-	color: @time;
-	background: @date;
+/* Separators between modules. */
+#window,
+#cpu,
+#memory,
+#disk,
+#temperature,
+#custom-microphone,
+#wireplumber,
+#network,
+#clock {
+  border-left: 1px solid @bar-border;
 }
 
-#custom-arrow2 {
-	font-size: 11pt;
-	color: @date;
-	background: @layout;
+/* No window on this workspace: no title, so no separator either. */
+window#waybar.empty #window {
+  border-left: none;
+  padding: 0;
 }
 
-#custom-arrow3 {
-	font-size: 11pt;
-	color: @layout;
-	background: @battery;
+#wireplumber.muted {
+  color: @bar-muted;
 }
 
-#custom-arrow4 {
-	font-size: 11pt;
-	color: @battery;
-	background: @temp;
+/* The text carries the state too; color is never the only indication.
+   Nine characters ("MIC MUTED") wide, so F13/F14 toggles never shift the bar. */
+#custom-microphone {
+  min-width: 72px;
 }
 
-#custom-arrow5 {
-	font-size: 11pt;
-	color: @temp;
-	background: @cpu;
+#custom-microphone.muted {
+  color: @bar-muted;
 }
 
-#custom-arrow6 {
-	font-size: 11pt;
-	color: @cpu;
-	background: @memory;
+#custom-microphone.live {
+  color: @bar-warning;
+  background: alpha(@bar-warning, 0.09);
 }
 
-#custom-arrow7 {
-	font-size: 11pt;
-	color: @memory;
-	background: @network;
+#custom-microphone.unknown {
+  color: @bar-error;
 }
 
-#custom-arrow8 {
-	font-size: 11pt;
-	color: @network;
-	background: @sound;
+#memory.warning,
+#disk.warning,
+#temperature.warning,
+#battery.warning.discharging,
+#network.linked {
+  color: @bar-warning;
 }
 
-#custom-arrow9 {
-	font-size: 11pt;
-	color: @sound;
-	background: transparent;
+#memory.critical,
+#disk.critical,
+#temperature.critical,
+#battery.critical.discharging,
+#network.disconnected,
+#network.disabled {
+  color: @bar-error;
 }
 
-#custom-arrow10 {
-	font-size: 11pt;
-	color: @unfocused;
-	background: transparent;
+#battery.charging {
+  color: @bar-accent;
+}
+
+.modules-right {
+  margin-right: 6px;
 }

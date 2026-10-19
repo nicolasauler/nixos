@@ -3,6 +3,7 @@
   lib,
   pkgs,
   inputs,
+  waybarLabel,
   ...
 }: {
   imports = [
@@ -29,10 +30,40 @@
     ../../modules/programs/starship.nix
     ../../modules/programs/talkd
     ../../modules/programs/voyager-help
-    ../../modules/programs/waybar/waybar_note.nix
+    ../../modules/programs/waybar/waybar.nix
     ../../modules/programs/zathura.nix
     ../../modules/programs/zellij.nix
   ];
+
+  programs.waybar.settings.mainBar = {
+    # Sensors close the hardware block, before the status modules.
+    modules-right = lib.mkMerge [
+      (lib.mkOrder 600 ["temperature#cpu" "temperature#nvme"])
+      (lib.mkAfter ["battery"])
+    ];
+    "temperature#cpu" = {
+      interval = 5;
+      hwmon-path-abs = "/sys/devices/platform/coretemp.0/hwmon";
+      input-filename = "temp1_input"; # coretemp: Package id 0
+      # Waybar otherwise silently falls back to the unrelated ACPI zone 0.
+      # At startup/reload, a missing sensor must disable the widget, not invent a value.
+      thermal-zone = -1;
+      format = "${waybarLabel "CPU"} {temperatureC}°C";
+      warning-threshold = 90;
+      critical-threshold = 100;
+      tooltip-format = "CPU package {temperatureC}°C (coretemp, Package id 0)";
+    };
+    "temperature#nvme" = {
+      interval = 30;
+      hwmon-path-abs = "/sys/class/nvme/nvme0";
+      input-filename = "temp1_input"; # nvme0: Composite
+      thermal-zone = -1;
+      format = "${waybarLabel "SSD"} {temperatureC}°C";
+      warning-threshold = 70;
+      critical-threshold = 80;
+      tooltip-format = "NVMe controller 0 composite temperature: {temperatureC}°C";
+    };
+  };
 
   colorScheme = inputs.nix-colors.colorSchemes.gruvbox-dark-medium;
 
