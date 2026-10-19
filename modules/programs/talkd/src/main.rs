@@ -19,6 +19,10 @@ mod params;
 mod status;
 mod store;
 
+#[cfg(test)]
+#[path = "../tests/support/mod.rs"]
+mod test_support;
+
 use std::cell::RefCell;
 use std::env;
 use std::path::PathBuf;
