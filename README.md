@@ -121,8 +121,17 @@ it is a literal in a public repo either way.
 ## Desktop status bar
 
 All four desktop hosts share `modules/programs/waybar/waybar.nix` and its
-Gruvbox stylesheet; laptop homes append the battery module. The package is
-stock nixpkgs Waybar, without the redundant experimental build override.
+Gruvbox stylesheet; laptop homes append the battery module.
+
+The package is nixpkgs' Waybar 0.15.0 built from
+[`nicolasauler/Waybar` `hyprland-ipc-reconnect`](https://github.com/nicolasauler/Waybar/tree/hyprland-ipc-reconnect).
+Hyprland drops an event-socket client once 64 events queue up behind it; while
+busy terminals animate their titles, a stall of about three seconds is enough.
+Stock Waybar never reconnected, so workspaces and the window title froze until
+a restart (a reload kept the dead connection). The fork reconnects and refreshes
+them, keeps the workspaces shown when Hyprland doesn't answer a refresh, and
+stops a destroyed workspace from coming back when its creation was still
+queued. It is built locally; drop the override once upstream Waybar reconnects.
 
 Workspaces and the focused window's title sit on the left. Everything else is
 right-aligned on one line: the hardware block (CPU, per-CPU strip, RAM, disk and
@@ -203,8 +212,9 @@ installing a changed bar configuration (Hyprland owns its launch):
 pkill --signal USR2 waybar
 ```
 
-This reloads the bar; `Super+B` only hides/shows it. Waybar itself hosts the
-tray's StatusNotifierWatcher, and both this reload and a restart replace it:
+This reloads the bar; `Super+B` only hides/shows it. A reload keeps the running
+Waybar binary, so a changed Waybar package needs a restart. Waybar itself hosts
+the tray's StatusNotifierWatcher, and both a reload and a restart replace it:
 apps that do not register again (Slack and 1Password here; nm-applet does)
 lose their tray icon until they are restarted.
 
