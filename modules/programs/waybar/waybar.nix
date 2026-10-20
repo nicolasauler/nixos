@@ -16,7 +16,18 @@ in {
 
   programs.waybar = {
     enable = true;
-    package = pkgs.waybar;
+    # nixpkgs' Waybar 0.15.0 built from nicolasauler/Waybar#hyprland-ipc-reconnect:
+    # stock Waybar never reconnects after Hyprland drops its event socket, which
+    # froze workspaces and the window title until a restart. Built locally; drop
+    # this once upstream reconnects.
+    package = pkgs.waybar.overrideAttrs (_: {
+      src = pkgs.fetchFromGitHub {
+        owner = "nicolasauler";
+        repo = "Waybar";
+        rev = "50ddcc8e485970c499651ad671de79563afaf43b";
+        hash = "sha256-eTi8wL/NQz7zqtAQJB4AEcR5mUekIMcfxMZQ0feBda8=";
+      };
+    });
     style =
       ''
         @define-color bar-bg #${palette.base00};
