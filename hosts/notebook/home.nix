@@ -126,6 +126,6 @@
   };
 
   qt.enable = true;
-  qt.platformTheme = "gtk";
+  qt.platformTheme.name = "gtk3";
   qt.style.name = "adwaita-dark";
 }
