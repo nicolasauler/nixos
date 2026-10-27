@@ -258,6 +258,30 @@ silently interpreted as stock. **This is source identification, not hardware
 attestation:** a device can copy descriptors, and an unmarked custom build can
 still look stock. Arbitrary new C behavior also needs an updated semantic model.
 
+## precision under heavy builds
+
+Several Rust builds at once (agents each running bipa's `dev clippy`, `dev up` or
+`dev test`, at about 20 GiB apiece) used to fill all 62 GiB and freeze the desktop.
+Two limits now keep RAM for it:
+
+- Nix builds share one cap: `nix-daemon.service` may use 50 GiB, which leaves about
+  12 GiB for the desktop with Slack and Firefox open. At the cap the kernel OOM-kills
+  processes inside it, usually a compiler, instead of swapping. systemd does not
+  stop the rest of the unit on top of that, but which build loses is the kernel's
+  choice.
+- `dev test` compiles with cargo in the agent's own shell, outside that cap, so
+  earlyoom backs it up. When available memory falls below about 3 GiB it kills the
+  largest process by memory, system-wide: compilers, linkers and cargo count 3 GiB
+  bigger, Firefox, Slack and the agents 3 GiB smaller. These are biases, not tiers:
+  other work can be killed even while builds run. Hyprland, Xwayland, Waybar,
+  alacritty and zellij themselves are excluded. `journalctl -u earlyoom` names each
+  kill. earlyoom 1.9.0 needs upstream's fix for `--avoid` under `--sort-by-rss`, so
+  precision builds it with that patch. Once nixpkgs ships a newer earlyoom,
+  evaluation fails until the patch is dropped and the sizes above rechecked.
+
+A killed build fails and needs a rerun. Both limits apply on switch, no reboot
+needed.
+
 ## Voyager firmware build and flash
 
 Oryx remains the editor. Save and compile there, then from the firmware checkout:

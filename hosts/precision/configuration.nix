@@ -324,15 +324,22 @@ in {
   # `serviceConfig = mkIf false {…}` still rendered a stray ExecStart-less
   # `sentinelone.service` into the closure.)
   systemd.services.sentinelone.serviceConfig = {
-    # Pin it to the E-cores (12-21 on this Meteor Lake), so it stays off the P-cores
-    # you actually work on. Widen this if scans feel slow.
-    AllowedCPUs = "12-21";
+    # Pin it to the two low-power E-cores (20-21 on this Meteor Lake: the slowest
+    # cpuinfo_max_freq of the 22, their own cluster, no L3), so it stays off cpu0-19.
+    # Builds still run on 20-21 too, so this confines it rather than reserving them.
+    # It averaged ~11% of one core over its first 15 minutes after boot, measured on
+    # the faster E-cores (2026-10-27). Widen this if scans fall behind.
+    AllowedCPUs = "20-21";
     # Yield to foreground work under contention (default weight is 100).
     CPUWeight = 20;
-    # Hard cap on runaway. Generous (2 cores) so it never starves past the 30s
-    # watchdog and flaps.
-    CPUQuota = "200%";
-    # Soft throttle above the observed peak; hard ceiling at ~3x so it never OOM-flaps.
+    # Hard cap: one and a half of those two cores. Restarts are not rare (before this
+    # pin it already exited and restarted up to 19 times a day, and hit its 30 s watchdog
+    # once, on 2026-10-18), and each restart's startup now runs on slow cores, so this
+    # keeps room for bursts. Not measured under full build load: after a switch, watch
+    # `journalctl -u sentinelone -g 'Watchdog timeout'`.
+    CPUQuota = "150%";
+    # Soft throttle above the observed peak; the ~3x hard ceiling leaves headroom above
+    # observed usage, not a guarantee against OOM.
     MemoryHigh = "512M";
     MemoryMax = "1G";
     # Deprioritise its disk IO against yours.
@@ -389,8 +396,9 @@ in {
   # Firefox extension is unlocked through the desktop app, and the app unlocks with
   # "system authentication" = polkit -> PAM -> fprintd above. polkitPolicyOwners
   # installs the polkit action that setting needs; the module also adds the setgid
-  # 1Password-BrowserSupport wrapper the extension talks to. The app is started with
-  # the Hyprland session (hyprland_note.lua) so the extension always has it to talk to.
+  # 1Password-BrowserSupport wrapper the extension talks to. The app is NOT started
+  # with the session: it is rarely needed and sat in RAM all day, so start it when a
+  # passkey prompt asks for it.
   programs._1password-gui = {
     enable = true;
     polkitPolicyOwners = ["nic"];
@@ -506,6 +514,96 @@ in {
     trusted-public-keys = [
       "hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc="
       "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw="
+    ];
+  };
+
+  # Every `nix build` (bipa's `dev clippy`, `dev check`, `dev up`, `dev lint`) compiles
+  # inside nix-daemon.service's cgroup, not the caller's; see
+  # modules/services/buildbot-limits.nix. Several agents each running one, at ~20 GiB a
+  # build, used to fill all 62 GiB and freeze the desktop solid. desktop deliberately
+  # leaves this unit uncapped, because there a cap would throttle interactive builds on
+  # behalf of CI; here the interactive builds are the thing to bound. 50G (systemd's G is
+  # GiB) leaves ~12 GiB for the desktop with Slack and Firefox open (it shows ~4.2 GiB
+  # used idle without them), so in a build storm the cap, not earlyoom below, is what
+  # normally binds. Two 20 GiB builds fit.
+  #
+  # Deliberately no MemoryHigh below the cap. In an anonymous-memory VM experiment with
+  # swap off, a 300M MemoryHigh under a 400M cap throttled the build for the whole five
+  # minutes it was given without killing it, while the cap alone killed it in six
+  # seconds. File-backed work can still hit reclaim stalls near the cap.
+  systemd.services.nix-daemon.serviceConfig = {
+    MemoryMax = "50G";
+    # At the cap the kernel OOM-kills processes in this cgroup, usually a compiler,
+    # instead of letting builds crawl through the 68 GiB swap partition and drag the
+    # desktop down with them.
+    MemorySwapMax = 0;
+    # So that one killed process does not make systemd stop the rest of the unit as
+    # well. It does not choose which process the kernel kills. Already the default for a
+    # Delegate=yes unit; spelled out so it does not hang on that.
+    OOMPolicy = "continue";
+  };
+
+  # The backstop for what the cap above cannot see: `dev test` runs cargo nextest in the
+  # agent's own shell, so it compiles inside the desktop session's cgroup. earlyoom
+  # measures against its own "user memory" (available plus anonymous, ~60 GiB here; it
+  # shrinks as tmpfs fills): below 5% available (~3 GiB) it sends SIGTERM, below half
+  # that SIGKILL. Swap is ignored (100) for both: with 68 GiB of it, earlyoom would
+  # otherwise wait for swap to fill, i.e. until the desktop had been thrashing for
+  # minutes. The kill threshold must be set too: it defaults to half the term
+  # threshold, 50%, and SIGKILL would wait for half the swap to fill.
+  #
+  # It kills the largest process by resident memory across the whole system
+  # (--sort-by-rss): --prefer counts compilers, linkers and cargo 3 GiB bigger, --avoid
+  # counts the browsers and agents 3 GiB smaller, --ignore excludes. These are biases,
+  # not tiers: other work can be killed even while builds run. Ranking by memory rather
+  # than oom_score matters here because systemd gives user services (pipewire,
+  # wireplumber, the polkit agent, hypridle, the portals) oom_score_adj 200, which would
+  # put those small services ahead of a big leaking process. The ignore list binds
+  # earlyoom only, not the kernel's own OOM killer, and covers the named processes, not
+  # their children.
+  services.earlyoom = {
+    enable = true;
+    # earlyoom 1.9.0 takes a process whose adjusted RSS is 0 or less for a zombie main
+    # thread and compares it by oom_score instead. With --sort-by-rss, --avoid puts every
+    # avoided process under 3 GiB there, so Slack's renderer (oom_score_adj 300) won
+    # over compilers and real hogs alike, the opposite of --avoid. Upstream fixed it in
+    # cd65016e (issue #377), unreleased as of 1.9.0, the version nixpkgs ships; this
+    # applies that one commit. Upstream master also sizes --prefer/--avoid at 30% of RAM
+    # instead of 3 GiB, so a newer earlyoom fails evaluation here until the patch is
+    # dropped and these sizes rechecked.
+    package = pkgs.earlyoom.overrideAttrs (old: {
+      patches =
+        (old.patches or [])
+        ++ (
+          if old.version == "1.9.0"
+          then [
+            (pkgs.fetchpatch {
+              name = "earlyoom-avoid-under-sort-by-rss.patch";
+              url = "https://github.com/rfjakob/earlyoom/commit/cd65016ed7c4eb7a5cdf2826cc68e36e72fefde5.patch";
+              hash = "sha256-2b5IKd/cKY52bRbIINZp0N27LBwLZ7529Lgyo+u6yrw=";
+            })
+          ]
+          else throw "earlyoom ${old.version} should include upstream's --avoid fix: drop the patch in hosts/precision/configuration.nix, and recheck the --prefer/--avoid sizes there and in README.md"
+        );
+    });
+    freeMemThreshold = 5;
+    freeSwapThreshold = 100;
+    freeSwapKillThreshold = 100;
+    # earlyoom matches /proc/PID/comm, which is truncated to 15 bytes. A literal dot is
+    # written [.], not \.: systemd's word splitting of $EARLYOOM_ARGS processes
+    # backslashes even inside quotes, eats the escape and leaves a wildcard.
+    extraArgs = [
+      "--sort-by-rss"
+      # +3 GiB: compilers, linkers and cargo
+      "--prefer"
+      "^(rustc|clippy-driver|rustdoc|cargo|cargo-nextest|build-script-bu|cc1|cc1plus|collect2|ld|ld[.].*|lld|mold)$"
+      # -3 GiB: Slack, Firefox (main and content processes, by the names it gives them)
+      # and the coding agents, so a runaway tab can still be stopped
+      "--avoid"
+      "^(slack|[.]firefox-wrappe|firefox|forkserver|Isolated Web Co|Isolated Servic|Web Content|WebExtensions|Privileged Cont|RDD Process|Socket Process|Utility Process|GPU Process|omp( .*)?)$"
+      # excluded: the compositor, the bar and the terminals themselves
+      "--ignore"
+      "^([.]Hyprland-wrapp|Hyprland|Xwayland|[.]waybar-wrapped|waybar|alacritty|zellij)$"
     ];
   };
 
