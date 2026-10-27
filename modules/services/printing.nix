@@ -57,9 +57,9 @@
     nssmdns4 = true; # resolve the printers' .local names
     openFirewall = true; # mDNS discovery, UDP 5353 (also the default)
     # answer for this host's own .local name, as resolved did before
-    publish = {
-      enable = true;
-      addresses = true;
+    settings.publish = {
+      disable-publishing = false;
+      publish-addresses = true;
     };
   };
   # one mDNS stack (see Discovery above); inert on a host without resolved

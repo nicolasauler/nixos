@@ -1,6 +1,8 @@
 {...}: {
   programs.nushell = {
     enable = true;
+    # the pre-26.11 default, made explicit; true would make Home Manager own env.nu
+    loadSessionVariables = false;
     shellAliases = {
       builtin-ls = "ls";
       builtin-cd = "cd";
