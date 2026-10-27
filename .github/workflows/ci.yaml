@@ -28,13 +28,22 @@ jobs:
       - name: Enable and verify KVM
         run: |
           set -euo pipefail
+          # Before udevadm: its --name-match fails outright on a missing device,
+          # so this message could never say why.
+          if ! test -c /dev/kvm; then
+            echo "::error::This runner has no /dev/kvm (CPU virtualisation flag: $(grep -m1 -oE 'vmx|svm' /proc/cpuinfo || echo none)). Re-run the job."
+            exit 1
+          fi
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          test -c /dev/kvm
-          test -r /dev/kvm
-          test -w /dev/kvm
+          # --settle: trigger only queues the change event, and the check below
+          # would otherwise race udev applying the rule.
+          sudo udevadm trigger --name-match=kvm --settle
+          if ! { test -r /dev/kvm && test -w /dev/kvm; }; then
+            echo "::error::/dev/kvm is not usable after the udev rule: $(stat -c '%A %U:%G' /dev/kvm)"
+            exit 1
+          fi
           stat -c '%A %U:%G %n' /dev/kvm
 
       # `id` so the second check below can require that nix actually got
