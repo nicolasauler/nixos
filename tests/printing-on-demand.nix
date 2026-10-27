@@ -127,6 +127,12 @@ in
             # ipps with, which CUPS prefers when a printer offers both
             ExecStart = "${pkgs.cups}/bin/ippeveprinter -v -p ${toString port} -d ${spool} -k -K ${spool}/ssl '${service}'";
             StateDirectory = ["ippeveprinter" "ippeveprinter/ssl"];
+            # ippeveprinter can abort right at startup, on an assertion in
+            # libavahi-client's D-Bus glue (dbus-watch-glue.c:91, request_dispatch;
+            # once in two local runs). It is the test's printer, not what the test
+            # is about, so start it again instead of waiting out its port.
+            Restart = "on-failure";
+            RestartSec = 1;
           };
         };
       };
