@@ -304,7 +304,8 @@ reachable from the whole tailnet. The addresses and keys are written into both
 host configs. If desktop gets a new key, or either machine re-registers with
 Tailscale and gets new addresses (`tailscale status`), update
 `hosts/precision/configuration.nix` (`AllowUsers`, the authorized key) and
-`hosts/desktop/configuration.nix` (the nftables rule, the pinned host key).
+`hosts/desktop/configuration.nix` (the nftables rule, and the pinned host key
+with its `hostNames`, which carry precision's addresses).
 
 ## Voyager firmware build and flash
 
