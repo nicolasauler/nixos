@@ -32,6 +32,7 @@ pkgs.testers.runNixOSTest {
       ../modules/services/buildbot-limits.nix
       ../modules/services/nix-daemon-ci.nix
       ../modules/services/buildbot-pr-policy.nix
+      ../modules/services/buildbot-nix-packages.nix
     ];
 
     virtualisation = {

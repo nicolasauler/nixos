@@ -18,6 +18,7 @@
     ../../modules/services/buildbot-secrets.nix
     ../../modules/services/nix-daemon-ci.nix
     ../../modules/services/buildbot-pr-policy.nix
+    ../../modules/services/buildbot-nix-packages.nix
     inputs.home-manager.nixosModules.default
     # Decrypts ../../secrets/*.age with this host's /etc/ssh/ssh_host_ed25519_key
     # at activation. sops-nix was the alternative and was rejected: one admin,
