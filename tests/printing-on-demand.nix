@@ -63,9 +63,26 @@
     gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -sOutputFile=$out \
       -c '/Helvetica findfont 24 scalefont setfont 72 720 moveto (No Quarter) show showpage'
   '';
+  # Avahi starts only once this node's test-network addresses are up. A global IPv6
+  # address that appears while avahi-daemon is still probing its host name makes it
+  # conflict with itself and rename the host to <name>-2: CI run 40576252489 came up
+  # as laptop-2.local, so laptop.local never resolved. Adding the address mid-probe
+  # did it 6 times in 16; restarting Avahi with the address in place, 0 in 8. These
+  # addresses come from network-addresses-eth1.service, which raced avahi-daemon at
+  # boot. It needs Wants= as well as After=: only the eth1 device unit wants that
+  # service, so on a boot where Avahi's start job runs before udev has announced
+  # eth1, After= has nothing to wait for (CI run 40584145029: Avahi started 0.7 s
+  # before the address configuration began).
+  avahiAfterAddresses = {
+    systemd.services.avahi-daemon = {
+      wants = ["network-addresses-eth1.service"];
+      after = ["network-addresses-eth1.service"];
+    };
+  };
   laptop = extra: {
     imports = [
       ../modules/services/printing.nix
+      avahiAfterAddresses
       extra
     ];
     # precision's resolver, so NSS has precision's hosts order and resolved is
@@ -91,6 +108,7 @@ in
       });
 
       printer = {pkgs, ...}: {
+        imports = [avahiAfterAddresses];
         services.avahi = {
           enable = true;
           settings.publish = {
@@ -109,6 +127,12 @@ in
             # ipps with, which CUPS prefers when a printer offers both
             ExecStart = "${pkgs.cups}/bin/ippeveprinter -v -p ${toString port} -d ${spool} -k -K ${spool}/ssl '${service}'";
             StateDirectory = ["ippeveprinter" "ippeveprinter/ssl"];
+            # ippeveprinter can abort right at startup, on an assertion in
+            # libavahi-client's D-Bus glue (dbus-watch-glue.c:91, request_dispatch;
+            # once in two local runs). It is the test's printer, not what the test
+            # is about, so start it again instead of waiting out its port.
+            Restart = "on-failure";
+            RestartSec = 1;
           };
         };
       };

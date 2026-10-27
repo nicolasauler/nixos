@@ -19,6 +19,7 @@
       inputs.buildbot-nix.nixosModules.buildbot-master
       inputs.buildbot-nix.nixosModules.buildbot-worker
       ../modules/services/buildbot-pr-policy.nix
+      ../modules/services/buildbot-nix-packages.nix
     ];
 
     virtualisation = {
