@@ -348,8 +348,36 @@ in {
     TasksMax = lib.mkForce 512;
   };
 
-  # Enable the OpenSSH daemon.
-  # services.openssh.enable = true;
+  # SSH from desktop, and only from desktop: the mirror of desktop's nftables rule,
+  # which takes SSH from this laptop's tailnet address alone.
+  #
+  # Here sshd does the restricting, not the firewall. tailscaled runs in iptables
+  # mode on this host and inserts its ts-input chain first in INPUT, and that chain
+  # accepts everything arriving on tailscale0 before nixos-fw sees it, so no
+  # nixos-fw rule can tell tailnet peers apart. AllowUsers admits nic from desktop's
+  # two tailnet addresses (`tailscale status`) and nobody else, with keys only. The
+  # one key is desktop's ~/.ssh/id_ed25519.pub, the key it also signs its commits
+  # with: GitHub's signing key "nixos-desktop",
+  # SHA256:IZenfG+5O7P181YXNgh4sUcfkvf64IsjKPDvsS3zQSg.
+  services.openssh = {
+    enable = true;
+    # Port 22 is opened on tailscale0 only, below, so the LAN never reaches sshd.
+    openFirewall = false;
+    # Keys only from users.users.nic below, never from ~/.ssh/authorized_keys.
+    authorizedKeysInHomedir = false;
+    settings = {
+      PasswordAuthentication = false;
+      KbdInteractiveAuthentication = false;
+      PermitRootLogin = "no";
+      AllowUsers = ["nic@100.78.178.35" "nic@fd7a:115c:a1e0::3201:b223"];
+    };
+  };
+  # Redundant while tailscaled accepts all of tailscale0 itself, and what keeps SSH
+  # working if it ever runs in nftables mode, where nixos-fw would see the packet.
+  networking.firewall.interfaces.tailscale0.allowedTCPPorts = [22];
+  users.users.nic.openssh.authorizedKeys.keys = [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILy3ExAodweUAWq3torW2iss4A7EXOiZ8GkjjXSGKWhp nic@desktop"
+  ];
 
   services.tailscale.enable = true;
 
