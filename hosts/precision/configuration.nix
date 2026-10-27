@@ -324,15 +324,22 @@ in {
   # `serviceConfig = mkIf false {…}` still rendered a stray ExecStart-less
   # `sentinelone.service` into the closure.)
   systemd.services.sentinelone.serviceConfig = {
-    # Pin it to the E-cores (12-21 on this Meteor Lake), so it stays off the P-cores
-    # you actually work on. Widen this if scans feel slow.
-    AllowedCPUs = "12-21";
+    # Pin it to the two low-power E-cores (20-21 on this Meteor Lake: the slowest
+    # cpuinfo_max_freq of the 22, their own cluster, no L3), so it stays off cpu0-19.
+    # Builds still run on 20-21 too, so this confines it rather than reserving them.
+    # It averaged ~11% of one core over its first 15 minutes after boot, measured on
+    # the faster E-cores (2026-10-27). Widen this if scans fall behind.
+    AllowedCPUs = "20-21";
     # Yield to foreground work under contention (default weight is 100).
     CPUWeight = 20;
-    # Hard cap on runaway. Generous (2 cores) so it never starves past the 30s
-    # watchdog and flaps.
-    CPUQuota = "200%";
-    # Soft throttle above the observed peak; hard ceiling at ~3x so it never OOM-flaps.
+    # Hard cap: one and a half of those two cores. Restarts are not rare (before this
+    # pin it already exited and restarted up to 19 times a day, and hit its 30 s watchdog
+    # once, on 2026-10-18), and each restart's startup now runs on slow cores, so this
+    # keeps room for bursts. Not measured under full build load: after a switch, watch
+    # `journalctl -u sentinelone -g 'Watchdog timeout'`.
+    CPUQuota = "150%";
+    # Soft throttle above the observed peak; the ~3x hard ceiling leaves headroom above
+    # observed usage, not a guarantee against OOM.
     MemoryHigh = "512M";
     MemoryMax = "1G";
     # Deprioritise its disk IO against yours.
