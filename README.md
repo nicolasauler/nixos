@@ -282,6 +282,27 @@ Two limits now keep RAM for it:
 A killed build fails and needs a rerun. Both limits apply on switch, no reboot
 needed.
 
+## SSH between desktop and precision
+
+Each machine takes SSH from the other over the tailnet, and from nothing else.
+
+- **desktop → precision:** `ssh precision`. precision's sshd accepts only `nic`,
+  only with desktop's key (its `~/.ssh/id_ed25519.pub`, the one it signs commits
+  with), and only from desktop's two tailnet addresses: no passwords, no root.
+  Port 22 is open on `tailscale0` only. desktop pins precision's host key, so the
+  first `ssh precision` doesn't ask to trust it.
+- **precision → desktop:** desktop's nftables rule accepts port 22 from
+  precision's tailnet address only, and you log in with desktop's password.
+
+On precision the restriction lives in sshd (`AllowUsers`), not in the firewall:
+tailscaled runs there in iptables mode and accepts everything arriving on
+`tailscale0` before NixOS's firewall sees it, so anything precision listens on is
+reachable from the whole tailnet. The addresses and keys are written into both
+host configs. If desktop gets a new key, or either machine re-registers with
+Tailscale and gets new addresses (`tailscale status`), update
+`hosts/precision/configuration.nix` (`AllowUsers`, the authorized key) and
+`hosts/desktop/configuration.nix` (the nftables rule, the pinned host key).
+
 ## Voyager firmware build and flash
 
 Oryx remains the editor. Save and compile there, then from the firmware checkout:

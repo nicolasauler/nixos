@@ -182,6 +182,13 @@
   # Enable the OpenSSH daemon.
   services.openssh.enable = true;
   services.tailscale.enable = true;
+  # precision accepts SSH from this host's tailnet addresses (its configuration.nix
+  # says how), and its host key is pinned here so `ssh precision` never asks to
+  # trust it: SHA256:WW3rLb6gfAniD102JOgCdIm8VIdImqu4J/XDB+T15Yg.
+  programs.ssh.knownHosts.precision = {
+    hostNames = ["precision" "precision.tailb7fb5e.ts.net" "100.83.239.83" "fd7a:115c:a1e0::7332:ef53"];
+    publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBYsa6oZDYIOlxbsZ4x1fnCdtYhE5U+Y/NMnk9KbU6od";
+  };
 
   # Open ports in the firewall.
   networking.nftables.enable = true;
