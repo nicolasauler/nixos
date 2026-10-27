@@ -152,6 +152,12 @@
     enableCompletion = true;
     bashrcExtra = ''
       export PATH="$HOME/.local/bin:$PATH"
+    '';
+    # initExtra, not bashrcExtra: bashrcExtra also runs in non-interactive shells, and
+    # home-manager's activation at boot runs a login shell that sources ~/.bashrc. The
+    # auto-start then launched zellij with no terminal: its client panicked, and the
+    # server it had spawned, with a nu pane, sat in RAM until shutdown.
+    initExtra = ''
       eval "$(zellij setup --generate-auto-start bash)"
     '';
     # eval "$(zoxide init bash)"
