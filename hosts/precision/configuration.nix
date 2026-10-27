@@ -389,8 +389,9 @@ in {
   # Firefox extension is unlocked through the desktop app, and the app unlocks with
   # "system authentication" = polkit -> PAM -> fprintd above. polkitPolicyOwners
   # installs the polkit action that setting needs; the module also adds the setgid
-  # 1Password-BrowserSupport wrapper the extension talks to. The app is started with
-  # the Hyprland session (hyprland_note.lua) so the extension always has it to talk to.
+  # 1Password-BrowserSupport wrapper the extension talks to. The app is NOT started
+  # with the session: it is rarely needed and sat in RAM all day, so start it when a
+  # passkey prompt asks for it.
   programs._1password-gui = {
     enable = true;
     polkitPolicyOwners = ["nic"];
