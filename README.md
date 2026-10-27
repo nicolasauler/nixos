@@ -292,7 +292,10 @@ Each machine takes SSH from the other over the tailnet, and from nothing else.
   Port 22 is open on `tailscale0` only. desktop pins precision's host key, so the
   first `ssh precision` doesn't ask to trust it.
 - **precision → desktop:** desktop's nftables rule accepts port 22 from
-  precision's tailnet address only, and you log in with desktop's password.
+  precision's tailnet address only, and you log in with desktop's password. That
+  rule only works with `services.openssh.openFirewall = false`: NixOS emits the
+  globally allowed ports before `extraInputRules`, so a global 22 would accept
+  everything ahead of it.
 
 On precision the restriction lives in sshd (`AllowUsers`), not in the firewall:
 tailscaled runs there in iptables mode and accepts everything arriving on
