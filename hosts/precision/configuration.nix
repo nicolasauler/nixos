@@ -204,8 +204,41 @@ in {
   # };
 
   security.rtkit.enable = true;
-  services.pipewire = {
+  services.pipewire = let
+    # PipeWire 1.6.9's bluez5 plugin can leave a headset's voice link (the SCO
+    # transport) in an error state when the headset goes back to music mode while
+    # audio is still playing into it. The next switch to headset mode hands that
+    # error to the new nodes, which never recover: in a call, the AirPods' mic goes
+    # silent and the call audio dies (pipewire#5467, #5542, #5476). Fixed upstream
+    # by d80b8060 (pipewire!2997) and b7246d0d (pipewire!3004), which are on the 1.6
+    # branch but in no release yet (1.6.10 lacks them), so both are applied here.
+    # The plugin runs inside WirePlumber, which loads it from the libpipewire it was
+    # built against, so WirePlumber is rebuilt against this PipeWire too. Any other
+    # PipeWire version fails evaluation until someone checks whether it has them.
+    pipewire = pkgs.pipewire.overrideAttrs (old: {
+      patches =
+        (old.patches or [])
+        ++ (
+          if old.version == "1.6.9"
+          then [
+            (pkgs.fetchpatch {
+              name = "pipewire-bluez5-reset-transport-error-count.patch";
+              url = "https://github.com/PipeWire/pipewire/commit/d80b80602b389fe9badeda830122d357e9e2e3ea.patch";
+              hash = "sha256-ps+bOMgAQ7DQIKj1YM9TI4wac31aTaKM46/EJp3U1fA=";
+            })
+            (pkgs.fetchpatch {
+              name = "pipewire-bluez5-async-node-removal.patch";
+              url = "https://github.com/PipeWire/pipewire/commit/b7246d0d5ddc79cbab06e7e55f6dda37c446118d.patch";
+              hash = "sha256-gDGLizeTtFaPhkBl1rTPHszgC9WziQCs/9cBa/ZlDf8=";
+            })
+          ]
+          else throw "pipewire ${old.version}: check whether it has upstream d80b8060 and b7246d0d (pipewire!2997, !3004); if so, drop these patches in hosts/precision/configuration.nix"
+        );
+    });
+  in {
     enable = true;
+    package = pipewire;
+    wireplumber.package = pkgs.wireplumber.override {inherit pipewire;};
     alsa.enable = true;
     alsa.support32Bit = true;
     pulse.enable = true;
