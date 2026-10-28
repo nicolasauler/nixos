@@ -372,8 +372,10 @@ in {
       AllowUsers = ["nic@100.78.178.35" "nic@fd7a:115c:a1e0::3201:b223"];
     };
   };
-  # Redundant while tailscaled accepts all of tailscale0 itself, and what keeps SSH
-  # working if it ever runs in nftables mode, where nixos-fw would see the packet.
+  # Redundant while tailscaled accepts all of tailscale0 ahead of nixos-fw, as it
+  # does in its nftables mode too (it writes into the same `filter` table that
+  # iptables-nft uses). It is what still admits desktop if this host's firewall
+  # moves to networking.nftables, whose own table sees the packet after that accept.
   networking.firewall.interfaces.tailscale0.allowedTCPPorts = [22];
   users.users.nic.openssh.authorizedKeys.keys = [
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILy3ExAodweUAWq3torW2iss4A7EXOiZ8GkjjXSGKWhp nic@desktop"

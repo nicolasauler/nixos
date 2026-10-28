@@ -181,6 +181,11 @@
 
   # Enable the OpenSSH daemon.
   services.openssh.enable = true;
+  # Port 22 only through extraInputRules below, which accept it from precision's
+  # tailnet address and drop it from everywhere else. The module's default (true)
+  # adds 22 to the global allowed ports, and NixOS's nftables firewall emits those
+  # accepts before extraInputRules, so that drop was never reached.
+  services.openssh.openFirewall = false;
   services.tailscale.enable = true;
   # precision accepts SSH from this host's tailnet addresses (its configuration.nix
   # says how), and its host key is pinned here so `ssh precision` never asks to
