@@ -307,6 +307,28 @@ Tailscale and gets new addresses (`tailscale status`), update
 `hosts/desktop/configuration.nix` (the nftables rule, and the pinned host key
 with its `hostNames`, which carry precision's addresses).
 
+## AirPods in calls on precision
+
+When an app opens the AirPods' mic, WirePlumber switches them from music mode to
+headset mode, where one Bluetooth voice link carries both the mic and the call
+audio. PipeWire 1.6.9 breaks that mode for the rest of the session: once the
+AirPods go back to music mode while audio is still playing into them (you switch
+mics mid-call, or an app closes the mic), every later switch to headset mode comes
+up with a silent mic and dead call audio. precision runs PipeWire with the two
+upstream fixes (pipewire!2997 and !3004, not in a release yet), and WirePlumber
+built against it. Evaluation fails on any other PipeWire version until someone
+checks whether it already has them.
+
+If the mic still goes silent mid-call, rebuild the headset nodes: in
+pavucontrol's **Configuration** tab, switch the AirPods to another "Headset Head
+Unit" codec (CVSD, say), then back to the one you use; WirePlumber remembers the
+last one picked. Re-selecting the same entry does nothing.
+
+Firefox has listed two inputs both called "AirPods": one is the mic, the other
+records what plays in the AirPods (in testing, the second). Before relying on
+one in Meet, keep the call quiet and check that its level bar moves when you
+talk.
+
 ## Voyager firmware build and flash
 
 Oryx remains the editor. Save and compile there, then from the firmware checkout:
