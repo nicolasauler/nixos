@@ -59,7 +59,10 @@ does not send a command to talkd or change the speaker output.
 Use F14 before starting an F13 hold/latch cycle to establish the baseline:
 muted gives hold-to-talk; unmuted gives hold-to-mute. Each F14 press uses the
 current default input, including a newly selected headset. F14 is disabled
-while the screen is locked; an existing F13 cycle can still finish.
+while the screen is locked; an existing F13 cycle can still finish. If the
+cycle's microphone goes away mid-cycle (a headset dropping, PipeWire
+restarting), talkd sets it back to the baseline when it returns, also across
+a talkd restart.
 
 The accepted Oryx revision **JqpmQ/EeKlbD** assigns F13 to base top-right
 (formerly Caps Word). F14 is **hold Enter, press AltGr**; the owner chose this
