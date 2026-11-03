@@ -8,7 +8,7 @@
 //! mic from one persistent PipeWire connection ([`mic`]), all handled on
 //! PipeWire's main loop, one at a time. What a cycle owes is saved before
 //! the mic is touched ([`store`]) and restored at the next start if a crash
-//! left it owed.
+//! left it owed; if the mic goes away first, when it is back.
 
 mod input;
 mod lock;
@@ -25,6 +25,7 @@ mod waybar;
 mod test_support;
 
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::env;
 use std::path::PathBuf;
 use std::process::{Command, ExitCode, Stdio};
@@ -36,9 +37,9 @@ use std::time::{Duration, Instant};
 use nix::sys::signal::{SigSet, Signal};
 use pipewire as pw;
 
-use machine::{Event, Lock, Machine, Obligation, Pin, Problem, World};
+use machine::{Dormant, Event, Lock, Machine, Obligation, Pin, Problem, Source, World};
 use mic::{Mic, MicEvent, Update};
-use notices::Notices;
+use notices::{Notice, Notices};
 use store::Store;
 
 /// How long a stop waits for an owed restore to settle.
@@ -54,8 +55,8 @@ const NOTIFY: Duration = Duration::from_secs(5);
 enum Msg {
     Key(input::Key),
     Wake(Wake),
-    /// notify-send's outcome for a message: delivered or not.
-    Sent(String, bool),
+    /// notify-send's outcome for a notice: delivered or not.
+    Sent(Notice, bool),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -71,7 +72,7 @@ struct Daemon {
     store: Store,
     notices: Notices,
     timers: mpsc::Sender<(Wake, Instant)>,
-    notifier: mpsc::Sender<String>,
+    notifier: mpsc::Sender<Notice>,
     main_loop: pw::main_loop::MainLoopWeak,
     stopping: bool,
     /// Reaching PipeWire failed, and that was logged.
@@ -85,7 +86,7 @@ struct Effects<'a> {
     store: &'a Store,
     notices: &'a mut Notices,
     timers: &'a mpsc::Sender<(Wake, Instant)>,
-    notifier: &'a mpsc::Sender<String>,
+    notifier: &'a mpsc::Sender<Notice>,
     lock_error: &'a mut Option<String>,
 }
 
@@ -94,16 +95,20 @@ impl Effects<'_> {
         let message = problem.message();
         eprintln!("talkd: {message}");
         if problem.visible()
-            && let Some(message) = self.notices.raise(&message)
+            && let Some(notice) = self.notices.raise(problem.subject(), &message)
         {
-            let _ = self.notifier.send(message);
+            let _ = self.notifier.send(notice);
         }
     }
 }
 
 impl World for Effects<'_> {
-    fn default_source(&self) -> Option<(Pin, bool)> {
+    fn default_source(&self) -> Option<Source> {
         self.mic.default_source()
+    }
+
+    fn find(&self, name: &str) -> Option<(Pin, bool)> {
+        self.mic.find(name)
     }
 
     fn lock_state(&mut self) -> Lock {
@@ -142,6 +147,10 @@ impl World for Effects<'_> {
         self.store.clear()
     }
 
+    fn save_dormant(&mut self, dormant: &[Dormant]) -> Result<(), String> {
+        self.store.save_dormant(dormant)
+    }
+
     fn arm(&mut self, token: u64, after: Duration) {
         let _ = self
             .timers
@@ -152,8 +161,12 @@ impl World for Effects<'_> {
         self.report(&problem);
     }
 
-    fn recovered(&mut self) {
-        self.notices.recover();
+    fn recovered(&mut self, dormant: Option<&str>) {
+        self.notices.recover(dormant);
+    }
+
+    fn publish(&mut self, owed: &BTreeMap<String, bool>) {
+        self.mic.publish(owed);
     }
 }
 
@@ -200,7 +213,14 @@ impl Daemon {
                 MicEvent::Confirmed(token, pin, muted) => {
                     self.feed(Event::Confirmed(token, pin, muted))
                 }
+                MicEvent::Relocated(token, pin) => {
+                    eprintln!(
+                        "mic: the mute moved before a change to it was seen; sending it again"
+                    );
+                    self.feed(Event::Relocated(token, pin))
+                }
                 MicEvent::Gone(pin) => self.feed(Event::NodeGone(pin)),
+                MicEvent::SourcesChanged => self.feed(Event::SourcesChanged),
                 MicEvent::Lost(why) => {
                     eprintln!("mic: {why}; reconnecting");
                     self.feed(Event::ServerGone);
@@ -235,7 +255,7 @@ impl Daemon {
                 );
                 self.quit();
             }
-            Msg::Sent(message, delivered) => self.notices.sent(&message, delivered),
+            Msg::Sent(notice, delivered) => self.notices.sent(&notice, delivered),
         }
     }
 
@@ -274,11 +294,11 @@ fn timers(requests: mpsc::Receiver<(Wake, Instant)>, send: pw::channel::Sender<M
     }
 }
 
-/// Shows `message` through the notification daemon (mako); true only if
+/// Shows `body` through the notification daemon (mako); true only if
 /// notify-send says it was delivered.
-fn notify(message: &str) -> bool {
+fn notify(body: &str) -> bool {
     let child = Command::new("notify-send")
-        .args(["--app-name=talkd", "--urgency=critical", "talkd", message])
+        .args(["--app-name=talkd", "--urgency=critical", "talkd", body])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .spawn();
@@ -304,10 +324,10 @@ fn notify(message: &str) -> bool {
     }
 }
 
-fn notifier(messages: mpsc::Receiver<String>, send: pw::channel::Sender<Msg>) {
-    for message in messages {
-        let delivered = notify(&message);
-        if send.send(Msg::Sent(message, delivered)).is_err() {
+fn notifier(notices: mpsc::Receiver<Notice>, send: pw::channel::Sender<Msg>) {
+    for notice in notices {
+        let delivered = notify(&notice.body());
+        if send.send(Msg::Sent(notice, delivered)).is_err() {
             return;
         }
     }
@@ -349,12 +369,29 @@ fn main() -> ExitCode {
         Ok(saved) => (saved, None),
         Err(error) => (None, Some(error)),
     };
-    if let Some(owed) = saved {
+    let back = |muted: bool| if muted { "muted" } else { "live" };
+    if let Some(owed) = &saved {
         eprintln!(
-            "talkd: a previous run owes a restore: node {} of PipeWire server {:08x}, back to {}",
+            "talkd: a previous run owes a restore: node {} ({}) of PipeWire server {:08x}, back to {}",
             owed.pin.serial,
+            owed.description
+                .as_deref()
+                .or(owed.name.as_deref())
+                .unwrap_or("name unknown"),
             owed.pin.server,
-            if owed.was_muted { "muted" } else { "live" }
+            back(owed.was_muted)
+        );
+    }
+    let (dormant, unreadable_dormant) = match store.load_dormant() {
+        Ok(dormant) => (dormant, None),
+        Err(error) => (Vec::new(), Some(error)),
+    };
+    for owed in &dormant {
+        eprintln!(
+            "talkd: {} ({:?}) goes back to {} when it returns",
+            owed.label(),
+            owed.name,
+            back(owed.was_muted)
         );
     }
 
@@ -397,8 +434,8 @@ fn main() -> ExitCode {
             }
         });
         RefCell::new(Daemon {
-            machine: Machine::new(saved),
-            mic: Mic::new(context.clone(), None, hook),
+            machine: Machine::new(saved, dormant),
+            mic: Mic::new(context.clone(), None, hook).publishing(),
             store,
             notices: Notices::default(),
             timers: timer_requests,
@@ -419,6 +456,17 @@ fn main() -> ExitCode {
             }
             effects.problem(Problem::Stale("its record is unreadable"));
         }
+        if let Some(error) = unreadable_dormant {
+            eprintln!("talkd: {error}");
+            let (_, mut effects) = daemon.split();
+            if let Err(error) = effects.save_dormant(&[]) {
+                effects.problem(Problem::Store(error));
+            }
+            effects.problem(Problem::Stale("its record is unreadable"));
+        }
+        // what the saved records owe, told WirePlumber on connecting
+        let owed = daemon.machine.owed();
+        daemon.mic.publish(&owed);
         daemon.reconnect();
     }
 

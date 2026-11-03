@@ -8,7 +8,7 @@
 //! The owner feeds [`Update`]s, which the listeners hand to its hook, back
 //! through [`Mic::apply`], and gets [`MicEvent`]s out.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use pipewire as pw;
@@ -27,10 +27,43 @@ use pw::spa::utils::dict::DictRef;
 use pw::spa::utils::result::{AsyncSeq, SpaResult, SpaSuccess};
 use pw::types::ObjectType;
 
-use crate::machine::Pin;
+use crate::machine::{self, Pin};
 use crate::params::{self, Route, Via};
 
 const DEFAULT_SOURCE: &str = "default.audio.source";
+
+/// The key, on WirePlumber's "default" metadata, naming every restore talkd
+/// owes: node.name to the mute it goes back to.
+const OWED: &str = "talkd.owed";
+
+/// WirePlumber cannot be told what is owed: carry on without, saying so
+/// once (`said`) until it can again.
+fn unpublishable(said: &mut bool, why: &str) {
+    if !std::mem::replace(said, true) {
+        eprintln!("mic: WirePlumber is not told what talkd owes: {why}");
+    }
+}
+
+/// Sets talkd.owed on the "default" metadata to `owed`; removes it if empty.
+fn publish_on(link: &Link, owed: &BTreeMap<String, bool>, said: &mut bool) {
+    let Some(metadata) = link.metadata.as_ref().filter(|_| !link.lost) else {
+        return unpublishable(said, "no \"default\" metadata");
+    };
+    let value = (!owed.is_empty()).then(|| owed_json(owed));
+    metadata.metadata.set_property(
+        0,
+        OWED,
+        value.as_ref().map(|_| "Spa:String:JSON"),
+        value.as_deref(),
+    );
+    // sent; a refusal arrives as an error, and is worth saying again
+    *said = false;
+}
+
+/// talkd.owed's value: `{"<node.name>": <baseline mute>, ...}`.
+pub fn owed_json(owed: &BTreeMap<String, bool>) -> String {
+    serde_json::to_string(owed).expect("a map of strings serializes")
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -111,7 +144,13 @@ pub enum MicEvent {
     Ready(u32),
     /// Fresh readback after this mutation's write barrier, never a cache hit.
     Confirmed(u64, Pin, bool),
+    /// The mute moved (node Props to device Route or back) before this
+    /// mutation was confirmed, and a fresh readback where it is now does
+    /// not hold the value written. The mutation is over; send it again.
+    Relocated(u64, Pin),
     Gone(Pin),
+    /// Sources appeared or their params settled: worth looking up by name.
+    SourcesChanged,
     /// The connection is dead; [`Mic::connect`] again.
     Lost(String),
 }
@@ -245,18 +284,21 @@ impl<T: Default> Snapshot<T> {
         }
     }
 
-    fn done(&mut self, seq: AsyncSeq) {
-        if self
+    /// Whether this completed the pending enumeration.
+    fn done(&mut self, seq: AsyncSeq) -> bool {
+        if !self
             .pending
             .as_ref()
             .is_some_and(|pending| pending.done == seq)
         {
-            let pending = self.pending.take().expect("matched above");
-            self.ready = !pending.failed;
-            if self.ready {
-                self.value = pending.value;
-            }
+            return false;
         }
+        let pending = self.pending.take().expect("matched above");
+        self.ready = !pending.failed;
+        if self.ready {
+            self.value = pending.value;
+        }
+        true
     }
 
     fn finished(&self) -> bool {
@@ -293,17 +335,69 @@ fn flags(params: &[ParamInfo], id: ParamType) -> Option<ParamInfoFlags> {
         .map(ParamInfo::flags)
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct Change {
     token: u64,
     pin: Pin,
+    /// The source's registry id.
+    node: u32,
     target: bool,
+    /// Where the mute is expected: first where it was written, then where
+    /// it moved to.
     via: Via,
     object: ParamObject,
     write_seq: Option<i32>,
+    /// The write barrier, until it passed.
     barrier: Option<AsyncSeq>,
+    /// The generation of `object` whose snapshot may confirm it; None past
+    /// the barrier if `object` could not be read (gone meanwhile).
     after: Option<u64>,
+    /// The mute moved since the write.
+    relocated: bool,
     failed: bool,
+}
+
+/// Where a change's request-scoped readback stands.
+#[derive(Debug, PartialEq, Eq)]
+enum Step {
+    Wait,
+    Confirmed,
+    /// The mute is at this place now: read it there afresh.
+    Moved(Via, ParamObject),
+    /// Read afresh where the mute moved to, and it does not hold the value.
+    Missed,
+}
+
+/// `now` is the mixer's place and mute for the change's source, `fresh` the
+/// generation of an object's settled snapshot. Only a snapshot requested
+/// after the write's barrier (or after the move) speaks for it.
+fn step(
+    change: &Change,
+    now: Option<(Via, bool)>,
+    fresh: impl Fn(ParamObject) -> Option<u64>,
+) -> Step {
+    let (false, None, Some((via, muted))) = (change.failed, change.barrier, now) else {
+        return Step::Wait;
+    };
+    // moved, or where it went could not be read: read where it is now
+    let Some(after) = change.after.filter(|_| via == change.via) else {
+        return Step::Moved(
+            via,
+            match via {
+                Via::Props => ParamObject::Node(change.node),
+                Via::Route { on, .. } => ParamObject::Device(on),
+            },
+        );
+    };
+    if !fresh(change.object).is_some_and(|generation| generation >= after) {
+        Step::Wait
+    } else if muted == change.target {
+        Step::Confirmed
+    } else if change.relocated {
+        Step::Missed
+    } else {
+        Step::Wait
+    }
 }
 
 // Fields drop in order: each listener before its proxy, every proxy before
@@ -327,7 +421,7 @@ struct Audio {
 
 struct DefaultMeta {
     _listener: MetadataListener,
-    _metadata: Metadata,
+    metadata: Metadata,
     id: u32,
 }
 
@@ -335,10 +429,12 @@ struct Link {
     sources: HashMap<u32, Source>,
     devices: HashMap<u32, Audio>,
     metadata: Option<DefaultMeta>,
+
     _registry_listener: pw::registry::Listener,
     registry: RegistryRc,
     _core_listener: pw::core::Listener,
     core: CoreRc,
+
     cookie: Option<u32>,
     sync: Option<AsyncSeq>,
     /// Bound something since the last sync was sent.
@@ -347,7 +443,11 @@ struct Link {
     lost: bool,
     default: Option<String>,
     generation: u64,
-    change: Option<Change>,
+    /// Mutations not yet confirmed, at most one per source.
+    changes: Vec<Change>,
+    /// Since the last [`MicEvent::SourcesChanged`] (or Ready), a source
+    /// came or a snapshot completed.
+    changed: bool,
 }
 
 impl Link {
@@ -456,14 +556,8 @@ impl Link {
         Ok(generation)
     }
 
-    fn confirm(&mut self, events: &mut Vec<MicEvent>) {
-        let Some(change) = self
-            .change
-            .filter(|change| !change.failed && change.after.is_some())
-        else {
-            return;
-        };
-        let generation = match change.object {
+    fn fresh(&self, object: ParamObject) -> Option<u64> {
+        match object {
             ParamObject::Node(id) => self
                 .sources
                 .get(&id)
@@ -474,19 +568,58 @@ impl Link {
                 .get(&id)
                 .filter(|audio| audio.routes.ready)
                 .map(|audio| audio.routes.generation),
-        };
-        if !generation
-            .zip(change.after)
-            .is_some_and(|(actual, needed)| actual >= needed)
-        {
-            return;
         }
-        if self.find(change.pin).and_then(|source| self.mixer(source))
-            == Some((change.via, change.target))
-        {
-            self.change = None;
-            events.push(MicEvent::Confirmed(change.token, change.pin, change.target));
+    }
+
+    fn confirm(&mut self, events: &mut Vec<MicEvent>) {
+        let mut index = 0;
+        while let Some(&change) = self.changes.get(index) {
+            let now = self.find(change.pin).and_then(|source| self.mixer(source));
+            match step(&change, now, |object| self.fresh(object)) {
+                Step::Wait => index += 1,
+                Step::Confirmed => {
+                    self.changes.remove(index);
+                    events.push(MicEvent::Confirmed(change.token, change.pin, change.target));
+                }
+                Step::Missed => {
+                    self.changes.remove(index);
+                    events.push(MicEvent::Relocated(change.token, change.pin));
+                }
+                Step::Moved(via, object) => {
+                    // A cached snapshot of the new place may predate the
+                    // write: only one requested now can confirm it.
+                    let generation = self.refresh(object);
+                    let current = &mut self.changes[index];
+                    match generation {
+                        Ok(generation) => {
+                            current.via = via;
+                            current.object = object;
+                            current.after = Some(generation);
+                            current.relocated = true;
+                        }
+                        Err(error) => {
+                            current.failed = true;
+                            eprintln!("mic: readback where the mute moved: {error}");
+                        }
+                    }
+                    index += 1;
+                }
+            }
         }
+    }
+
+    /// The source named `name`, and its registry id. Of two, as while a
+    /// headset reconnects, the newer node: the higher object.serial, whether
+    /// or not its mute can be read now. A press, a revival and `talkd status`
+    /// take the same one, never an older node while the newer one's params
+    /// refresh, so a press cannot take over a restore on its way to the
+    /// newer node for the older.
+    fn named(&self, name: &str) -> Option<(u32, &Source)> {
+        self.sources
+            .iter()
+            .filter(|(_, source)| source.name == name)
+            .max_by_key(|(_, source)| source.serial)
+            .map(|(&id, source)| (id, source))
     }
 
     fn find(&self, pin: Pin) -> Option<&Source> {
@@ -522,6 +655,13 @@ pub struct Mic {
     remote: Option<String>,
     hook: Rc<dyn Fn(Update)>,
     link: Option<Link>,
+    /// Tells WirePlumber what talkd owes: the daemon does; status and
+    /// waybar, which only read, do not.
+    publishes: bool,
+    /// What [`Mic::publish`] last said, for every connection.
+    owed: BTreeMap<String, bool>,
+    /// WirePlumber could not be told, and that was logged.
+    unpublished: bool,
 }
 
 impl Mic {
@@ -531,6 +671,26 @@ impl Mic {
             remote,
             hook,
             link: None,
+            publishes: false,
+            owed: BTreeMap::new(),
+            unpublished: false,
+        }
+    }
+
+    /// Tells WirePlumber what talkd owes, for [`Mic::publish`].
+    pub fn publishing(mut self) -> Self {
+        self.publishes = true;
+        self
+    }
+
+    /// Sets talkd.owed on WirePlumber's "default" metadata (or removes it,
+    /// if nothing is owed), now and whenever that metadata (re)appears:
+    /// each node.name talkd owes a restore and the mute it goes back to.
+    /// Never fails or waits; it is only a hint.
+    pub fn publish(&mut self, owed: &BTreeMap<String, bool>) {
+        self.owed.clone_from(owed);
+        if let Some(link) = self.link.as_ref().filter(|_| self.publishes) {
+            publish_on(link, &self.owed, &mut self.unpublished);
         }
     }
 
@@ -622,7 +782,8 @@ impl Mic {
             lost: false,
             default: None,
             generation: 0,
-            change: None,
+            changes: Vec::new(),
+            changed: false,
         });
         Ok(())
     }
@@ -637,24 +798,28 @@ impl Mic {
             Update::Info { cookie } => link.cookie = Some(cookie),
             Update::Done(seq) => {
                 for source in link.sources.values_mut() {
-                    source.props.done(seq);
+                    link.changed |= source.props.done(seq);
                 }
                 for audio in link.devices.values_mut() {
-                    audio.routes.done(seq);
+                    link.changed |= audio.routes.done(seq);
                 }
-                if let Some(change) = link.change.filter(|change| change.barrier == Some(seq)) {
+                for index in 0..link.changes.len() {
+                    let change = link.changes[index];
+                    if change.barrier != Some(seq) {
+                        continue;
+                    }
                     // Only now request readback: cached or already queued
                     // notifications from before the write cannot complete it.
                     let generation = link.refresh(change.object);
-                    if let Some(current) = link.change.as_mut() {
-                        current.barrier = None;
-                        match generation {
-                            Ok(generation) => current.after = Some(generation),
-                            Err(error) => {
-                                current.failed = true;
-                                eprintln!("mic: readback: {error}");
-                            }
-                        }
+                    let current = &mut link.changes[index];
+                    current.barrier = None;
+                    match generation {
+                        Ok(generation) => current.after = Some(generation),
+                        // A device removed meanwhile moves the mute to the
+                        // node's Props: confirm reads it there instead.
+                        Err(error) => eprintln!(
+                            "mic: readback where the mute was written: {error}; reading where it is now"
+                        ),
                     }
                 }
                 if link.sync == Some(seq) {
@@ -696,14 +861,23 @@ impl Mic {
                 {
                     audio.routes.error(seq);
                 }
-                if let Some(change) = link
-                    .change
-                    .as_mut()
+                for change in link
+                    .changes
+                    .iter_mut()
                     .filter(|change| change.write_seq.is_some_and(|sent| same_seq(sent, seq)))
                 {
                     change.failed = true;
                 }
-                eprintln!("mic: PipeWire object {id}: {message} ({res})");
+                if link
+                    .metadata
+                    .as_ref()
+                    .is_some_and(|metadata| metadata.metadata.upcast_ref().id() == id)
+                {
+                    // a set refused, say: F13 carries on regardless
+                    unpublishable(&mut self.unpublished, &format!("{message} ({res})"));
+                } else {
+                    eprintln!("mic: PipeWire object {id}: {message} ({res})");
+                }
             }
             Update::Global {
                 id,
@@ -724,15 +898,22 @@ impl Mic {
                 };
                 if let Err(error) = bind(link, &hook, &global, kind, &props) {
                     eprintln!("mic: binding PipeWire object {id}: {error}");
+                } else if kind == Kind::DefaultMetadata && self.publishes {
+                    // new, or WirePlumber's again after a restart: what a run
+                    // before this one (or the last WirePlumber) was told is
+                    // replaced by what is owed now
+                    publish_on(link, &self.owed, &mut self.unpublished);
                 }
             }
             Update::GlobalRemove(id) => {
+                link.changes.retain(|change| change.node != id);
                 if let Some(source) = link.sources.remove(&id)
                     && let (true, Some(pin)) = (link.ready, link.pin(&source))
                 {
                     events.push(MicEvent::Gone(pin));
                 }
-                link.devices.remove(&id);
+                // its sources' mutes fall back to their Props
+                link.changed |= link.devices.remove(&id).is_some();
                 if link
                     .metadata
                     .as_ref()
@@ -744,6 +925,7 @@ impl Mic {
             }
             Update::NodeInfo { id, props } => {
                 if let Some(source) = link.sources.get_mut(&id) {
+                    link.changed = true;
                     let text = |key: &str| props.get(key).map(String::as_str);
                     source.device = text(*pw::keys::DEVICE_ID).and_then(|id| id.parse().ok());
                     source.profile_device =
@@ -810,19 +992,37 @@ impl Mic {
             && let Some(cookie) = link.cookie
         {
             link.ready = true;
+            link.changed = false;
             events.push(MicEvent::Ready(cookie));
         }
         if !link.lost {
             link.confirm(&mut events);
         }
+        // Not waiting for every enumeration: one never done must not hold
+        // back a source that is ready; find checks that source's own.
+        if !link.lost && link.ready && link.changed {
+            link.changed = false;
+            events.push(MicEvent::SourcesChanged);
+        }
         events
     }
 
-    /// The default source and its mute.
-    pub fn default_source(&self) -> Option<(Pin, bool)> {
+    /// The default source.
+    pub fn default_source(&self) -> Option<machine::Source> {
         let link = self.link.as_ref().filter(|link| link.ready && !link.lost)?;
-        let name = link.default.as_deref()?;
-        let source = link.sources.values().find(|source| source.name == name)?;
+        let (_, source) = link.named(link.default.as_deref()?)?;
+        Some(machine::Source {
+            pin: link.pin(source)?,
+            name: source.name.clone(),
+            description: source.description.clone(),
+            muted: link.mixer(source)?.1,
+        })
+    }
+
+    /// The source named `name` and its settled mute.
+    pub fn find(&self, name: &str) -> Option<(Pin, bool)> {
+        let link = self.link.as_ref().filter(|link| link.ready && !link.lost)?;
+        let (_, source) = link.named(name)?;
         Some((link.pin(source)?, link.mixer(source)?.1))
     }
 
@@ -835,10 +1035,8 @@ impl Mic {
         let default = match link.default.as_deref() {
             None => Err("none: no default.audio.source in the \"default\" metadata".to_owned()),
             Some(name) => link
-                .sources
-                .iter()
-                .find(|(_, source)| source.name == name)
-                .map(|(&id, source)| DefaultSource {
+                .named(name)
+                .map(|(id, source)| DefaultSource {
                     id,
                     serial: source.serial,
                     name: source.name.clone(),
@@ -918,15 +1116,19 @@ impl Mic {
         };
         let write_seq = sequence(result).ok();
         let barrier = link.core.sync(0).ok();
-        link.change = Some(Change {
+        // the newer write to a source supersedes the older's confirmation
+        link.changes.retain(|change| change.node != id);
+        link.changes.push(Change {
             token,
             pin,
+            node: id,
             target: muted,
             via,
             object,
             write_seq,
             barrier,
             after: None,
+            relocated: false,
             failed: write_seq.is_none() || barrier.is_none(),
         });
         Ok(())
@@ -1059,12 +1261,14 @@ fn bind(
                 .register();
             link.metadata = Some(DefaultMeta {
                 _listener: listener,
-                _metadata: metadata,
+                metadata,
                 id,
             });
         }
     }
-    if !link.ready {
+    if link.ready {
+        link.changed = true;
+    } else {
         link.bound = true;
     }
     Ok(())
@@ -1126,6 +1330,18 @@ mod tests {
         assert_eq!(default_name(Some("string"), Some(r#"{"name":"x"}"#)), None);
         assert_eq!(default_name(json, Some(r#"{"nom":"x"}"#)), None);
         assert_eq!(default_name(json, None), None);
+    }
+
+    #[test]
+    fn what_is_owed_is_published_as_one_json_object_by_node_name() {
+        let owed = BTreeMap::from([
+            ("bluez_input.AC:3E \"Nic's\" AirPods".to_owned(), true),
+            ("alsa_input.pci".to_owned(), false),
+        ]);
+        assert_eq!(
+            owed_json(&owed),
+            r#"{"alsa_input.pci":false,"bluez_input.AC:3E \"Nic's\" AirPods":true}"#
+        );
     }
 
     #[test]
@@ -1243,6 +1459,149 @@ mod tests {
         assert!(!cache.ready, "finished is not usable");
     }
 
+    /// A write to `via`; its barrier passed and readback requested at
+    /// `after`, or (None) its barrier still out.
+    fn change(via: Via, after: Option<u64>) -> Change {
+        Change {
+            token: 1,
+            pin: Pin {
+                server: 1,
+                serial: 57,
+            },
+            node: 30,
+            target: true,
+            via,
+            object: match via {
+                Via::Props => ParamObject::Node(30),
+                Via::Route { on, .. } => ParamObject::Device(on),
+            },
+            write_seq: Some(1),
+            barrier: after.is_none().then(|| AsyncSeq::from_seq(2)),
+            after,
+            relocated: false,
+            failed: false,
+        }
+    }
+
+    const ROUTE: Via = Via::Route {
+        on: 40,
+        index: 7,
+        device: 3,
+    };
+
+    #[test]
+    fn a_write_is_confirmed_only_by_a_fresh_readback_where_it_went() {
+        for via in [Via::Props, ROUTE] {
+            let at = |generation: u64| move |_: ParamObject| Some(generation);
+            let before = change(via, None);
+            assert_eq!(
+                step(&before, Some((via, true)), at(9)),
+                Step::Wait,
+                "barrier first"
+            );
+            let sent = change(via, Some(5));
+            assert_eq!(step(&sent, Some((via, true)), at(4)), Step::Wait, "cached");
+            assert_eq!(
+                step(&sent, Some((via, true)), |_| None),
+                Step::Wait,
+                "refreshing"
+            );
+            assert_eq!(step(&sent, None, at(5)), Step::Wait, "no mute");
+            assert_eq!(step(&sent, Some((via, true)), at(5)), Step::Confirmed);
+            assert_eq!(step(&sent, Some((via, true)), at(6)), Step::Confirmed);
+            assert_eq!(
+                step(&sent, Some((via, false)), at(6)),
+                Step::Wait,
+                "unchanged: the deadline tells"
+            );
+            let failed = Change {
+                failed: true,
+                ..sent
+            };
+            assert_eq!(step(&failed, Some((via, true)), at(6)), Step::Wait);
+        }
+    }
+
+    #[test]
+    fn a_write_whose_place_went_before_its_barrier_is_read_where_the_mute_is_now() {
+        // the device went before the barrier: its readback was never requested
+        let lost = Change {
+            barrier: None,
+            ..change(ROUTE, None)
+        };
+        let fresh = |_: ParamObject| Some(9);
+        assert_eq!(step(&lost, None, fresh), Step::Wait, "no mute anywhere yet");
+        assert_eq!(
+            step(&lost, Some((Via::Props, true)), fresh),
+            Step::Moved(Via::Props, ParamObject::Node(30)),
+            "not even a holding cached value confirms it"
+        );
+        // its Props: still read afresh before anything is concluded
+        let moved = Change {
+            via: Via::Props,
+            object: ParamObject::Node(30),
+            after: Some(10),
+            relocated: true,
+            ..lost
+        };
+        assert_eq!(step(&moved, Some((Via::Props, false)), fresh), Step::Wait);
+        let read = |_: ParamObject| Some(10);
+        assert_eq!(
+            step(&moved, Some((Via::Props, true)), read),
+            Step::Confirmed
+        );
+        assert_eq!(step(&moved, Some((Via::Props, false)), read), Step::Missed);
+    }
+
+    #[test]
+    fn a_mute_that_moved_is_read_again_where_it_is_now() {
+        let fresh = |_: ParamObject| Some(9);
+        // a headset connecting: written to Props, now on its Route
+        let props = change(Via::Props, Some(5));
+        assert_eq!(
+            step(&props, Some((ROUTE, true)), fresh),
+            Step::Moved(ROUTE, ParamObject::Device(40)),
+            "even holding the value: that snapshot may predate the write"
+        );
+        // disconnecting: written to the Route, which went
+        let route = change(ROUTE, Some(5));
+        assert_eq!(
+            step(&route, Some((Via::Props, false)), fresh),
+            Step::Moved(Via::Props, ParamObject::Node(30))
+        );
+        // another route of the same device counts as elsewhere too
+        let other = Via::Route {
+            on: 40,
+            index: 8,
+            device: 3,
+        };
+        assert_eq!(
+            step(&route, Some((other, true)), fresh),
+            Step::Moved(other, ParamObject::Device(40))
+        );
+        // read again there: confirmed, or found not holding the value
+        let moved = Change {
+            via: ROUTE,
+            object: ParamObject::Device(40),
+            after: Some(10),
+            relocated: true,
+            ..props
+        };
+        assert_eq!(
+            step(&moved, Some((ROUTE, true)), fresh),
+            Step::Wait,
+            "not yet read"
+        );
+        let read = |_: ParamObject| Some(10);
+        assert_eq!(step(&moved, Some((ROUTE, true)), read), Step::Confirmed);
+        assert_eq!(step(&moved, Some((ROUTE, false)), read), Step::Missed);
+        // moved back meanwhile: read again where it is
+        assert_eq!(
+            step(&moved, Some((Via::Props, true)), read),
+            Step::Moved(Via::Props, ParamObject::Node(30))
+        );
+    }
+
     struct Owner {
         mic: Option<Mic>,
         events: Vec<MicEvent>,
@@ -1317,7 +1676,8 @@ mod tests {
                 }
             })
         };
-        owner.borrow_mut().mic = Some(Mic::new(context.clone(), Some(server.socket()), hook));
+        owner.borrow_mut().mic =
+            Some(Mic::new(context.clone(), Some(server.socket()), hook).publishing());
         owner.borrow_mut().mic.as_mut().unwrap().connect().unwrap();
         // runs the loop until `done`, within 10 s
         let wait = |what: &str, done: &dyn Fn(&Owner) -> bool| {
@@ -1357,7 +1717,16 @@ mod tests {
         wait("WirePlumber's default source", &|owner| {
             mic(owner).default_source().is_some()
         });
-        let (pin, muted) = mic(&owner.borrow()).default_source().unwrap();
+        let machine::Source {
+            pin,
+            name,
+            description,
+            muted,
+        } = mic(&owner.borrow()).default_source().unwrap();
+        assert_eq!(
+            (name.as_str(), description.as_deref()),
+            ("test-mic", Some("Test mic"))
+        );
         assert_eq!(pin.server, cookie);
         assert!(!muted, "a null source starts live");
         let mic_id = id_of("test-mic");
@@ -1421,10 +1790,10 @@ mod tests {
         let headset = wait("the new default", &|owner| {
             mic(owner)
                 .default_source()
-                .is_some_and(|(default, _)| default != pin)
+                .is_some_and(|default| default.pin != pin)
         });
         eprintln!("default moved in {headset:?}");
-        let (headset, _) = mic(&owner.borrow()).default_source().unwrap();
+        let headset = mic(&owner.borrow()).default_source().unwrap().pin;
         // the old pin still reads and sets, by serial
         let cursor = owner.borrow().events.len();
         owner
@@ -1530,6 +1899,108 @@ mod tests {
             "Volume: 1.00\n"
         );
 
+        // The mute moved while a write was pending. Staged: a write that went
+        // to a device Route, its readback already requested, and the Route
+        // gone since, so the mixer finds the mute on the node's Props. The
+        // Props snapshot cached now cannot confirm it; one read afresh can.
+        let stage = |token: u64, target: bool| {
+            let mut owner = owner.borrow_mut();
+            let mic = owner.mic.as_mut().unwrap();
+            let link = mic.link.as_mut().unwrap();
+            let after = link.generation;
+            link.changes.push(Change {
+                token,
+                pin,
+                node: mic_id,
+                target,
+                via: Via::Route {
+                    on: u32::MAX,
+                    index: 0,
+                    device: 0,
+                },
+                object: ParamObject::Device(u32::MAX),
+                write_seq: None,
+                barrier: None,
+                after: Some(after),
+                relocated: false,
+                failed: false,
+            });
+            let default = link.default.clone();
+            let events = mic.apply(Update::Default(default));
+            let change = mic.link.as_ref().unwrap().changes.last().copied();
+            owner.events.extend(events.iter().cloned());
+            (events, change)
+        };
+        let cursor = owner.borrow().events.len();
+        let (events, change) = stage(70, false);
+        assert!(
+            !events.contains(&MicEvent::Confirmed(70, pin, false)),
+            "not from the cache"
+        );
+        let change = change.unwrap();
+        assert_eq!(
+            (change.token, change.via, change.object, change.relocated),
+            (70, Via::Props, ParamObject::Node(mic_id), true)
+        );
+        wait(
+            "confirmation where the mute moved",
+            &saw(cursor, MicEvent::Confirmed(70, pin, false)),
+        );
+        // and if it does not hold the value there, the write is over
+        let cursor = owner.borrow().events.len();
+        stage(71, true);
+        wait(
+            "the moved write reported",
+            &saw(cursor, MicEvent::Relocated(71, pin)),
+        );
+        assert!(!owner.borrow().events[cursor..].contains(&MicEvent::Confirmed(71, pin, true)));
+        assert!(
+            mic(&owner.borrow())
+                .link
+                .as_ref()
+                .unwrap()
+                .changes
+                .is_empty()
+        );
+
+        // The same, with that Route's device removed before the write's
+        // barrier, so the readback of where it went cannot even be requested:
+        // the mute is then read where it is now, not given up on.
+        let ahead = |token: u64, target: bool| {
+            let mut owner = owner.borrow_mut();
+            let link = owner.mic.as_mut().unwrap().link.as_mut().unwrap();
+            let barrier = link.core.sync(0).unwrap();
+            link.changes.push(Change {
+                token,
+                pin,
+                node: mic_id,
+                target,
+                via: Via::Route {
+                    on: u32::MAX,
+                    index: 0,
+                    device: 0,
+                },
+                object: ParamObject::Device(u32::MAX),
+                write_seq: None,
+                barrier: Some(barrier),
+                after: None,
+                relocated: false,
+                failed: false,
+            });
+        };
+        let cursor = owner.borrow().events.len();
+        ahead(72, false);
+        wait(
+            "confirmation where the mute is, its device gone before the barrier",
+            &saw(cursor, MicEvent::Confirmed(72, pin, false)),
+        );
+        let cursor = owner.borrow().events.len();
+        ahead(73, true);
+        wait(
+            "the write reported, its device gone before the barrier",
+            &saw(cursor, MicEvent::Relocated(73, pin)),
+        );
+
         // a node removed: gone, and no longer settable
         let cursor = owner.borrow().events.len();
         server.run(
@@ -1547,6 +2018,213 @@ mod tests {
                 .set_mute(headset, true, 4)
                 .is_err()
         );
+        assert_eq!(mic(&owner.borrow()).find("test-headset"), None);
+
+        // back as a new node of the same node.name, as a headset reconnects:
+        // found by that name once its params are in, and its mute settable.
+        // Meanwhile another source's enumeration never finishes; that must
+        // not hold the returned one back.
+        fn props(owner: &mut Owner, id: u32) -> &mut Snapshot<Option<bool>> {
+            let link = owner.mic.as_mut().unwrap().link.as_mut().unwrap();
+            &mut link.sources.get_mut(&id).unwrap().props
+        }
+        {
+            let mut owner = owner.borrow_mut();
+            let props = props(&mut owner, mic_id);
+            props.ready = false;
+            props.pending = Some(Enumeration {
+                seq: i32::MAX,
+                done: AsyncSeq::from_seq(i32::MAX),
+                value: None,
+                failed: false,
+            });
+        }
+        let cursor = owner.borrow().events.len();
+        server.run(
+            &server.bin.join("pw-cli"),
+            &[
+                "create-node",
+                "adapter",
+                "{ factory.name = support.null-audio-sink node.name = test-headset \
+                   node.description = \"Test headset\" media.class = Audio/Source \
+                   audio.position = [ FL FR ] object.linger = true }",
+            ],
+        );
+        wait("the headset back, settled", &|owner| {
+            owner.events[cursor..].contains(&MicEvent::SourcesChanged)
+                && mic(owner).find("test-headset").is_some()
+        });
+        let (back, muted) = mic(&owner.borrow()).find("test-headset").unwrap();
+        assert_ne!(back, headset, "a new node");
+        assert!(!muted);
+        assert!(
+            !mic(&owner.borrow()).link.as_ref().unwrap().settled(),
+            "found with the other enumeration still out"
+        );
+        props(&mut owner.borrow_mut(), mic_id).pending = None;
+        owner
+            .borrow_mut()
+            .mic
+            .as_mut()
+            .unwrap()
+            .link
+            .as_mut()
+            .unwrap()
+            .refresh(ParamObject::Node(mic_id))
+            .unwrap();
+        let cursor = owner.borrow().events.len();
+        owner
+            .borrow_mut()
+            .mic
+            .as_mut()
+            .unwrap()
+            .set_mute(back, true, 6)
+            .unwrap();
+        wait(
+            "the returned headset's restore",
+            &saw(cursor, MicEvent::Confirmed(6, back, true)),
+        );
+        // its params may be refreshing again by now
+        wait("the restored mute found by name", &|owner| {
+            mic(owner).find("test-headset") == Some((back, true))
+        });
+        assert_eq!(
+            server.wpctl(&["get-volume", &id_of("test-headset").to_string()]),
+            "Volume: 1.00 [MUTED]\n"
+        );
+
+        // a second node of that name while the first lingers: the newer one
+        let create = [
+            "create-node",
+            "adapter",
+            "{ factory.name = support.null-audio-sink node.name = test-headset \
+               media.class = Audio/Source audio.position = [ FL FR ] object.linger = true }",
+        ];
+        server.run(&server.bin.join("pw-cli"), &create);
+        wait("the newer node of that name", &|owner| {
+            mic(owner)
+                .find("test-headset")
+                .is_some_and(|(found, _)| found.serial > back.serial)
+        });
+        assert!(mic(&owner.borrow()).exists(back), "both there");
+        let (newer, muted) = mic(&owner.borrow()).find("test-headset").unwrap();
+        assert!(!muted);
+        // a press takes the same one a revival would (the default's name),
+        // and `talkd status` shows that one
+        let picked = |owner: &Owner| {
+            let status = mic(owner).status().unwrap().default.unwrap();
+            (
+                mic(owner).default_source().map(|source| source.pin),
+                mic(owner).find("test-headset").map(|(pin, _)| pin),
+                status.serial,
+                status.mute.map(|(_, muted)| muted),
+            )
+        };
+        assert_eq!(
+            picked(&owner.borrow()),
+            (Some(newer), Some(newer), newer.serial, Some(false))
+        );
+        // and while the newer one's params refresh, none of them falls back
+        // to the older: a press and a revival wait, status says it is unread
+        let newer_id = {
+            let owner = owner.borrow();
+            let link = mic(&owner).link.as_ref().unwrap();
+            *link
+                .sources
+                .iter()
+                .find(|(_, source)| source.serial == newer.serial)
+                .unwrap()
+                .0
+        };
+        props(&mut owner.borrow_mut(), newer_id).ready = false;
+        assert_eq!(picked(&owner.borrow()), (None, None, newer.serial, None));
+        assert!(mic(&owner.borrow()).exists(back), "the older still there");
+        props(&mut owner.borrow_mut(), newer_id).ready = true;
+
+        // WirePlumber's "default" metadata, as its scripts see it: every
+        // restore owed, while it is owed
+        let metadata = |args: &[&str]| {
+            let mut child = server
+                .command(&server.bin.join("pw-metadata"))
+                .args(args)
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            let started = Instant::now();
+            // keeps this loop running meanwhile, as talkd's would
+            while child.try_wait().unwrap().is_none() {
+                assert!(
+                    started.elapsed() < Duration::from_secs(10),
+                    "pw-metadata {args:?} hangs"
+                );
+                main_loop
+                    .loop_()
+                    .iterate(Timeout::Finite(Duration::from_millis(5)));
+            }
+            let output = child.wait_with_output().unwrap();
+            assert!(output.status.success(), "pw-metadata {args:?}: {output:?}");
+            String::from_utf8(output.stdout).unwrap()
+        };
+        let shows = |what: &str, test: &dyn Fn(&str) -> bool| {
+            let started = Instant::now();
+            loop {
+                let output = metadata(&["-n", "default"]);
+                if test(&output) {
+                    return output;
+                }
+                assert!(
+                    started.elapsed() < Duration::from_secs(10),
+                    "timed out waiting for {what}: {output}"
+                );
+            }
+        };
+        let publish = |owed: &[(&str, bool)]| {
+            let owed: BTreeMap<String, bool> = owed
+                .iter()
+                .map(|&(name, mute)| (name.to_owned(), mute))
+                .collect();
+            owner.borrow_mut().mic.as_mut().unwrap().publish(&owed);
+        };
+        assert!(!metadata(&["-n", "default"]).contains(OWED), "nothing owed");
+        // the log-once latch for a failure is lifted by a publish that goes out
+        owner.borrow_mut().mic.as_mut().unwrap().unpublished = true;
+        publish(&[("test \"mic\"", true), ("test-headset", false)]);
+        assert!(
+            !mic(&owner.borrow()).unpublished,
+            "a later failure is said again"
+        );
+        let json = r#"{"test \"mic\"":true,"test-headset":false}"#;
+        let output = shows("what is owed", &|output| output.contains(json));
+        let line = output.lines().find(|line| line.contains(OWED)).unwrap();
+        eprintln!("{line}");
+        assert!(line.contains("id:0 key:'talkd.owed'"), "{line}");
+        assert!(line.contains("type:'Spa:String:JSON'"), "{line}");
+        publish(&[("test-headset", false)]);
+        shows("one restore done", &|output| {
+            output.contains(r#"value:'{"test-headset":false}'"#)
+        });
+        publish(&[]);
+        shows("nothing owed", &|output| !output.contains(OWED));
+        // A run killed while owing leaves its entry; the next one, connecting
+        // with what it owes then, replaces it at once.
+        publish(&[("test-mic", false)]);
+        shows("what is owed", &|output| {
+            output.contains(r#"{"test-mic":false}"#)
+        });
+        owner.borrow_mut().mic.as_mut().unwrap().disconnect();
+        assert!(
+            metadata(&["-n", "default"]).contains(OWED),
+            "outlives the connection"
+        );
+        publish(&[("test-headset", true)]); // the next run's, before it connects
+        let cursor = owner.borrow().events.len();
+        owner.borrow_mut().mic.as_mut().unwrap().connect().unwrap();
+        wait("reconnected", &saw(cursor, MicEvent::Ready(cookie)));
+        shows("republished on binding \"default\"", &|output| {
+            output.contains(r#"{"test-headset":true}"#)
+        });
+        publish(&[]);
+        shows("nothing owed", &|output| !output.contains(OWED));
 
         // the server gone
         server.kill_pipewire();
