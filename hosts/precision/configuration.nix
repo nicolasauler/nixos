@@ -235,10 +235,34 @@ in {
           else throw "pipewire ${old.version}: check whether it has upstream d80b8060 and b7246d0d (pipewire!2997, !3004); if so, drop these patches in hosts/precision/configuration.nix"
         );
     });
+    wireplumber = pkgs.wireplumber.override {inherit pipewire;};
+    # WirePlumber's Bluetooth input can keep a mute where no tool shows it, and a
+    # profile switch can drop a mute set just before it; wireplumber/
+    # bluez-loopback-mute.lua keeps the mute where every tool looks. It hooks into
+    # WirePlumber 0.5.18's route restore and relies on the bluez5 Route behaviour
+    # of the PipeWire pinned above, so any other WirePlumber version fails
+    # evaluation until someone checks the script against it. The build checks
+    # the script with WirePlumber's Lua (5.5) and the fragment with PipeWire's
+    # SPA JSON parser.
+    bluezLoopbackMute =
+      if wireplumber.version == "0.5.18"
+      then
+        pkgs.runCommand "wireplumber-bluez-loopback-mute" {
+          nativeBuildInputs = [pkgs.lua5_5 pipewire];
+        } ''
+          luac -p ${./wireplumber/bluez-loopback-mute.lua}
+          spa-json-dump ${./wireplumber/90-bluez-loopback-mute.conf} >/dev/null
+          install -Dm444 ${./wireplumber/bluez-loopback-mute.lua} \
+            $out/share/wireplumber/scripts/bluez-loopback-mute.lua
+          install -Dm444 ${./wireplumber/90-bluez-loopback-mute.conf} \
+            $out/share/wireplumber/wireplumber.conf.d/90-bluez-loopback-mute.conf
+        ''
+      else throw "wireplumber ${wireplumber.version}: check hosts/precision/wireplumber/bluez-loopback-mute.lua against it (route-restore hooks, select-routes data), then update the version here";
   in {
     enable = true;
     package = pipewire;
-    wireplumber.package = pkgs.wireplumber.override {inherit pipewire;};
+    wireplumber.package = wireplumber;
+    wireplumber.configPackages = [bluezLoopbackMute];
     alsa.enable = true;
     alsa.support32Bit = true;
     pulse.enable = true;
