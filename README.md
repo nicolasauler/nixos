@@ -329,6 +329,27 @@ upstream fixes (pipewire!2997 and !3004, not in a release yet), and WirePlumber
 built against it. Evaluation fails on any other PipeWire version until someone
 checks whether it already has them.
 
+The AirPods' mic mute is the one the bar's MIC indicator, pavucontrol and F13/F14
+show and change. Stock WirePlumber 0.5.18 could hide a mute where none of them
+showed it (set just after the AirPods connected, it stayed on once headset mode
+started: the bar said LIVE, the call heard nothing) and could undo a mute set
+just before a headset switch. `hosts/precision/wireplumber/bluez-loopback-mute.lua`
+keeps the mute in the one place those tools use, keeps it across headset
+switches, and remembers the last one you set across reconnects (state in
+`~/.local/state/wireplumber/bluez-loopback-mute`). While you are muted, a new
+headset input is muted before an app can hear it. Gaps that remain: a mute or
+unmute sent in the very instant WirePlumber restores the routes at a headset
+switch, or one bluez5 rejects during a codec switch, can be lost (the tools then
+show what the mic does), and PipeWire 1.6.9 can hand other programs the previous
+mute after a change (a cache race the script reads around; other programs
+can't). The script logs a warning when
+it mutes a headset input that came up live or moves a mute set on the loopback
+itself (`journalctl --user -u wireplumber -g bluez-loopback-mute`); its other
+corrections, such as keeping your mute over the one WirePlumber stored, show
+once you run `wpctl set-log-level "2,s-bluez-loopback-mute:I"`.
+Evaluation fails on any other WirePlumber version until someone checks the
+script against it.
+
 If the mic still goes silent mid-call, rebuild the headset nodes: in
 pavucontrol's **Configuration** tab, switch the AirPods to another "Headset Head
 Unit" codec (CVSD, say), then back to the one you use; WirePlumber remembers the
