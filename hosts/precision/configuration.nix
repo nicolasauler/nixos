@@ -239,13 +239,13 @@ in {
     # WirePlumber's Bluetooth input can keep a mute where no tool shows it, and a
     # profile switch can drop a mute set just before it; wireplumber/
     # bluez-loopback-mute.lua keeps the mute where every tool looks. It hooks into
-    # WirePlumber 0.5.18's route restore and relies on the bluez5 Route behaviour
-    # of the PipeWire pinned above, so any other WirePlumber version fails
-    # evaluation until someone checks the script against it. The build checks
-    # the script with WirePlumber's Lua (5.5) and the fragment with PipeWire's
-    # SPA JSON parser.
+    # WirePlumber's route restore (checked against 0.5.18 and 0.5.19) and relies
+    # on the bluez5 Route behaviour of the PipeWire pinned above, so any other
+    # WirePlumber version fails evaluation until someone checks the script
+    # against it. The build checks the script with WirePlumber's Lua (5.5) and
+    # the fragment with PipeWire's SPA JSON parser.
     bluezLoopbackMute =
-      if wireplumber.version == "0.5.18"
+      if builtins.elem wireplumber.version ["0.5.18" "0.5.19"]
       then
         pkgs.runCommand "wireplumber-bluez-loopback-mute" {
           nativeBuildInputs = [pkgs.lua5_5 pipewire];
