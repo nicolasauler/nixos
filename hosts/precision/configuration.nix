@@ -491,12 +491,30 @@ in {
     polkitPolicyOwners = ["nic"];
   };
 
+  # The RTX 2000 Ada (AD107) gets NVIDIA's driver for CUDA (local photo work), in PRIME offload: the Intel Arc keeps
+  # driving every display (all four connectors hang off it) and the NVIDIA card only wakes for work. On nouveau it
+  # had Vulkan and OpenGL but no CUDA.
+  services.xserver.videoDrivers = ["nvidia"];
+
   hardware = {
     graphics = {
       enable = true;
       extraPackages = with pkgs; [
         vpl-gpu-rt
       ];
+    };
+    nvidia = {
+      open = true; # the module's own suggestion for Turing and later
+      modesetting.enable = true;
+      powerManagement.finegrained = true; # RTD3: powered off while nothing uses it
+      prime = {
+        offload = {
+          enable = true;
+          enableOffloadCmd = true; # `nvidia-offload <app>` renders one app on the NVIDIA card
+        };
+        intelBusId = "PCI:0@0:2:0"; # lspci 00:02.0
+        nvidiaBusId = "PCI:1@0:0:0"; # lspci 01:00.0
+      };
     };
     cpu.intel.updateMicrocode = true;
     bluetooth = {
