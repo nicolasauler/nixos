@@ -492,8 +492,8 @@ in {
   };
 
   # The RTX 2000 Ada (AD107) gets NVIDIA's driver for CUDA (local photo work), in PRIME offload: the Intel Arc keeps
-  # driving every display (all four connectors hang off it) and the NVIDIA card only wakes for work. On nouveau it
-  # had Vulkan and OpenGL but no CUDA.
+  # driving every display (all four connectors hang off it), and RTD3 lets the NVIDIA card power off while idle. On
+  # nouveau it had Vulkan and OpenGL but no CUDA.
   services.xserver.videoDrivers = ["nvidia"];
 
   hardware = {
@@ -506,7 +506,10 @@ in {
     nvidia = {
       open = true; # the module's own suggestion for Turing and later
       modesetting.enable = true;
-      powerManagement.finegrained = true; # RTD3: powered off while nothing uses it
+      # Keep GPU memory across suspend (hypridle suspends after 30 minutes, maybe mid-job): with 595's open modules
+      # this preserves allocations through the kernel's suspend notifiers, with no nvidia-suspend services.
+      powerManagement.enable = true;
+      powerManagement.finegrained = true; # RTD3: lets the card power off while nothing uses it
       prime = {
         offload = {
           enable = true;
