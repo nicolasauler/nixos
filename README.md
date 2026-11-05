@@ -353,6 +353,15 @@ once you run `wpctl set-log-level "2,s-bluez-loopback-mute:I"`.
 Evaluation fails on any other WirePlumber version until someone checks the
 script against it.
 
+WirePlumber keeps its Bluetooth monitor for as long as it runs (its seat
+monitoring is off on precision). Since the NVIDIA driver, the kernel switches
+the console around every suspend, so the login session goes inactive and back;
+seat monitoring would then drop the AirPods and replace the Bluetooth monitor at
+each resume. Once, bluez-loopback-mute.lua kept the old monitor, and the AirPods
+connected to it but stayed missing from pavucontrol and Meet until WirePlumber
+restarted. If they ever go missing like that again:
+`systemctl --user restart wireplumber`, then reconnect the AirPods.
+
 If the mic still goes silent mid-call, rebuild the headset nodes: in
 pavucontrol's **Configuration** tab, switch the AirPods to another "Headset Head
 Unit" codec (CVSD, say), then back to the one you use; WirePlumber remembers the

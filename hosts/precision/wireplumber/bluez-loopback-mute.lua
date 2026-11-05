@@ -56,7 +56,10 @@ local HEADSET_INPUT_MUTE_MSEC = 500
 -- The bluez monitor and, per device.name, the id under which it manages the
 -- device's SpaDevice. The SpaDevice is never kept (the sandbox has no
 -- collectgarbage, and a kept one would outlive its removal); it is looked up
--- when needed.
+-- when needed. The monitor is kept only while it runs: when WirePlumber stops
+-- it (seat monitoring does, while the session is inactive) a reference kept
+-- here would keep it, with its Bluetooth registrations, and the monitor
+-- started next could not get the headset.
 local monitor = nil
 local spa_ids = {}
 -- per device.name, a count of SpaDevices created under it; a signal handler
@@ -78,6 +81,25 @@ local function spaDevice (name)
     return spa
   end
   return nil
+end
+
+-- Keep the monitor that created a device, until WirePlumber stops it. A device
+-- event can be handled after its monitor stopped; such a monitor is not taken,
+-- as nothing would let go of it: false.
+local function noteMonitor (m)
+  if (m:get_active_features () & Feature.SpaDevice.ENABLED) == 0 then
+    return false
+  end
+  if monitor ~= m then
+    monitor = m
+    m:connect ("notify::active-features", function (stopped)
+      if monitor == stopped
+          and (stopped:get_active_features () & Feature.SpaDevice.ENABLED) == 0 then
+        monitor = nil
+      end
+    end)
+  end
+  return true
 end
 
 -- The device-0 input route among Route params (an iterator), as
@@ -638,7 +660,9 @@ SimpleEventHook {
     if not name or id == nil then
       return
     end
-    monitor = event:get_subject ()
+    if not noteMonitor (event:get_subject ()) then
+      return
+    end
     spa_ids [name] = id
     local spa = spaDevice (name)
     if not spa then
