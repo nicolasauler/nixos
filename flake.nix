@@ -87,7 +87,6 @@
     system = "x86_64-linux";
     pkgs = import nixpkgs {
       inherit system;
-      overlays = [(import ./overlays/keymapp.nix)];
       config = {
         allowUnfree = true;
         # cudaSupport = true;

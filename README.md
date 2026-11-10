@@ -17,6 +17,10 @@ nh os switch -a                          # only where the table says yes
 The flake attr is what you pass to `--flake`, and it is not always the machine's
 hostname — see `notebook` above.
 
+Desktop's scheduled cleanup uses only `programs.nh.clean`: weekly, with
+`--keep-since 7d --keep 10`. Leave `nix.gc.automatic` disabled to avoid competing
+cleanup policies.
+
 ## Fresh clone, in order
 
 The first step is not optional: the pre-commit hook below runs `alejandra`, which
@@ -48,6 +52,37 @@ The second command is not redundant. `--add-fixed` creates no GC root, and
 next rebuild fails. Two traps live here: `--add-fixed --add-root` silently ignores
 the root flag, and modern `nix store add` defaults to recursive hashing while
 `requireFile` expects flat — same file, different hash.
+
+## Keyboard troubleshooting
+
+Keymapp uses the stock nixpkgs package. The old patchelf 0.19.2 workaround was
+removed after nixpkgs returned to 0.15.2 and stock Keymapp passed a GUI startup
+check; its version guard must not keep blocking host rebuilds.
+
+For a wired EK68, `can't read configurations, error -71` is a
+[USB protocol/enumeration failure](https://docs.kernel.org/driver-api/usb/error-codes.html),
+before input remapping. Try a known-good USB data cable and another direct
+motherboard port, without a hub. ZSA's vendor-specific udev permissions do not
+match the EK68. A rebuild that fails during evaluation activates no new settings.
+
+## Desktop lockouts
+
+NVIDIA monitor power-off disconnected Hyprland's Wayland clients while the
+session was locked, leaving the dead-locker screen. Hyprlock's first abort was a
+lost Wayland connection, not a PAM failure. This matches
+[Hyprland's open DPMS regression](https://github.com/hyprwm/Hyprland/discussions/16840).
+
+Desktop now keeps the five-minute password lock and black background, but no
+longer powers monitors off automatically. This is a workaround, not a graphics
+driver fix; laptop DPMS and suspend timers are unchanged.
+
+Home Manager uses the compositor and portal selected by NixOS, rather than
+installing a competing nixpkgs version ahead of them in `PATH`.
+
+Apply with `sudo nixos-rebuild switch --flake .#desktop`, then restart
+`hypridle.service` with `systemctl --user restart hypridle.service`. Save your work
+and log out/in to use the aligned compositor package. Hardware DPMS must be
+tested in a disposable session before restoring automatic monitor power-off.
 
 ## precision microphone keys
 
@@ -473,6 +508,13 @@ system daemon does not, and that the worker authenticates.
 a cache.** Its closure carries `certus-infra`'s `writeText` secrets.
 
 ## Binary cache
+
+`cuda-maintainers.cachix.org` is intentionally absent from all host configurations.
+It served prebuilt CUDA packages, not GPU access; its endpoint now returns HTTP
+401. Removing it from NixOS does not remove a separate entry in
+`~/.config/nix/nix.conf`, which can override the system cache list. Remove both
+its URL and signing key there too. `nix config show` shows the effective settings;
+new Nix commands read the corrected user file without a rebuild.
 
 Pull needs nothing: it is armed by the devShell. Push happens from CI on merged
 code. If you ever need to push by hand, push only the four public checks

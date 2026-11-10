@@ -126,13 +126,4 @@
     min-free = 20 * 1024 * 1024 * 1024; # 20 GiB
     max-free = 60 * 1024 * 1024 * 1024; # 60 GiB
   };
-
-  # Old generations, weekly. PR builds are not gcrooted (buildbot registers
-  # roots per branch-glob, default branch only) and its tmpfiles rule ages out
-  # gcroot drvs after 7d, so this mostly reclaims superseded system/CI paths.
-  nix.gc = {
-    automatic = true;
-    dates = "03:15";
-    options = "--delete-older-than 14d";
-  };
 }
