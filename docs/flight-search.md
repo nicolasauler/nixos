@@ -21,7 +21,7 @@ source only, so treat it as unverified.
 | 3 | [Kiwi.com MCP](https://www.kiwi.com/en/pages/mcp), `https://mcp.kiwi.com` | search by city, region or "anywhere"; flexible dates and nights; BRL; LATAM, GOL and Azul from GRU, CGH and VCP | free, no key | official | ran |
 | 4 | [fli](https://github.com/punitarani/fli) (PyPI `flights`): CLI, Python, `fli-mcp` | Google Flights per-route search and date sweeps | free | active; unreliable on thin routes | ran, again 2026-11-11 |
 | 5 | [Skiplagged MCP](https://skiplagged.github.io/mcp), `https://mcp.skiplagged.com/mcp` | "anywhere" search with BRL display | free, no key | official; prices are converted from USD and came out about 40% high on GRU–CPT | ran |
-| 6 | [SerpApi](https://serpapi.com/pricing) `google_travel_explore` and `google_flights` | the stable, paid version of 1 and 2, plus per-route price insights and price history | 250 searches/month free, then $25 per 1k or $75 per 5k | active | docs |
+| 6 | [SerpApi](https://serpapi.com/pricing) `google_travel_explore` and `google_flights` | documented Explore and per-route price insights/history; not a verified replacement for Deals' usual-price signal | 250 searches/month free, then $25 per 1k or $75 per 5k | active; not exercised here | docs |
 | 7 | [seats.aero](https://seats.aero) Pro API | award space for GOL Smiles and Azul Fidelidade, not LATAM Pass (§4.3) | about $12.99/month (secondary) | active; the API is not offered in every country | docs |
 | 8 | [Ignav](https://ignav.com/pricing), [SearchApi](https://www.searchapi.io/pricing), Apify actors | paid Google Flights scrapers, as fallbacks | Ignav $2 per 1k after 1k free; SearchApi 100 free, then $40 per 10k | active | secondary |
 | 9 | [Travelpayouts / Aviasales Data API](https://support.travelpayouts.com/hc/en-us/articles/203956163-Aviasales-Data-API) | cached prices from other users' searches, including origin-only queries | free with an affiliate token | active; depth for Brazil unverified | docs |
@@ -72,8 +72,8 @@ VCP–LIS R$3,914 (Azul nonstop) and GRU–MAD R$4,080 [ran].
 
 fli is the tool for confirming a fare on exact dates. From its main branch,
 `search_dates` for GRU⇄CPT, 14-day trips starting 1–20 March, took 1.6 s and found
-R$4,283 (4–18 March). A plain round-trip search on that route returned null or zero
-prices, while GRU⇄LIS worked [ran].
+R$4,283 (4–18 March). A plain round-trip search on that route returned null-priced
+itineraries in 0.9.0 or no results on main, while GRU⇄LIS worked [ran].
 
 Consumer features, none of them schedulable: Google Flights' "Flight Deals" (beta) works
 with `gl=BR` and takes natural-language prompts in the browser; Kiwi ships ChatGPT,
@@ -199,7 +199,7 @@ for (const line of (await res.text()).split("\n")) {
 console.table(rows);
 ```
 
-- **The `inner` array:** its third element (`1`) means round trip. The two leg dates
+- **Trip type:** `inner[1][2]` is `1` for round trip. The two leg dates
   only seed the search; the range and the trip lengths decide what comes back.
 - **One way:** use `2` instead of `1`, a single leg, and stop after the date range:
   `[null, settings, [first, last]]`.
@@ -215,9 +215,10 @@ console.table(rows);
 
 ### 3.4 Search pages
 
-`https://www.google.com/travel/flights?q=Flights to BSB from CGH on 2027-01-09 through
-2027-01-16&curr=BRL&hl=en&gl=BR` loads a round-trip search, and `One way flights to BSB
-from CGH on 2027-01-09` a one-way one. Each result's `aria-label` carries everything:
+A [round-trip search](https://www.google.com/travel/flights?q=Flights%20to%20BSB%20from%20CGH%20on%202027-01-09%20through%202027-01-16&curr=BRL&hl=en&gl=BR)
+uses `q=Flights to BSB from CGH on 2027-01-09 through 2027-01-16`; a one-way search uses
+`q=One way flights to BSB from CGH on 2027-01-09`. URL-encode `q` and keep `curr=BRL`.
+Each result's `aria-label` carries its advertised price and flight details:
 "From 737 Brazilian reals round trip total. Nonstop flight with LATAM. Operated by Latam
 Airlines Brasil. Leaves São Paulo/Congonhas–… at 7:15 AM on Saturday, January 9 and
 arrives at … at 9:00 AM on Saturday, January 9. Total duration 1 hr 45 min."
@@ -266,13 +267,14 @@ outbound's returns with round-trip totals.
   - Pro alerts watch routes without code.
   - Price: $12.99 a month or $109.99 a year from 2026-11-09
     [secondary: <https://milesopedia.com/en/news/travel/seats-aero-pro-price-increase/>].
-- **LATAM Pass** has no consumer API. The only programmatic routes are B2B APIs priced on
-  request: [APIViagens](https://www.apiviagens.com.br/),
+- **LATAM Pass:** no consumer API was found in this research. B2B options found were
+  [APIViagens](https://www.apiviagens.com.br/),
   [GeckoAPI](https://geckoapi.com.br/blog/api-milhas-aereas-smiles-azul-pontos/) and
-  [BuscaMilhas](https://buscamilhas.com/api-passagens-aereas/).
-  [EconoMilha](https://www.economilha.com/en) searches the programs on the web.
-- **Scraping** Smiles, LATAM or Azul directly runs into bot protection and is against
-  their terms.
+  [BuscaMilhas](https://buscamilhas.com/api-passagens-aereas/), with pricing on request.
+  [EconoMilha](https://www.economilha.com/en) advertises web searches across programs
+  [secondary; none of these services was exercised].
+- **Direct scraping** of Smiles, LATAM or Azul was not tested. Review each site's current
+  terms and access restrictions before considering it as a data source.
 - **Transfer bonuses** (Livelo or Esfera into Smiles, Azul or LATAM Pass) are posted on
   the Melhores Destinos Telegram.
 
@@ -293,8 +295,8 @@ systemd timer, every 4 h (RandomizedDelaySec=45m, Persistent=true)
    │                      South America}; ~14 calls per run
    ├─ SQLite (WAL)        observations, baselines, alerts
    ├─ detect              rules A–D below
-   ├─ confirm             live re-query of each candidate on exact dates (fli or Kiwi);
-   │                      keep it if within +10%
+   ├─ confirm             re-query each candidate on exact dates (fli or Kiwi);
+   │                      require within +10% AND the alert rule still holds
    └─ notify              Telegram bot or ntfy
 ```
 
@@ -314,54 +316,44 @@ systemd timer, every 4 h (RandomizedDelaySec=45m, Persistent=true)
 - `baseline(dest, month, nights_bucket, n, median, mad, p10, updated_at)`, rebuilt daily
 - `alerts(dest, depart, return, price_brl, reason, sent_at)`, for dedup
 
-That is about 1–2k rows per run, a few MB a year.
+At 1–2k rows per run and six runs per day, this is about 2.2–4.4 million rows per year
+before deduplication. Measure row and index sizes and choose retention before deployment.
 
 **Alert** when a candidate passes any of:
 
 - **A, Google says so:** `pct_below ≥ 40` (Google's own threshold is 20), and the
   destination is international or on a watch list.
 - **B, our history:** bucket by destination, travel month and 5–9 or 10–16 nights. Once a
-  bucket has at least 20 observations over at least 14 days, fire when
+  bucket has at least 20 observations over at least 14 days, fire when MAD > 0,
   robust z = (median − price) / (1.4826 · MAD) ≥ 3 and price ≤ 0.7 · median.
-- **C, cold start:** use Google's usual price if seen; else SerpApi's
-  `typical_price_range`; else price per great-circle km below the 5th percentile of
-  destinations in the same distance band.
+  If MAD is zero, skip this rule and use a documented typical price or target cap.
+- **C, cold start:** if Google supplies a usual price, apply rule A's 40% threshold.
+  Otherwise, if the paid fallback supplies `typical_price_range=[low, high]` with
+  `0 < low ≤ high`, require price ≤ 0.7 · low. Without either baseline, do not claim
+  an anomalous discount: use rule D or keep the fare as a discovery candidate.
 - **D, target prices:** per-destination caps, e.g. Cape Town round trip ≤ R$3,000.
+
+After confirmation, re-evaluate the qualifying rule against the new price and compare
+like-for-like passenger count, cabin, airports, dates and stops. The +10% tolerance never
+overrides a target cap or discount threshold. A 2,990 quote repriced to 3,289 must not
+trigger a 3,000 target-price alert.
 
 Send one alert per destination and ±3 days, and re-alert only on a further ≥ 5% drop. For
 calibration: on 2026-11-09, Cape Town round trips were R$4.2–4.65k across Google, Kiwi
 and fli for December–March, against a Google usual price of R$7.8–8.6k. Rule A would have
 fired.
 
-**NixOS shape**, with the credential handled like `modules/services/buildbot-secrets.nix`
-(systemd reads the root-only agenix file and hands it to the unit). `flightwatch` is the
-package still to be written, and `secrets.nix` would need the new secret:
+**NixOS integration requirements**, not an installable module:
 
-```nix
-{config, pkgs, ...}: {
-  age.secrets.flightwatch-telegram.file = ../../secrets/flightwatch-telegram.age;
-
-  systemd.services.flightwatch = {
-    path = [pkgs.chromium];
-    serviceConfig = {
-      Type = "oneshot";
-      DynamicUser = true;
-      StateDirectory = "flightwatch";
-      LoadCredential = "telegram-token:${config.age.secrets.flightwatch-telegram.path}";
-      ExecStart = "${flightwatch}/bin/flightwatch run";
-    };
-  };
-
-  systemd.timers.flightwatch = {
-    wantedBy = ["timers.target"];
-    timerConfig = {
-      OnCalendar = "*-*-* 00/4:00:00";
-      RandomizedDelaySec = "45m";
-      Persistent = true;
-    };
-  };
-}
-```
+- Package the program before defining `ExecStart`; there is no `flightwatch` package here.
+- Use a `Type=oneshot` service, `DynamicUser=true`, `StateDirectory=flightwatch` and
+  `pkgs.chromium` on its PATH.
+- Provision a Telegram credential through agenix and register its recipients in
+  `secrets.nix`. Follow `modules/services/buildbot-secrets.nix`: use the secret's
+  `config.age.secrets.<name>.path` as a systemd `LoadCredential` source, never a Nix-store
+  string containing the token. The program reads it from `$CREDENTIALS_DIRECTORY`.
+- Attach a timer with `OnCalendar=*-*-* 00/4:00:00`, `RandomizedDelaySec=45m` and
+  `Persistent=true`. Select the host and notification destination before deployment.
 
 **Operations.**
 - **Host:** run it on a machine that stays in São Paulo and off VPN, since the deals and
@@ -370,18 +362,24 @@ package still to be written, and `secrets.nix` would need the new secret:
 - **Notifications:**
   - Telegram: `POST https://api.telegram.org/bot<TOKEN>/sendMessage` with `chat_id` and
     `text`.
-  - ntfy: `curl -d "GRU→CPT R$4,284 (−50%)" ntfy.sh/<secret-topic>`, or self-hosted
-    through `services.ntfy-sh`.
+  - ntfy: publish over HTTPS to an authenticated private topic, with publisher and
+    subscriber access controls; an obscure public topic name is not authentication.
+    Self-hosting is available through `services.ntfy-sh`.
 - **Cost:** nothing. Optional extras: seats.aero Pro for miles, and SerpApi's free tier
   for calibration.
-- **Failure mode:** Google's page and RPC formats change a few times a year. Wrap each
-  source in an adapter that checks its schema, and alert ourselves when a source returns
-  no rows twice in a row. Kiwi stays as the independent source.
+- **Failure mode:** Google's undocumented page and RPC formats can change; fli documents
+  a change in August 2026. Wrap each source in an adapter that checks its schema, and
+  alert ourselves when a source returns no rows twice in a row. Kiwi stays as a second
+  source.
 
-**Paid fallback:** the same pipeline, with SerpApi in place of the Google pages.
+**Paid fallback, documented but not exercised:** use SerpApi's Explore and per-route
+insights where available; this is not a verified equivalent of the Deals page.
 - `google_travel_explore` with `departure_id=GRU,CGH,VCP`, `currency=BRL`, `gl=br`,
   `month`, `travel_duration` and `arrival_area_id` per region.
-- `google_flights` price insights for each candidate.
+- [`google_flights` price insights](https://serpapi.com/google-flights-price-insights)
+  for each candidate. Their typical price range is a lower/upper pair, not the Deals
+  page's usual-price scalar. Disable rule A unless the actual Deals inputs remain
+  available; use rule C's explicit lower-bound comparison instead.
 - About 15 calls per run: 4 runs a day is about 1,800 a month, the $75 Developer plan; 1–2
   runs a day fits the $25 Starter plan.
 
@@ -389,9 +387,9 @@ package still to be written, and `secrets.nix` would need the new secret:
 
 ## 6. Worked example: São Paulo ⇄ Brasília, January 2027
 
-**The question:** CGH or GRU to BSB and back, about a week, any time in January 2027.
-The preferred shape was leaving on a weekend (or a Friday night) and returning on a
-Sunday. CGH, the closer airport, was preferred.
+**Illustrative search criteria:** CGH or GRU to BSB and back, about a week, any time in
+January 2027. Prefer CGH, a Friday-night or weekend departure and a Sunday return.
+These are alternative market quotes, not a confirmed personal itinerary.
 
 **Method:**
 1. Run the §3.3 calendar for every January departure, with stays of 5–10 nights, from
@@ -399,11 +397,12 @@ Sunday. CGH, the closer airport, was preferred.
 2. Run live searches (§3.4) on the cheapest shapes, clicking through for return times.
 3. Run one-way searches to price split tickets.
 
-All prices are in BRL: nonstop, economy, one adult, taxes included, checked bags extra.
-Times are local.
+The live options below were nonstop economy quotes for one adult in BRL, with required
+taxes and fees included. Airline checkout, baggage allowance and seat fees were not
+verified. Calendar queries used no nonstop filter. Times are local.
 
-**Cheapest round trip by departure date** (calendar, 7 nights; within a few reais for
-any stay of 5–10 nights):
+**Cheapest round trip by departure date** (calendar, exactly 7 nights; other trip
+lengths can cost more or less):
 
 | Departure | CGH, Nov 9 | CGH, Nov 11 | GRU, Nov 9 | GRU, Nov 11 |
 |---|---|---|---|---|
@@ -422,30 +421,34 @@ any stay of 5–10 nights):
 
 | Trip | Nights | Tickets | Out, CGH → BSB | Back, BSB → CGH | Total |
 |---|---|---|---|---|---|
-| Fri Jan 15 → Sun Jan 24 | 9 | Gol round trip | 17:10, 20:25 (also 06:05–15:55) | 06:00, 09:50, 13:30, 15:05, 17:15, 18:50, 20:30 | 699 |
-| Sat Jan 16 → Sun Jan 24 | 8 | Gol round trip | 18:20 (also 06:05, 08:05) | same as above | 699 |
+| Fri Jan 15 → Sun Jan 24 | 9 | Gol round trip | 17:10, 20:25 | 06:00, 09:50, 13:30, 15:05, 17:15, 18:50, 20:30 | 699 |
+| Sat Jan 16 → Sun Jan 24 | 8 | Gol round trip | 18:20 | same as above | 699 |
 | Sun Jan 10 → Sun Jan 17 | 7 | Gol round trip | 06:10 | 06:00, 09:00, 09:50, 13:30, 15:05, 17:15, 18:50, 20:30 | 699 |
-| Sun Jan 10 → Sun Jan 17 | 7 | LATAM round trip | eight flights, 07:00–21:00 | 09:35, 13:05, 18:40, 19:35 | 737 |
+| Sun Jan 10 → Sun Jan 17 | 7 | LATAM round trip | 10:40 | 09:35, 13:05, 18:40, 19:35 | 737 |
 | Fri Jan 8 → Sun Jan 17 | 9 | two one-ways | Azul 18:35 (456) | LATAM 18:40, 19:35 or Gol 17:15, 18:50, 20:30 and earlier (355) | 811 |
 | Sat Jan 9 → Sun Jan 17 | 8 | two one-ways | Azul 17:30, 21:45 (456) | as above (355) | 811 |
-| Fri Jan 8 or Sat Jan 9 → Sun Jan 17 | 9 or 8 | Azul round trip | Fri 06:30–18:35, Sat 06:50, 17:30, 21:45 | 05:50, 16:55 | 837 |
-| Fri Jan 8 → Sun Jan 17 | 9 | LATAM round trip | 19:10, 21:10 (also 06:00–15:20) | 09:35, 13:05, 18:40, 19:35 | 938 |
+| Fri Jan 8 or Sat Jan 9 → Sun Jan 17 | 9 or 8 | Azul round trip | Fri 18:35 or Sat 17:30 | 05:50, 16:55 | 837 |
+| Fri Jan 8 → Sun Jan 17 | 9 | LATAM round trip | 19:10, 21:10 | 09:35, 13:05, 18:40, 19:35 | 938 |
 
 What it showed:
 
-- **Trip length is free between 5 and 10 nights.** From a given departure date, the price
-  barely moves with the stay. A Friday night out and a Sunday back nine days later costs
-  the same as seven nights.
-- **Prices moved a lot in two days.** The first weekend went up: LATAM's Friday-night
-  round trip went from 737 on 2026-11-09 to 938. GRU's 711 round trips that day left at
-  06:00 or 21:00–23:40; two days later they were 1,018. Departures from January 10 on
-  went down, from 737 to 699 at CGH. Re-run §3.3 before buying.
+- **Longer stays sometimes cost the same, not always.** In the November 11 calendar,
+  CGH departures on January 10–24 stayed at 699 for every duration from 5–10 nights.
+  But January 8 cost 808 for 7 nights and 837 for 9; January 1 cost 1,912 for 5 nights
+  and 1,030 for 9. Compare each date pair rather than assuming extra nights are free.
+- **Prices moved a lot in two days.** LATAM's January 8 Friday-night round trip went
+  from 737 on 2026-11-09 to 938. GRU's January 8 departures at 06:00, 14:55 and 23:40
+  had advertised round-trip minimums of 711, then 1,018 two days later. CGH seven-night
+  calendar prices for January 10–27 fell from 737 to 699; later dates had exceptions.
+  Re-run §3.3 to find candidates, then check live results before buying.
 - **Split tickets can win.** On 2026-11-11, an Azul one-way out plus a LATAM or Gol one-way
   back (811) beat both Azul's round trip (837) and LATAM's (938) for the first weekend. On
-  2026-11-09 it went the other way: LATAM's round trip was 737, against 477 + 449 for its
-  one-ways.
-- **Calendar and live agree on the floor, not on the flight.** The calendar shows the
-  cheapest price per date; only the live search shows which flights and times carry it.
+  2026-11-09, LATAM's January 9–16 round trip was 737, against 477 + 449 for its
+  one-ways. Separate tickets are separate bookings: changes or cancellation of one
+  do not automatically change or refund the other.
+- **Calendar and live can disagree on price.** The calendar is a discovery aid;
+  select both flights to identify the actual combination and quote, then confirm
+  the payable amount and fare conditions with the seller.
 - **Google's booking advice changed too.** On 2026-11-09 it said the cheapest time to book
   was "usually now, until Nov 11". On 2026-11-11 it said prices were typical and the
   cheapest time was "usually earlier, about 2–5 months before takeoff".
