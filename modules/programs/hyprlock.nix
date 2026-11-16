@@ -12,19 +12,28 @@
   # config, not hyprland.lua, and with misc:allow_session_lock_restore off it
   # answers every new lock client with `finished` (hyprlock logs "Seems we got
   # yeeten" and exits): the crash screen then stays up until a reboot. Setting
-  # the option on the live compositor first lets the next lock request replace
-  # that screen with a working hyprlock. It guards nothing against this user's
-  # own processes, which can already set it over the IPC socket.
+  # the option on that compositor first lets the next lock request replace the
+  # screen with a working hyprlock. It guards nothing against this user's own
+  # processes, which can already set it over the IPC socket; sandboxed
+  # (security-context) clients cannot bind the session-lock protocol at all.
   lockCommand = pkgs.writeShellApplication {
     name = "hyprlock-session";
-    runtimeInputs = [pkgs.procps osConfig.programs.hyprland.package config.programs.hyprlock.package];
+    runtimeInputs = [pkgs.jq pkgs.procps osConfig.programs.hyprland.package config.programs.hyprlock.package];
     text = ''
       if pidof hyprlock >/dev/null; then
         exit 0
       fi
-      # Instance 0 is the live compositor even when this service's environment
-      # still names the one that crashed.
-      hyprctl --instance 0 eval 'hl.config({ misc = { allow_session_lock_restore = true } })' || true
+      # Target the compositor hyprlock is about to connect to: the newest live
+      # instance serving $WAYLAND_DISPLAY. A crashed instance leaves its directory
+      # behind, and hyprctl's defaults (this environment's signature, or the
+      # oldest instance) can name another compositor.
+      instance=$(hyprctl instances -j |
+        jq -r '[.[] | select(.wl_socket == env.WAYLAND_DISPLAY)] | max_by(.time) | .instance // empty') || instance=
+      if [ -n "$instance" ]; then
+        hyprctl --instance "$instance" eval 'hl.config({ misc = { allow_session_lock_restore = true } })' || true
+      else
+        echo "hyprlock-session: no Hyprland instance serves WAYLAND_DISPLAY=''${WAYLAND_DISPLAY:-unset}" >&2
+      fi
       exec hyprlock
     '';
   };

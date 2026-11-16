@@ -78,10 +78,10 @@ while freeing its GL resources. Switching ttys and respawning hyprlock could not
 help; only a reboot unlocked the desktop.
 
 Every host's hypridle `lock_cmd` is now `hyprlock-session`
-(`modules/programs/hyprlock.nix`), which turns that option on in the live
-compositor before starting hyprlock. After such a crash, the next lock request
-puts up a working hyprlock: hypridle's five-minute idle lock, or at once from
-another tty (Ctrl+Alt+F3, log in):
+(`modules/programs/hyprlock.nix`), which turns that option on in the compositor
+serving hyprlock's display, then starts hyprlock. After such a crash, the next
+lock request puts up a working hyprlock: hypridle's five-minute idle lock, or at
+once from another tty (Ctrl+Alt+F3, log in):
 
 ```
 loginctl lock-sessions
@@ -102,10 +102,11 @@ Home Manager uses the compositor and portal selected by NixOS, rather than
 installing a competing nixpkgs version ahead of them in `PATH`.
 
 Apply with `sudo nixos-rebuild switch --flake .#desktop`; Home Manager restarts
-`hypridle.service` because its config changed. Test lock or DPMS behaviour in a
-disposable login on another tty, not a nested Hyprland: on start, this build
-exports the nested instance's `WAYLAND_DISPLAY` and signature into the systemd
-user manager even with `HYPRLAND_NO_SD_VARS=1`, repointing your user services.
+`hypridle.service` because its config changed. Test lock or DPMS behaviour as
+another user, or after logging out of this session: every Hyprland this user
+starts, nested or on another tty, exports its `WAYLAND_DISPLAY` and signature
+into the per-user systemd manager on start, even with `HYPRLAND_NO_SD_VARS=1`,
+which repoints the running session's user services.
 
 ## precision microphone keys
 
