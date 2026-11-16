@@ -71,17 +71,20 @@ Both lockouts (2026-11-10 01:01, and 2026-11-13 12:24 until the 11-14 reboot)
 began with Hyprland itself dying while the session was locked. Every Wayland
 client died with it; hyprlock's abort was that lost connection, not a PAM or
 config failure. `start-hyprland` then relaunched the compositor as
-`Hyprland --safe-mode --locked`. Safe mode loads a stock recovery config, not
-`hyprland.lua`, so `misc:allow_session_lock_restore` was off and Hyprland refused
+`Hyprland --safe-mode --locked`: locked, with no lock client and no
+`--locked-cmd`. With `misc:allow_session_lock_restore` off (the default; this
+repo never set it, and safe mode skips `hyprland.lua` anyway), Hyprland refused
 every new hyprlock: each one logged `Seems we got yeeten`, exited, and segfaulted
 while freeing its GL resources. Switching ttys and respawning hyprlock could not
 help; only a reboot unlocked the desktop.
 
 Every host's hypridle `lock_cmd` is now `hyprlock-session`
-(`modules/programs/hyprlock.nix`), which turns that option on in the compositor
-serving hyprlock's display, then starts hyprlock. After such a crash, the next
-lock request puts up a working hyprlock: hypridle's five-minute idle lock, or at
-once from another tty (Ctrl+Alt+F3, log in):
+(`modules/programs/hyprlock.nix`). When the compositor serving hyprlock's
+display is locked and no hyprlock runs, it turns that option on there before
+starting hyprlock, so the new hyprlock takes over; healthy sessions are left
+alone. After such a crash, the next lock request puts up a working hyprlock:
+hypridle's five-minute idle lock, or at once from another tty (Ctrl+Alt+F3, log
+in; it asks for your password again):
 
 ```
 loginctl lock-sessions

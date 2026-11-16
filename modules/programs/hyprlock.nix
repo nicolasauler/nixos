@@ -8,15 +8,21 @@
   # Every host's hypridle lock_cmd.
   #
   # start-hyprland restarts a compositor that crashed while locked as
-  # `Hyprland --safe-mode --locked`. Safe mode loads Hyprland's stock recovery
-  # config, not hyprland.lua, and with misc:allow_session_lock_restore off it
-  # answers every new lock client with `finished` (hyprlock logs "Seems we got
-  # yeeten" and exits): the crash screen then stays up until a reboot. Setting
-  # the option on that compositor first lets the next lock request replace the
-  # screen with a working hyprlock. It guards nothing against this user's own
-  # processes, which can already set it over the IPC socket; sandboxed
-  # (security-context) clients cannot bind the session-lock protocol at all.
+  # `Hyprland --safe-mode --locked`: locked, with no lock client and no
+  # `--locked-cmd`. Unless misc:allow_session_lock_restore is on (it is off by
+  # default, and safe mode skips hyprland.lua anyway), Hyprland then answers
+  # every new lock client with `finished` (hyprlock logs "Seems we got yeeten"
+  # and exits), and the crash screen stays up until a reboot. A hyprlock that
+  # dies while Hyprland lives leaves the same state.
+  #
+  # So when that compositor is locked and no hyprlock runs, the option is turned
+  # on there before hyprlock starts, which lets it take over. Healthy sessions
+  # are left alone. Sandboxed (security-context) clients cannot bind the
+  # session-lock protocol, and this user's own processes could already set the
+  # option over the IPC socket.
   lockCommand = pkgs.writeShellApplication {
+    # hypridle's automatic sleep inhibition waits for the lock only while
+    # lock_cmd contains "hyprlock": keep it in the name.
     name = "hyprlock-session";
     runtimeInputs = [pkgs.jq pkgs.procps osConfig.programs.hyprland.package config.programs.hyprlock.package];
     text = ''
@@ -29,10 +35,10 @@
       # oldest instance) can name another compositor.
       instance=$(hyprctl instances -j |
         jq -r '[.[] | select(.wl_socket == env.WAYLAND_DISPLAY)] | max_by(.time) | .instance // empty') || instance=
-      if [ -n "$instance" ]; then
-        hyprctl --instance "$instance" eval 'hl.config({ misc = { allow_session_lock_restore = true } })' || true
-      else
+      if [ -z "$instance" ]; then
         echo "hyprlock-session: no Hyprland instance serves WAYLAND_DISPLAY=''${WAYLAND_DISPLAY:-unset}" >&2
+      elif [ "$(hyprctl --instance "$instance" locked)" = true ]; then
+        hyprctl --instance "$instance" eval 'hl.config({ misc = { allow_session_lock_restore = true } })' || true
       fi
       exec hyprlock
     '';
