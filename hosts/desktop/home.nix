@@ -20,8 +20,9 @@
     name = "waybar-gpu";
     runtimeInputs = [osConfig.hardware.nvidia.package.bin];
     text = ''
+      # Four columns, like a reading (`%3s%%`), so `?` never shifts the bar.
       unavailable() {
-        printf '{"text":"  ?","tooltip":"%s","class":"unavailable"}\n' "$1"
+        printf '{"text":"  ?%%","tooltip":"%s","class":"unavailable"}\n' "$1"
       }
       coproc smi {
         exec nvidia-smi --id=0 --query-gpu=utilization.gpu,temperature.gpu \

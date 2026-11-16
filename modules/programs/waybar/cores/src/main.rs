@@ -212,8 +212,8 @@ fn parse_millidegrees(text: &str) -> Option<i32> {
 
 /// The average reported clock, as Waybar's cpu module computes `avg_frequency`
 /// for the bar: the mean of every `cpu MHz` line's whole megahertz, rounded up
-/// to 10 MHz.
-fn average_ghz(cpuinfo: &str) -> Option<f64> {
+/// to 10 MHz, kept in single precision as Waybar keeps it.
+fn average_ghz(cpuinfo: &str) -> Option<f32> {
     let (mut sum, mut count) = (0_u64, 0_u64);
     for line in cpuinfo.lines().filter(|line| line.starts_with("cpu MHz")) {
         let (_, value) = line.split_once(':')?;
@@ -221,7 +221,13 @@ fn average_ghz(cpuinfo: &str) -> Option<f64> {
         sum = sum.checked_add(whole.parse().ok()?)?;
         count += 1;
     }
-    (count > 0).then(|| (sum as f64 / count as f64 / 10.0).ceil() / 100.0)
+    if count == 0 {
+        return None;
+    }
+    // Both steps land in a `float` in Waybar, which decides the tenths shown: as
+    // an f32, 3.35 lies just below 3.35 (shown 3.3) and 3.15 just above (3.2).
+    let mean = (sum as f64 / count as f64) as f32;
+    Some(((f64::from(mean) / 10.0).ceil() / 100.0) as f32)
 }
 
 struct Readings {
@@ -279,7 +285,7 @@ fn render_frame(
     frame: &mut String,
     usages: &[Usage],
     available: bool,
-    ghz: Option<f64>,
+    ghz: Option<f32>,
     labels: &[String],
     celsius: Option<&[Option<i32>]>,
 ) {
@@ -605,7 +611,7 @@ mod tests {
     fn rendered_with(
         usages: &[Usage],
         available: bool,
-        ghz: Option<f64>,
+        ghz: Option<f32>,
         labels: &[String],
         celsius: Option<&[Option<i32>]>,
     ) -> BTreeMap<String, String> {
@@ -726,6 +732,15 @@ mod tests {
                        cpu MHz\t\t: 3260.296\ncpu MHz\t\t: 3383.394\n";
         // Whole MHz 3260, 3260 and 3383: mean 3301, rounded up to 3.31 GHz.
         assert_eq!(average_ghz(cpuinfo), Some(3.31));
+        // The fraction is dropped before averaging: 3.30, not 3.31.
+        assert_eq!(average_ghz("cpu MHz\t\t: 3300.900\n"), Some(3.3));
+        // Single precision, as Waybar shows them; f64 would give 3.4 and 3.1.
+        let shown = |mhz: &str| {
+            let ghz = average_ghz(&format!("cpu MHz\t\t: {mhz}\n")).expect("one cpu MHz line");
+            format!("{ghz:.1}")
+        };
+        assert_eq!(shown("3341.000"), "3.3");
+        assert_eq!(shown("3141.000"), "3.2");
         assert_eq!(average_ghz("processor\t: 0\n"), None);
         assert_eq!(average_ghz("cpu MHz\t\t: fast\n"), None);
         assert_eq!(average_ghz("cpu MHz\n"), None);
