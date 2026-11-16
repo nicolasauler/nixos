@@ -11,6 +11,20 @@
   # Labels in blue, values in the normal foreground, so the two read apart.
   label = text: "<span color='#${palette.base0D}'>${text}</span>";
 in {
+  imports = [
+    {
+      options.programs.waybarCores.args = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [];
+        description = ''
+          Extra waybar-cores arguments, in order: each `--hwmon LABEL DIR INPUT`
+          or `--nvidia-smi LABEL PATH` adds a temperature to the first line of
+          the per-CPU strip's tooltip.
+        '';
+      };
+    }
+  ];
+
   # Host files label their own modules (precision's sensors) the same way.
   _module.args.waybarLabel = label;
 
@@ -102,7 +116,7 @@ in {
         on-click = processes;
       };
       "custom/cores" = {
-        exec = "exec ${lib.getExe cores}";
+        exec = "exec ${lib.escapeShellArgs ([(lib.getExe cores)] ++ config.programs.waybarCores.args)}";
         return-type = "json";
         format = "{text}";
         escape = true;

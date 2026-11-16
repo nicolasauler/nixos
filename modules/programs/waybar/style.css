@@ -70,6 +70,7 @@ tooltip label {
 #memory,
 #disk,
 #temperature,
+#custom-gpu,
 #custom-microphone,
 #wireplumber,
 #network,
@@ -83,7 +84,8 @@ tooltip label {
   color: @bar-muted;
 }
 
-#custom-cores.unavailable {
+#custom-cores.unavailable,
+#custom-gpu.unavailable {
   color: @bar-warning;
 }
 
@@ -97,6 +99,7 @@ tooltip label {
 #memory,
 #disk,
 #temperature,
+#custom-gpu,
 #custom-microphone,
 #wireplumber,
 #network,

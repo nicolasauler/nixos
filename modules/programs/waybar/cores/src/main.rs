@@ -1,10 +1,22 @@
+use std::env;
+use std::ffi::OsString;
 use std::fmt::Write as _;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, Read, Write};
+use std::path::PathBuf;
+use std::process;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
+/// Temperatures change slowly, and every NVMe read is a command to the drive.
+const TEMPERATURE_INTERVAL: Duration = Duration::from_secs(10);
+/// A reading this old means its reader is stuck (on an unresponsive NVMe
+/// drive, say): the tooltip then shows none rather than a stale value.
+const TEMPERATURE_STALE: Duration = Duration::from_secs(30);
+
+const USAGE: &str = "usage: waybar-cores [--hwmon LABEL DIR INPUT]...";
 
 #[derive(Debug, PartialEq, Eq)]
 struct Counters([u64; 8]);
@@ -128,10 +140,140 @@ fn level(percent: u8) -> char {
     LEVELS[(usize::from(percent) * (LEVELS.len() - 1) + 50) / 100]
 }
 
-fn render_frame(frame: &mut String, usages: &[Usage], available: bool) {
+/// A tooltip temperature: `input` (millidegrees Celsius) in the one `hwmon*`
+/// entry of `dir`. The `hwmonN` index can change between boots; the device
+/// path does not.
+#[derive(Debug, PartialEq, Eq)]
+struct Hwmon {
+    dir: PathBuf,
+    input: OsString,
+}
+
+impl Hwmon {
+    fn read(&self) -> Option<i32> {
+        let mut children = fs::read_dir(&self.dir)
+            .ok()?
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().as_encoded_bytes().starts_with(b"hwmon"));
+        let child = children.next()?;
+        // With two candidates, the reading would be a guess.
+        if children.next().is_some() {
+            return None;
+        }
+        parse_millidegrees(&fs::read_to_string(child.path().join(&self.input)).ok()?)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct Sensor {
+    label: String,
+    source: Hwmon,
+}
+
+/// Labels go into the JSON record verbatim, so they are limited to characters
+/// that need no escaping there or in Waybar's markup.
+fn valid_label(label: &str) -> bool {
+    !label.is_empty()
+        && label
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b" ()+-./_".contains(&byte))
+}
+
+fn parse_args(mut args: impl Iterator<Item = OsString>) -> Result<Vec<Sensor>, String> {
+    let mut sensors = Vec::new();
+    while let Some(flag) = args.next() {
+        let flag = flag.to_string_lossy().into_owned();
+        if flag != "--hwmon" {
+            return Err(format!("unknown argument {flag}"));
+        }
+        let mut next = |what: &str| args.next().ok_or_else(|| format!("{flag} needs {what}"));
+        let label = next("a label")?;
+        let source = Hwmon {
+            dir: next("a directory")?.into(),
+            input: next("an input file name")?,
+        };
+        let label = label
+            .into_string()
+            .ok()
+            .filter(|label| valid_label(label))
+            .ok_or_else(|| {
+                format!("{flag}: a label may only use ASCII letters, digits, spaces and ()+-./_")
+            })?;
+        sensors.push(Sensor { label, source });
+    }
+    Ok(sensors)
+}
+
+/// Whole degrees Celsius, rounding half up, from a hwmon millidegree value.
+fn parse_millidegrees(text: &str) -> Option<i32> {
+    let millidegrees: i64 = text.trim().parse().ok()?;
+    i32::try_from(millidegrees.checked_add(500)?.div_euclid(1000)).ok()
+}
+
+/// The average reported clock, as Waybar's cpu module computes `avg_frequency`
+/// for the bar: the mean of every `cpu MHz` line's whole megahertz, rounded up
+/// to 10 MHz.
+fn average_ghz(cpuinfo: &str) -> Option<f64> {
+    let (mut sum, mut count) = (0_u64, 0_u64);
+    for line in cpuinfo.lines().filter(|line| line.starts_with("cpu MHz")) {
+        let (_, value) = line.split_once(':')?;
+        let whole = value.trim().split('.').next()?;
+        sum = sum.checked_add(whole.parse().ok()?)?;
+        count += 1;
+    }
+    (count > 0).then(|| (sum as f64 / count as f64 / 10.0).ceil() / 100.0)
+}
+
+struct Readings {
+    taken: Instant,
+    celsius: Vec<Option<i32>>,
+}
+
+/// The readings, unless they are too old to show as current.
+fn fresh(readings: Option<&Readings>, now: Instant) -> Option<&[Option<i32>]> {
+    readings
+        .filter(|readings| now.saturating_duration_since(readings.taken) <= TEMPERATURE_STALE)
+        .map(|readings| readings.celsius.as_slice())
+}
+
+/// Reads every source each `TEMPERATURE_INTERVAL` on its own thread, so a stuck
+/// read never delays the CPU strip.
+fn spawn_reader(sources: Vec<Hwmon>) -> Arc<Mutex<Option<Readings>>> {
+    let latest = Arc::new(Mutex::new(None));
+    let shared = Arc::clone(&latest);
+    thread::spawn(move || {
+        let mut celsius = Vec::with_capacity(sources.len());
+        loop {
+            celsius.clear();
+            celsius.extend(sources.iter().map(Hwmon::read));
+            let taken = Instant::now();
+            let mut slot = shared.lock().unwrap_or_else(PoisonError::into_inner);
+            let readings = slot.get_or_insert_with(|| Readings {
+                taken,
+                celsius: Vec::with_capacity(sources.len()),
+            });
+            readings.taken = taken;
+            // The previous buffer comes back for the next round.
+            std::mem::swap(&mut readings.celsius, &mut celsius);
+            drop(slot);
+            thread::sleep(TEMPERATURE_INTERVAL);
+        }
+    });
+    latest
+}
+
+fn render_frame(
+    frame: &mut String,
+    usages: &[Usage],
+    available: bool,
+    ghz: Option<f64>,
+    labels: &[String],
+    celsius: Option<&[Option<i32>]>,
+) {
     frame.clear();
     // JSON contains only these fixed strings, bar glyphs, parsed numeric CPU
-    // IDs and computed percentages. Tooltip line breaks are escaped explicitly.
+    // IDs, computed percentages and clock, validated labels and parsed
+    // temperatures. Tooltip line breaks are escaped explicitly.
     frame.push_str("{\"text\":\"");
     if usages.is_empty() {
         frame.push_str("cores unavailable");
@@ -140,6 +282,26 @@ fn render_frame(frame: &mut String, usages: &[Usage], available: bool) {
         frame.push(usage.percent.map_or('?', level));
     }
     frame.push_str("\",\"tooltip\":\"");
+    for (index, label) in labels.iter().enumerate() {
+        if index > 0 {
+            frame.push_str(", ");
+        }
+        frame.push_str(label);
+        match celsius.and_then(|celsius| celsius.get(index).copied().flatten()) {
+            Some(value) => {
+                write!(frame, " {value}°C").expect("formatting into a String cannot fail")
+            }
+            None => frame.push_str(" n/a"),
+        }
+    }
+    if !labels.is_empty() {
+        frame.push_str("\\n");
+    }
+    match ghz {
+        Some(ghz) => write!(frame, "Average clock {ghz:.1} GHz\\n")
+            .expect("formatting into a String cannot fail"),
+        None => frame.push_str("Average clock ?\\n"),
+    }
     if available {
         frame.push_str("Logical CPU usage (cell order)");
     } else {
@@ -170,9 +332,19 @@ fn render_frame(frame: &mut String, usages: &[Usage], available: bool) {
 }
 
 fn main() -> io::Result<()> {
+    let sensors = parse_args(env::args_os().skip(1)).unwrap_or_else(|message| {
+        eprintln!("waybar-cores: {message}\n{USAGE}");
+        process::exit(2);
+    });
+    let (labels, sources): (Vec<_>, Vec<_>) = sensors
+        .into_iter()
+        .map(|sensor| (sensor.label, sensor.source))
+        .unzip();
+    let temperatures = (!sources.is_empty()).then(|| spawn_reader(sources));
     let stdout = io::stdout();
     let mut output = stdout.lock();
     let mut input = String::new();
+    let mut cpuinfo = String::new();
     let mut frame = String::new();
     let mut sampler = Sampler::default();
     loop {
@@ -185,7 +357,25 @@ fn main() -> io::Result<()> {
                     false
                 }
             };
-        render_frame(&mut frame, &sampler.usages, available);
+        cpuinfo.clear();
+        let ghz = File::open("/proc/cpuinfo")
+            .and_then(|mut file| file.read_to_string(&mut cpuinfo))
+            .ok()
+            .and_then(|_| average_ghz(&cpuinfo));
+        {
+            let latest = temperatures
+                .as_ref()
+                .map(|latest| latest.lock().unwrap_or_else(PoisonError::into_inner));
+            let celsius = fresh(latest.as_deref().and_then(Option::as_ref), Instant::now());
+            render_frame(
+                &mut frame,
+                &sampler.usages,
+                available,
+                ghz,
+                &labels,
+                celsius,
+            );
+        }
         if let Err(error) = output
             .write_all(frame.as_bytes())
             .and_then(|()| output.flush())
@@ -390,13 +580,23 @@ mod tests {
         }
     }
 
+    fn rendered(usages: &[Usage], available: bool) -> BTreeMap<String, String> {
+        rendered_with(usages, available, None, &[], None)
+    }
+
     /// Renders into a reused buffer, as `main` does, and returns the record's
     /// fields. Fails unless the output is one line of the restricted JSON this
     /// renderer emits: a flat object of three distinct string fields whose
     /// values contain no quotes and no escape other than `\n`.
-    fn rendered(usages: &[Usage], available: bool) -> BTreeMap<String, String> {
+    fn rendered_with(
+        usages: &[Usage],
+        available: bool,
+        ghz: Option<f64>,
+        labels: &[String],
+        celsius: Option<&[Option<i32>]>,
+    ) -> BTreeMap<String, String> {
         let mut frame = String::from("{\"text\":\"stale\"}\n");
-        render_frame(&mut frame, usages, available);
+        render_frame(&mut frame, usages, available, ghz, labels, celsius);
         let body = frame
             .strip_prefix("{\"")
             .and_then(|rest| rest.strip_suffix("\"}\n"))
@@ -435,7 +635,7 @@ mod tests {
         assert_eq!(
             record["tooltip"]
                 .split("\\n")
-                .skip(1)
+                .skip(2)
                 .take(4)
                 .collect::<Vec<_>>(),
             ["cpu4: 100%", "cpu9: 0%", "cpu11: ?", "cpu30: 50%"]
@@ -466,5 +666,164 @@ mod tests {
         assert_eq!(class(&[usage(0, Some(5)), usage(1, None)], true), "pending");
         assert_eq!(class(&[usage(0, None)], false), "unavailable");
         assert_eq!(class(&[], false), "unavailable");
+    }
+
+    #[test]
+    fn tooltip_leads_with_temperatures_and_marks_missing_ones() {
+        let labels = ["CPU", "SSD", "Board"].map(String::from);
+        let usages = [Usage {
+            id: 0,
+            percent: Some(5),
+        }];
+        let first_line = |celsius: Option<&[Option<i32>]>| {
+            rendered_with(&usages, true, None, &labels, celsius)["tooltip"]
+                .split("\\n")
+                .next()
+                .expect("split yields at least one line")
+                .to_owned()
+        };
+        assert_eq!(
+            first_line(Some(&[Some(46), None, Some(-3)][..])),
+            "CPU 46°C, SSD n/a, Board -3°C"
+        );
+        assert_eq!(first_line(None), "CPU n/a, SSD n/a, Board n/a");
+    }
+
+    #[test]
+    fn tooltip_gives_the_average_clock_or_marks_it_unknown() {
+        let usages = [Usage {
+            id: 0,
+            percent: Some(5),
+        }];
+        let tooltip = |ghz| rendered_with(&usages, true, ghz, &[], None)["tooltip"].clone();
+        assert_eq!(
+            tooltip(Some(3.31)),
+            "Average clock 3.3 GHz\\nLogical CPU usage (cell order)\\ncpu0: 5%"
+        );
+        assert_eq!(
+            tooltip(None),
+            "Average clock ?\\nLogical CPU usage (cell order)\\ncpu0: 5%"
+        );
+    }
+
+    #[test]
+    fn average_clock_matches_waybars_avg_frequency() {
+        let cpuinfo = "processor\t: 0\ncpu MHz\t\t: 3260.527\nprocessor\t: 1\n\
+                       cpu MHz\t\t: 3260.296\ncpu MHz\t\t: 3383.394\n";
+        // Whole MHz 3260, 3260 and 3383: mean 3301, rounded up to 3.31 GHz.
+        assert_eq!(average_ghz(cpuinfo), Some(3.31));
+        assert_eq!(average_ghz("processor\t: 0\n"), None);
+        assert_eq!(average_ghz("cpu MHz\t\t: fast\n"), None);
+        assert_eq!(average_ghz("cpu MHz\n"), None);
+    }
+
+    #[test]
+    fn stale_or_missing_readings_are_not_current() {
+        let taken = Instant::now();
+        let readings = Readings {
+            taken,
+            celsius: vec![Some(41)],
+        };
+        assert_eq!(
+            fresh(Some(&readings), taken + TEMPERATURE_STALE),
+            Some(&[Some(41)][..])
+        );
+        assert_eq!(
+            fresh(
+                Some(&readings),
+                taken + TEMPERATURE_STALE + Duration::from_secs(1)
+            ),
+            None
+        );
+        assert_eq!(fresh(None, taken), None);
+    }
+
+    #[test]
+    fn millidegrees_round_to_whole_degrees() {
+        for (text, celsius) in [
+            ("46125\n", Some(46)),
+            ("46499", Some(46)),
+            ("46500", Some(47)),
+            ("-1500", Some(-1)),
+            ("-1501", Some(-2)),
+            ("", None),
+            ("hot", None),
+            ("9223372036854775807", None),
+            ("3000000000000", None),
+        ] {
+            assert_eq!(parse_millidegrees(text), celsius, "{text:?}");
+        }
+    }
+
+    /// A fresh, empty directory for one test.
+    fn scratch(name: &str) -> PathBuf {
+        let dir = env::temp_dir().join(format!("waybar-cores-{}-{name}", process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("creating a scratch directory");
+        dir
+    }
+
+    #[test]
+    fn hwmon_reads_the_one_hwmon_entry_of_its_device() {
+        let dir = scratch("hwmon");
+        let source = Hwmon {
+            dir: dir.clone(),
+            input: "temp1_input".into(),
+        };
+        assert_eq!(source.read(), None, "no hwmon entry yet");
+        fs::create_dir(dir.join("device")).unwrap();
+        fs::create_dir(dir.join("hwmon7")).unwrap();
+        assert_eq!(source.read(), None, "no input file");
+        fs::write(dir.join("hwmon7/temp1_input"), "41850\n").unwrap();
+        assert_eq!(source.read(), Some(42));
+        fs::create_dir(dir.join("hwmon8")).unwrap();
+        assert_eq!(source.read(), None, "two candidates are a guess");
+        fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(source.read(), None, "device gone");
+    }
+
+    #[test]
+    fn arguments_name_each_source() {
+        let parse = |args: &[&str]| parse_args(args.iter().map(|&arg| OsString::from(arg)));
+        assert_eq!(parse(&[]), Ok(vec![]));
+        assert_eq!(
+            parse(&[
+                "--hwmon",
+                "CPU",
+                "/sys/x/hwmon",
+                "temp1_input",
+                "--hwmon",
+                "SSD (0)",
+                "/sys/class/nvme/nvme0",
+                "temp1_input",
+            ]),
+            Ok(vec![
+                Sensor {
+                    label: "CPU".into(),
+                    source: Hwmon {
+                        dir: "/sys/x/hwmon".into(),
+                        input: "temp1_input".into(),
+                    },
+                },
+                Sensor {
+                    label: "SSD (0)".into(),
+                    source: Hwmon {
+                        dir: "/sys/class/nvme/nvme0".into(),
+                        input: "temp1_input".into(),
+                    },
+                },
+            ])
+        );
+        let invalid: [&[&str]; 6] = [
+            &["--hwmon", "CPU", "/sys/x/hwmon"],
+            &["--hwmon"],
+            &["--nvidia-smi", "GPU", "/bin/nvidia-smi"],
+            &["--hwmon", "", "/sys/x/hwmon", "temp1_input"],
+            &["--hwmon", "C\"PU", "/sys/x/hwmon", "temp1_input"],
+            &["--hwmon", "CPU\\n", "/sys/x/hwmon", "temp1_input"],
+        ];
+        for args in invalid {
+            assert!(parse(args).is_err(), "{args:?}");
+        }
     }
 }

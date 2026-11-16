@@ -2,9 +2,50 @@
   config,
   inputs,
   lib,
+  osConfig,
   pkgs,
+  waybarLabel,
   ...
-}: {
+}: let
+  # One long-running nvidia-smi: utilization for the bar, temperature for the
+  # tooltip. A line that is not a reading (an NVML error, the driver/library
+  # mismatch between a rebuild and the reboot), no line for 10 s, or nvidia-smi
+  # exiting all show `?`; Waybar then restarts this after its restart-interval.
+  # The 3060 Ti drives the displays, so the polling never wakes it.
+  waybarGpu = pkgs.writeShellApplication {
+    name = "waybar-gpu";
+    runtimeInputs = [osConfig.hardware.nvidia.package.bin];
+    text = ''
+      unavailable() {
+        printf '{"text":"  ?","tooltip":"%s","class":"unavailable"}\n' "$1"
+      }
+      nvidia-smi --id=0 --query-gpu=utilization.gpu,temperature.gpu \
+        --format=csv,noheader,nounits --loop-ms=2000 |
+        while true; do
+          status=0
+          IFS=', ' read -r -t 10 utilization celsius || status=$?
+          if [ "$status" -gt 128 ]; then
+            unavailable "No reading from nvidia-smi for 10 s"
+            continue
+          elif [ "$status" -ne 0 ]; then
+            unavailable "nvidia-smi exited"
+            exit 0
+          fi
+          case $utilization in
+            "" | *[!0-9]*)
+              unavailable "nvidia-smi gave no utilization reading"
+              continue
+              ;;
+          esac
+          case $celsius in
+            "" | *[!0-9]*) temperature="temperature n/a" ;;
+            *) temperature="$celsius°C" ;;
+          esac
+          printf '{"text":"%3s%%","tooltip":"GPU %s","class":"normal"}\n' "$utilization" "$temperature"
+        done
+    '';
+  };
+in {
   imports = [
     inputs.nix-colors.homeManagerModules.default
     ../../modules/programs/alacritty.nix
@@ -31,6 +72,38 @@
   ];
 
   colorScheme = inputs.nix-colors.colorSchemes.gruvbox-dark-medium;
+
+  # Temperatures go in tooltips: CPU and SSD lead the per-CPU strip's, the GPU's
+  # is the GPU widget's.
+  programs.waybarCores.args = [
+    # k10temp Tctl: the 5800X3D's control temperature.
+    "--hwmon"
+    "CPU"
+    "/sys/devices/pci0000:00/0000:00:18.3/hwmon"
+    "temp1_input"
+    # nvme0 composite.
+    "--hwmon"
+    "SSD"
+    "/sys/class/nvme/nvme0"
+    "temp1_input"
+  ];
+
+  programs.waybar.settings.mainBar = {
+    # GPU utilization closes the hardware block, before the status modules.
+    modules-right = lib.mkOrder 600 ["custom/gpu"];
+    # Without the GHz figure: with it and the GPU widget, the 1080px portrait
+    # monitor's bar pushes the clock off its edge. The average clock is in the
+    # per-CPU strip's tooltip instead.
+    cpu.format = lib.mkForce "${waybarLabel "CPU"} {usage:3}% ${waybarLabel "load"} {load:.1f}";
+    "custom/gpu" = {
+      exec = "exec ${lib.getExe waybarGpu}";
+      return-type = "json";
+      format = "${waybarLabel "GPU"} {text}";
+      escape = true;
+      restart-interval = 10;
+      exec-on-event = false;
+    };
+  };
 
   # Home Manager needs a bit of information about you and the paths it should
   # manage.
