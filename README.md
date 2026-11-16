@@ -172,32 +172,36 @@ stops a destroyed workspace from coming back when its creation was still
 queued. It is built locally; drop the override once upstream Waybar reconnects.
 
 Workspaces and the focused window's title sit on the left. Everything else is
-right-aligned on one line: the hardware block (CPU, per-CPU strip, RAM, disk and
-precision's sensors), then microphone, output volume, network, clock, tray and,
-on laptops, battery. Text is bold 15px InconsolataGo Nerd Font Mono (Alacritty's
-family, registered with fontconfig on every host): blue labels, white values
-and a purple clock, date and time alike, in a 24px bar. Network text is capped
-at 26 characters and the click-to-toggle date is short. With those longest
-strings, ten workspaces and two tray icons, precision's right-aligned modules
-need about 1640px, so its 1920px and 2160px screens fit: the window title and
-network name shorten with `…` as needed before anything would clip. The 1080px
-portrait monitor that desktop and notebook configure still cuts off the right
-side. Nothing hides behind hover drawers:
+right-aligned on one line: the hardware block (CPU, per-CPU strip, RAM, disk,
+then precision's sensors or desktop's GPU), then microphone, output volume,
+network, clock, tray and, on laptops, battery. Text is bold 15px InconsolataGo
+Nerd Font Mono (Alacritty's family, registered with fontconfig on every host):
+blue labels, white values and a purple clock, date and time alike, in a 24px
+bar. Network text is capped at 26 characters and the click-to-toggle date is
+short. With those longest strings, ten workspaces and two tray icons,
+precision's right-aligned modules need about 1640px, so its 1920px and 2160px
+screens fit: the window title and network name shorten with `…` as needed
+before anything would clip. Desktop's 1080px portrait bar fits only with both
+at `…`, an empty tray and the CPU's GHz figure moved to a tooltip; a tray icon
+would push the clock's end off. Notebook's portrait monitor still cuts off the
+right side. Nothing hides behind hover drawers:
 
 - CPU: overall utilization, **load** = 1-minute load average (tasks running,
   waiting for a CPU or blocked on disk; not utilization and not divided by the
   CPU count, so compare it with the 22 logical CPUs), and average reported
-  GHz. These help distinguish a busy build, a serial phase and reduced clocks.
+  GHz, which desktop shows only in the per-CPU strip's tooltip. These help
+  distinguish a busy build, a serial phase and reduced clocks.
   The overall figure is native Waybar's, which adds guest (VM) time on top of
   the user/nice time that already contains it: while virtual machines run, it
   can read higher than the per-CPU strip.
 - Per-logical-CPU usage: one `▁`–`█` bar per observed CPU, all on one line;
-  the tooltip gives each bar's actual `cpuN` and exact percentage. More CPUs
+  the tooltip gives the average reported clock, computed as the CPU widget's
+  GHz, then each bar's actual `cpuN` and exact percentage. More CPUs
   lengthen the strip, never the bar's height. `waybar-cores` samples
-  `/proc/stat` every two seconds, handles hotplug by ID, excludes guest
-  double-counting and idle/iowait, and shows `?` for an invalid or
-  unestablished delta rather than fake idle time. It is a std-only Rust Waybar
-  child, not a service or per-update shell command.
+  `/proc/stat` and `/proc/cpuinfo` every two seconds, handles hotplug by ID,
+  excludes guest double-counting and idle/iowait, and shows `?` for an invalid
+  or unestablished delta rather than fake idle time. It is a std-only Rust
+  Waybar child, not a service or per-update shell command.
 - RAM: used/total GiB continuously; available RAM and swap remain in the
   tooltip. Click CPU, the strip or RAM for htop.
 - Root filesystem: used percentage and available bytes continuously. The
@@ -210,6 +214,17 @@ side. Nothing hides behind hover drawers:
   last reading until reload. Other hosts' sensor paths are not guessed.
   UI warning/critical thresholds are 90/100°C for CPU and 70/80°C for NVMe,
   not claims about hardware shutdown limits.
+- On desktop: **GPU** utilization, sampled every 2 s by a long-running
+  `nvidia-smi` per bar, with the GPU's temperature in its tooltip. A line that
+  is not a reading, or no line for 10 s, shows `?` until readings resume;
+  `nvidia-smi` exiting shows `?` until Waybar starts it again 10 s later. The
+  widget's script owns `nvidia-smi`, so a Waybar reload or crash ends it too.
+  The per-CPU strip's tooltip starts with the CPU (k10temp Tctl) and SSD (NVMe
+  controller 0 composite) temperatures, read every 10 s on a thread of its own
+  so a stuck read never holds up the strip. Each read finds the `hwmonN` child
+  of the same stable device paths again, so no reload is needed; a reading
+  that fails or finds two candidates shows `n/a`, as does every reading of a
+  batch that started over 30 s ago.
 
 Network shows the interface and the Wi-Fi network, or the interface and `wired`;
 both addresses stay in its tooltip. With both connected, it shows the one
@@ -218,7 +233,7 @@ day/month; hovering shows the whole year with today highlighted, a click
 toggles the full date, right click switches between year and month, and
 scrolling moves through them. Laptop
 battery warnings start at 20% and become critical at 10%. Battery estimates
-remain in its tooltip. There is no GPU polling,
+remain in its tooltip. Only desktop polls a GPU; there is no
 fan/SMM probing, per-module rainbow or blinking. Reload Waybar if a driver
 re-enumerates its sensor paths.
 
