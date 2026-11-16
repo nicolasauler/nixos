@@ -67,22 +67,50 @@ match the EK68. A rebuild that fails during evaluation activates no new settings
 
 ## Desktop lockouts
 
-NVIDIA monitor power-off disconnected Hyprland's Wayland clients while the
-session was locked, leaving the dead-locker screen. Hyprlock's first abort was a
-lost Wayland connection, not a PAM failure. This matches
-[Hyprland's open DPMS regression](https://github.com/hyprwm/Hyprland/discussions/16840).
+Both lockouts (2026-11-10 01:01, and 2026-11-13 12:24 until the 11-14 reboot)
+began with Hyprland itself dying while the session was locked. Every Wayland
+client died with it; hyprlock's abort was that lost connection, not a PAM or
+config failure. `start-hyprland` then relaunched the compositor as
+`Hyprland --safe-mode --locked`: locked, with no lock client and no
+`--locked-cmd`. With `misc:allow_session_lock_restore` off (the default; this
+repo never set it, and safe mode skips `hyprland.lua` anyway), Hyprland refused
+every new hyprlock: each one logged `Seems we got yeeten`, exited, and segfaulted
+while freeing its GL resources. Switching ttys and respawning hyprlock could not
+help; only a reboot unlocked the desktop.
 
-Desktop now keeps the five-minute password lock and black background, but no
-longer powers monitors off automatically. This is a workaround, not a graphics
-driver fix; laptop DPMS and suspend timers are unchanged.
+Every host's hypridle `lock_cmd` is now `hyprlock-session`
+(`modules/programs/hyprlock.nix`). When the compositor serving hyprlock's
+display is locked and no hyprlock runs, it turns that option on there before
+starting hyprlock, so the new hyprlock takes over; healthy sessions are left
+alone. After such a crash, once hypridle has reconnected (systemd restarts it 10
+seconds after it dies with the compositor), the next lock request puts up a
+working hyprlock: hypridle's five-minute idle lock, or at once from another tty
+(Ctrl+Alt+F3, log in; polkit may ask for your password again):
+
+```
+loginctl lock-sessions
+```
+
+Unlock with your password as usual, then choose "load config" in safe mode's
+dialog. Apps from before the crash are gone either way. The crash screen's own
+`hl.clear_crashed_lockscreen()` command also works, but unlocks without asking
+for the password.
+
+Why Hyprland died is unknown: it wrote no crash report, and the journal had
+already rotated out that boot's user logs. The 11-13 crash happened with
+automatic DPMS already off, so DPMS is not the only trigger. Desktop still keeps
+the five-minute password lock and black background without powering monitors
+off; laptop DPMS and suspend timers are unchanged.
 
 Home Manager uses the compositor and portal selected by NixOS, rather than
 installing a competing nixpkgs version ahead of them in `PATH`.
 
-Apply with `sudo nixos-rebuild switch --flake .#desktop`, then restart
-`hypridle.service` with `systemctl --user restart hypridle.service`. Save your work
-and log out/in to use the aligned compositor package. Hardware DPMS must be
-tested in a disposable session before restoring automatic monitor power-off.
+Apply with `sudo nixos-rebuild switch --flake .#desktop`; Home Manager restarts
+`hypridle.service` because its config changed. Test lock or DPMS behaviour as
+another user, or after logging out of this session: every Hyprland this user
+starts, nested or on another tty, exports its `WAYLAND_DISPLAY` and signature
+into the per-user systemd manager on start, even with `HYPRLAND_NO_SD_VARS=1`,
+which repoints the running session's user services.
 
 ## precision microphone keys
 

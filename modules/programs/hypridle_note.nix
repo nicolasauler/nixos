@@ -1,8 +1,4 @@
-{
-  lib,
-  pkgs,
-  ...
-}: {
+{lockCommand, ...}: {
   # laptop variant: lock + screen off + suspend
   # dpms commands use the lua dispatcher form; legacy `hyprctl dispatch dpms`
   # is rejected under lua configs
@@ -10,7 +6,7 @@
     enable = true;
     settings = {
       general = {
-        lock_cmd = "pidof hyprlock || ${lib.getExe pkgs.hyprlock}";
+        lock_cmd = lockCommand;
         before_sleep_cmd = "loginctl lock-session";
         after_sleep_cmd = "hyprctl dispatch 'hl.dsp.dpms({ action = \"enable\" })'";
       };
