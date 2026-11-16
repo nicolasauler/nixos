@@ -1,8 +1,4 @@
-{
-  lib,
-  pkgs,
-  ...
-}: {
+{lockCommand, ...}: {
   # Desktop: lock only, with no automatic DPMS or suspend.
   # NVIDIA DPMS currently disconnects the compositor and strands the locker:
   # https://github.com/hyprwm/Hyprland/discussions/16840
@@ -10,7 +6,7 @@
     enable = true;
     settings = {
       general = {
-        lock_cmd = "pidof hyprlock || ${lib.getExe pkgs.hyprlock}";
+        lock_cmd = lockCommand;
         before_sleep_cmd = "loginctl lock-session";
       };
 
