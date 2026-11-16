@@ -82,9 +82,10 @@ Every host's hypridle `lock_cmd` is now `hyprlock-session`
 (`modules/programs/hyprlock.nix`). When the compositor serving hyprlock's
 display is locked and no hyprlock runs, it turns that option on there before
 starting hyprlock, so the new hyprlock takes over; healthy sessions are left
-alone. After such a crash, the next lock request puts up a working hyprlock:
-hypridle's five-minute idle lock, or at once from another tty (Ctrl+Alt+F3, log
-in; it asks for your password again):
+alone. After such a crash, once hypridle has reconnected (systemd restarts it 10
+seconds after it dies with the compositor), the next lock request puts up a
+working hyprlock: hypridle's five-minute idle lock, or at once from another tty
+(Ctrl+Alt+F3, log in; polkit may ask for your password again):
 
 ```
 loginctl lock-sessions
