@@ -214,15 +214,17 @@ right side. Nothing hides behind hover drawers:
   last reading until reload. Other hosts' sensor paths are not guessed.
   UI warning/critical thresholds are 90/100°C for CPU and 70/80°C for NVMe,
   not claims about hardware shutdown limits.
-- On desktop: **GPU** utilization from one long-running `nvidia-smi`, sampled
-  every 2 s, with the GPU's temperature in its tooltip. A line that is not a
-  reading, no line for 10 s, or `nvidia-smi` exiting shows `?` until Waybar
-  restarts it. The per-CPU strip's tooltip starts with the CPU (k10temp Tctl)
-  and SSD (NVMe controller 0 composite) temperatures, read every 10 s on a
-  thread of its own so a stuck read never holds up the strip. Each read finds
-  the `hwmonN` child of the same stable device paths again, so no reload is
-  needed; a reading that fails, finds two candidates or is over 30 s old shows
-  `n/a`.
+- On desktop: **GPU** utilization, sampled every 2 s by a long-running
+  `nvidia-smi` per bar, with the GPU's temperature in its tooltip. A line that
+  is not a reading, or no line for 10 s, shows `?` until readings resume;
+  `nvidia-smi` exiting shows `?` until Waybar starts it again 10 s later. The
+  widget's script owns `nvidia-smi`, so a Waybar reload or crash ends it too.
+  The per-CPU strip's tooltip starts with the CPU (k10temp Tctl) and SSD (NVMe
+  controller 0 composite) temperatures, read every 10 s on a thread of its own
+  so a stuck read never holds up the strip. Each read finds the `hwmonN` child
+  of the same stable device paths again, so no reload is needed; a reading
+  that fails or finds two candidates shows `n/a`, as does every reading of a
+  batch that started over 30 s ago.
 
 Network shows the interface and the Wi-Fi network, or the interface and `wired`;
 both addresses stay in its tooltip. With both connected, it shows the one

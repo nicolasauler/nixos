@@ -7,11 +7,15 @@
   waybarLabel,
   ...
 }: let
-  # One long-running nvidia-smi: utilization for the bar, temperature for the
-  # tooltip. A line that is not a reading (an NVML error, the driver/library
-  # mismatch between a rebuild and the reboot), no line for 10 s, or nvidia-smi
-  # exiting all show `?`; Waybar then restarts this after its restart-interval.
-  # The 3060 Ti drives the displays, so the polling never wakes it.
+  # Utilization for the bar and temperature for the tooltip, from a long-running
+  # nvidia-smi per bar. It runs as a coprocess, so this script owns it: however
+  # the script ends (Waybar's SIGTERM on a reload, Waybar dying, a closed
+  # stdout), nvidia-smi ends too instead of polling into a broken pipe. A line
+  # that is not a reading, or no line for 10 s, shows `?` until readings resume
+  # (a new nvidia-smi would only hang beside a stuck one). nvidia-smi exiting
+  # shows `?` and ends this successfully: Waybar hides a widget whose script
+  # fails, and restarts this after its restart-interval either way. The 3060 Ti
+  # drives the displays, so the polling never wakes it.
   waybarGpu = pkgs.writeShellApplication {
     name = "waybar-gpu";
     runtimeInputs = [osConfig.hardware.nvidia.package.bin];
@@ -19,30 +23,49 @@
       unavailable() {
         printf '{"text":"  ?","tooltip":"%s","class":"unavailable"}\n' "$1"
       }
-      nvidia-smi --id=0 --query-gpu=utilization.gpu,temperature.gpu \
-        --format=csv,noheader,nounits --loop-ms=2000 |
-        while true; do
-          status=0
-          IFS=', ' read -r -t 10 utilization celsius || status=$?
-          if [ "$status" -gt 128 ]; then
-            unavailable "No reading from nvidia-smi for 10 s"
+      coproc smi {
+        exec nvidia-smi --id=0 --query-gpu=utilization.gpu,temperature.gpu \
+          --format=csv,noheader,nounits --loop-ms=2000
+      }
+      # shellcheck disable=SC2154 # coproc sets smi_PID along with smi.
+      smi_pid=$smi_PID
+      # Bash closes a coprocess's descriptors once it is reaped: read a copy.
+      exec {readings}<&"''${smi[0]}"
+      trap 'kill "$smi_pid" 2>/dev/null || true' EXIT
+      trap 'exit 0' TERM INT HUP PIPE
+      logged=""
+      while true; do
+        status=0
+        IFS= read -r -t 10 -u "$readings" line || status=$?
+        if [ "$status" -gt 128 ]; then
+          unavailable "No reading from nvidia-smi for 10 s"
+          continue
+        elif [ "$status" -ne 0 ]; then
+          unavailable "nvidia-smi exited"
+          exit 0
+        fi
+        utilization=''${line%%,*}
+        utilization=''${utilization// /}
+        celsius=''${line#*,}
+        celsius=''${celsius// /}
+        case $utilization in
+          "" | *[!0-9]*)
+            # Once per run of identical bad lines, not every 2 s.
+            if [ "$logged" != "$line" ]; then
+              printf 'waybar-gpu: unexpected nvidia-smi output: %s\n' "$line" >&2
+              logged=$line
+            fi
+            unavailable "nvidia-smi gave no utilization reading"
             continue
-          elif [ "$status" -ne 0 ]; then
-            unavailable "nvidia-smi exited"
-            exit 0
-          fi
-          case $utilization in
-            "" | *[!0-9]*)
-              unavailable "nvidia-smi gave no utilization reading"
-              continue
-              ;;
-          esac
-          case $celsius in
-            "" | *[!0-9]*) temperature="temperature n/a" ;;
-            *) temperature="$celsius°C" ;;
-          esac
-          printf '{"text":"%3s%%","tooltip":"GPU %s","class":"normal"}\n' "$utilization" "$temperature"
-        done
+            ;;
+        esac
+        logged=""
+        case $celsius in
+          "" | *[!0-9]*) temperature="temperature n/a" ;;
+          *) temperature="$celsius°C" ;;
+        esac
+        printf '{"text":"%3s%%","tooltip":"GPU %s","class":"normal"}\n' "$utilization" "$temperature"
+      done
     '';
   };
 in {

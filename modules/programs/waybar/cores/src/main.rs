@@ -236,6 +236,21 @@ fn fresh(readings: Option<&Readings>, now: Instant) -> Option<&[Option<i32>]> {
         .map(|readings| readings.celsius.as_slice())
 }
 
+/// Reads every source once into `celsius` and returns when the batch started: a
+/// slow later read (an NVMe sensor read can take the drive's 60 s admin
+/// timeout) must never make an earlier reading look newer than it is.
+fn read_batch<S>(
+    sources: &[S],
+    read: impl Fn(&S) -> Option<i32>,
+    now: impl Fn() -> Instant,
+    celsius: &mut Vec<Option<i32>>,
+) -> Instant {
+    let started = now();
+    celsius.clear();
+    celsius.extend(sources.iter().map(read));
+    started
+}
+
 /// Reads every source each `TEMPERATURE_INTERVAL` on its own thread, so a stuck
 /// read never delays the CPU strip.
 fn spawn_reader(sources: Vec<Hwmon>) -> Arc<Mutex<Option<Readings>>> {
@@ -244,9 +259,7 @@ fn spawn_reader(sources: Vec<Hwmon>) -> Arc<Mutex<Option<Readings>>> {
     thread::spawn(move || {
         let mut celsius = Vec::with_capacity(sources.len());
         loop {
-            celsius.clear();
-            celsius.extend(sources.iter().map(Hwmon::read));
-            let taken = Instant::now();
+            let taken = read_batch(&sources, Hwmon::read, Instant::now, &mut celsius);
             let mut slot = shared.lock().unwrap_or_else(PoisonError::into_inner);
             let readings = slot.get_or_insert_with(|| Readings {
                 taken,
@@ -393,6 +406,7 @@ fn main() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
     use std::collections::BTreeMap;
 
     #[test]
@@ -736,6 +750,29 @@ mod tests {
             None
         );
         assert_eq!(fresh(None, taken), None);
+    }
+
+    #[test]
+    fn a_slow_later_read_leaves_the_batch_stamped_with_its_start() {
+        let start = Instant::now();
+        let clock = Cell::new(start);
+        // The CPU answers at once; the SSD takes longer than TEMPERATURE_STALE.
+        let sources = [(46, Duration::ZERO), (41, TEMPERATURE_STALE * 2)];
+        let mut celsius = Vec::new();
+        let taken = read_batch(
+            &sources,
+            |&(value, delay)| {
+                clock.set(clock.get() + delay);
+                Some(value)
+            },
+            || clock.get(),
+            &mut celsius,
+        );
+        assert_eq!(taken, start);
+        assert_eq!(celsius, [Some(46), Some(41)]);
+        // Published once the SSD answers, the batch is already too old to show.
+        let readings = Readings { taken, celsius };
+        assert_eq!(fresh(Some(&readings), clock.get()), None);
     }
 
     #[test]

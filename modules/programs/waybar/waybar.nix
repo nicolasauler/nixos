@@ -18,8 +18,7 @@ in {
         default = [];
         description = ''
           Extra waybar-cores arguments, in order: each `--hwmon LABEL DIR INPUT`
-          or `--nvidia-smi LABEL PATH` adds a temperature to the first line of
-          the per-CPU strip's tooltip.
+          adds a temperature to the first line of the per-CPU strip's tooltip.
         '';
       };
     }
